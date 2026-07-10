@@ -375,9 +375,56 @@
     "email": "info@thebeautybarn.com",
     "subject": "",
     "body": "",
-    "status": "new",
-    "updated_at": "2026-07-10T16:45:19.312Z",
-    "viewed_at": "2026-07-10T20:14:09.995Z"
+    "status": "audited",
+    "updated_at": "2026-07-10T20:55:37.100Z",
+    "viewed_at": "2026-07-10T20:14:09.995Z",
+    "audit_email": "zac@openheartmediaco.com",
+    "audit_goal": "more booked appointments",
+    "audit_report": {
+      "websiteScore": 42,
+      "visibilityScore": 7,
+      "socialScore": 6,
+      "headline": "Here is where The Beauty Barn® is leaving booked appointments on the table",
+      "findings": [
+        {
+          "area": "Website",
+          "title": "No HTTPS means browsers are flagging your site as not secure",
+          "detail": "The scan confirmed the site runs on HTTP, not HTTPS, which triggers a 'Not Secure' warning in Chrome and Safari before a visitor even reads a single word. For a medical spa where people are booking injectable treatments and skin procedures, that warning kills trust at the first click and sends appointment-ready visitors straight to a competitor."
+        },
+        {
+          "area": "Local visibility",
+          "title": "Missing meta description is costing you clicks from people already searching for med spas in Canton",
+          "detail": "The scan returned no meta description, which means Google is auto-generating a random snippet from your page text for every search result listing. A medical spa ranked well enough to win Best GA Med Spa 2024 and 2025 is handing Google the pen to write its own pitch, and the result is almost always a generic, unconvincing blurb that suppresses click-through rates by an estimated 5 to 10 percent."
+        },
+        {
+          "area": "Website",
+          "title": "Mobile PageSpeed data is unavailable, which is itself a red flag",
+          "detail": "The PageSpeed scan could not return a score, which typically means the page either timed out or failed to load cleanly during automated testing. Given that the majority of local med spa searches happen on mobile, any load friction translates directly into visitors bouncing before the booking widget even renders."
+        },
+        {
+          "area": "Conversion",
+          "title": "Online booking and a lead form exist but HTTPS is absent, creating a trust gap at the exact moment someone enters personal information",
+          "detail": "The site has both online booking and a lead form, which is good, but without HTTPS, any data entered through those forms travels unencrypted. Beyond the real security risk, savvy clients who notice the browser warning will abandon the form mid-fill, meaning the booking infrastructure you already paid to build is leaking conversions daily."
+        },
+        {
+          "area": "Social",
+          "title": "Three social channels are linked but YouTube is an underleveraged asset for a med spa with a 5-star reputation",
+          "detail": "Facebook, Instagram, and YouTube are all present, but a YouTube channel for a medical spa sitting on 820 five-star reviews is a significant untapped engine. Before-and-after procedure walkthroughs and provider Q&A videos rank in both YouTube and Google search, and the absence of any visible YouTube content strategy means The Beauty Barn is not converting its strong reputation into the video proof that turns researchers into booked clients."
+        }
+      ],
+      "summary": "The Beauty Barn has a strong local reputation and the right booking infrastructure in place, but a non-secure site and missing meta description are eroding trust and click-through before that infrastructure ever gets used. Fixing the HTTPS issue and meta description alone removes the two biggest friction points between a Canton-area search and a confirmed appointment.",
+      "estimate": "Resolving HTTPS, adding a targeted meta description, and activating a basic YouTube content strategy could conservatively recover 8 to 15 additional booked appointments per month based on typical med spa conversion rates at this review volume."
+    },
+    "audit_scan": {
+      "pagespeed": null,
+      "socials": {
+        "facebook": "facebook.com/tbbmedspa",
+        "instagram": "instagram.com/tbbmedspa",
+        "youtube": "youtube.com/channel/UCpOZNxMS6BloZ-C3SE9IeMA"
+      },
+      "reachable": true
+    },
+    "audited_at": "2026-07-10T20:55:37.100Z"
   },
   {
     "id": "P055",
