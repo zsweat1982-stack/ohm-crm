@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Open Heart Media — Outreach Dashboard</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --txt:#e7e9ee; --mut:#9aa2b1; --accent:#5b8cff; --green:#2fbf71; --amber:#e0a340; --red:#e05353; --purple:#a78bff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:16px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:20px; position:sticky; top:0; background:var(--bg); z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
+  .stats { display:flex; gap:14px; margin-left:auto; flex-wrap:wrap; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:7px 12px; font-size:12px; color:var(--mut); }
+  .stat b { color:var(--txt); font-size:15px; display:block; }
+  .bar { padding:12px 22px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel); }
+  button { background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 13px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.green { background:var(--green); border-color:var(--green); color:#fff; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  select { background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .wrap { padding:16px 22px; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); padding:8px 10px; border-bottom:1px solid var(--line); }
+  td { padding:10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:hover td { background:#141821; }
+  .biz { font-weight:600; }
+  .sub { color:var(--mut); font-size:12px; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; font-weight:600; }
+  .s-new{background:#23262f;color:#9aa2b1} .s-drafted{background:#2a2740;color:#b79bff}
+  .s-approved{background:#183024;color:#4fd18b} .s-sent{background:#12283f;color:#69a9ff}
+  .s-replied{background:#3a2e12;color:#e0a340} .s-rejected{background:#331a1a;color:#e05353}
+  .s-clicked{background:#2b1440;color:#c98bff} .s-booked{background:#12331f;color:#37d67a}
+  .metrics{display:flex;gap:14px;padding:12px 22px;border-bottom:1px solid var(--line);background:#12141a;flex-wrap:wrap;align-items:center}
+  .m{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 14px;font-size:12px;color:var(--mut)}
+  .m b{color:#c98bff;font-size:17px;display:block}
+  .metrics a{color:var(--accent);font-size:12px;text-decoration:none;margin-left:auto}
+  input, textarea { width:100%; background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit; }
+  textarea { min-height:90px; resize:vertical; }
+  .email-cell { min-width:340px; }
+  .row-actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .row-actions button { padding:6px 9px; font-size:12px; }
+  .muted { color:var(--mut); }
+  .warn { color:var(--amber); font-size:12px; }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--panel2); border:1px solid var(--accent); padding:12px 16px; border-radius:9px; opacity:0; transition:.3s; }
+  .toast.show { opacity:1; }
+  .genbtn { font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎥 OPEN HEART MEDIA — Outreach Dashboard</h1>
+  <div class="stats" id="stats"></div>
+</header>
+<div class="bar">
+  <button class="primary" onclick="generateAll()">✍️ Draft next 25 with AI</button>
+  <button class="green" onclick="sendApproved()">📤 Send approved (respects daily cap)</button>
+  <label class="muted">Filter:
+    <select id="filter" onchange="render()">
+      <option value="all">All</option>
+      <option value="new">New</option>
+      <option value="drafted">Drafted (needs review)</option>
+      <option value="approved">Approved (ready to send)</option>
+      <option value="sent">Sent</option>
+      <option value="replied">Replied</option>
+      <option value="rejected">Rejected</option>
+      <option value="needsemail">Missing email</option>
+    </select>
+  </label>
+  <span class="muted" id="capnote"></span>
+</div>
+<div class="metrics" id="metrics"></div>
+<div class="wrap">
+  <table>
+    <thead><tr><th>Business</th><th>Email</th><th class="email-cell">Draft</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let state = { prospects: [], counts: {}, sentToday: 0, dailyCap: 40 };
+
+async function api(url, method='GET', body) {
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined });
+  if (!r.ok) { const e = await r.json().catch(()=>({error:'error'})); throw new Error(e.error||'error'); }
+  return r.json();
+}
+function toast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+
+async function load() {
+  state = await api('/api/prospects');
+  renderStats(); render(); loadMetrics();
+}
+async function loadMetrics() {
+  try {
+    const m = await api('/api/metrics'); const t = m.totals;
+    document.getElementById('metrics').innerHTML =
+      `<div class="m">Emails sent<b>${t.sent}</b></div>`
+    + `<div class="m">Page visits<b>${t.views}</b></div>`
+    + `<div class="m">Unique visitors<b>${t.uniqueVisitors}</b></div>`
+    + `<div class="m">Book clicks<b>${t.clicks}</b></div>`
+    + `<div class="m">📅 Calls booked<b>${t.booked||0}</b></div>`
+    + `<div class="m">Visit rate<b>${t.clickRate}%</b></div>`
+    + `<div class="m">Book rate<b>${t.bookRate}%</b></div>`
+    + `<a href="/go?ref=PREVIEW" target="_blank">↗ View the live landing page</a>`;
+  } catch(e){}
+}
+function renderStats() {
+  const c = state.counts;
+  const order = [['new','New'],['drafted','Drafted'],['approved','Approved'],['sent','Sent'],['replied','Replied']];
+  document.getElementById('stats').innerHTML = order.map(([k,l])=>`<div class="stat">${l}<b>${c[k]||0}</b></div>`).join('')
+    + `<div class="stat">Sent today<b>${state.sentToday}/${state.dailyCap}</b></div>`;
+  document.getElementById('capnote').textContent = `Daily cap ${state.dailyCap}. ${Math.max(0,state.dailyCap-state.sentToday)} sends left today.`;
+}
+function render() {
+  const f = document.getElementById('filter').value;
+  let list = state.prospects;
+  if (f==='needsemail') list = list.filter(p=>!p.email||!p.email.includes('@'));
+  else if (f!=='all') list = list.filter(p=>p.status===f);
+  document.getElementById('rows').innerHTML = list.map(rowHtml).join('') || '<tr><td colspan=5 class="muted">No prospects in this view.</td></tr>';
+}
+function esc(s){return (s||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function rowHtml(p) {
+  const hasEmail = p.email && p.email.includes('@');
+  return `<tr>
+    <td><div class="biz">${esc(p.business)}</div><div class="sub">${esc(p.category)} · ${esc(p.city)}</div>
+        <div class="sub">${p.rating?('⭐'+p.rating+' ('+p.reviews+')'):''}</div></td>
+    <td style="min-width:190px">
+      <input value="${esc(p.email)}" placeholder="add email…" onchange="upd('${p.id}',{email:this.value})"/>
+      ${!hasEmail?'<div class="warn">needs email</div>':''}
+    </td>
+    <td class="email-cell">
+      ${p.body ? `<input value="${esc(p.subject)}" onchange="upd('${p.id}',{subject:this.value})" style="margin-bottom:6px;font-weight:600"/>
+        <textarea onchange="upd('${p.id}',{body:this.value})">${esc(p.body)}</textarea>`
+      : `<button class="genbtn" onclick="gen('${p.id}')">✍️ Generate draft</button>`}
+    </td>
+    <td><span class="pill s-${p.status}">${p.status}</span></td>
+    <td><div class="row-actions">
+      ${p.body?`<button onclick="gen('${p.id}')" title="regenerate">🔄</button>`:''}
+      ${p.status!=='approved'&&p.body?`<button class="green" onclick="upd('${p.id}',{status:'approved'})">✓ Approve</button>`:''}
+      ${p.status==='approved'?`<button class="primary" onclick="sendOne('${p.id}')" ${!hasEmail?'disabled':''}>📤 Send</button>`:''}
+      ${p.status!=='rejected'?`<button onclick="upd('${p.id}',{status:'rejected'})">✕</button>`:''}
+      ${p.status==='sent'?`<button onclick="upd('${p.id}',{status:'replied'})">💬 Replied</button>`:''}
+    </div></td>
+  </tr>`;
+}
+async function upd(id, patch) { try { await api('/api/prospects/'+id,'PATCH',patch); await load(); } catch(e){toast(e.message);} }
+async function gen(id) { toast('Drafting…'); try { await api('/api/prospects/'+id+'/generate','POST'); await load(); toast('Draft ready'); } catch(e){toast(e.message);} }
+async function generateAll() { toast('Drafting next 25 (may take a minute)…'); try { const r=await api('/api/generate-all','POST',{limit:25}); await load(); toast('Drafted '+r.drafted); } catch(e){toast(e.message);} }
+async function sendOne(id) { try { await api('/api/prospects/'+id+'/send','POST'); await load(); toast('Sent'); } catch(e){toast('Send failed: '+e.message);} }
+async function sendApproved() { if(!confirm('Send all approved emails now (up to your daily cap)?'))return; toast('Sending…'); try { const r=await api('/api/send-approved','POST'); await load(); toast('Sent '+r.sent+(r.errors&&r.errors.length?' ('+r.errors.length+' failed)':'')); } catch(e){toast(e.message);} }
+load();
+</script>
+</body>
+</html>

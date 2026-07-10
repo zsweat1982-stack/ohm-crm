@@ -1,0 +1,41 @@
+[
+  {
+    "type": "view",
+    "ref": "P010",
+    "ts": "2026-07-10T16:53:05.754Z"
+  },
+  {
+    "type": "click",
+    "ref": "P010",
+    "ts": "2026-07-10T16:53:05.764Z"
+  },
+  {
+    "type": "booked",
+    "ref": "P010",
+    "ts": "2026-07-10T17:05:37.178Z",
+    "info": {
+      "name": "Test Booker",
+      "email": "test@example.com",
+      "start": "2026-07-15T15:00:00Z",
+      "eventName": "Discovery call",
+      "business": "Cornejo & Cornejo, LLP"
+    }
+  },
+  {
+    "type": "booked",
+    "ref": "P001",
+    "ts": "2026-07-10T20:05:09.992Z",
+    "info": {
+      "name": "System Test",
+      "email": "test@example.com",
+      "start": "2026-07-15T15:00:00Z",
+      "eventName": "Discovery call",
+      "business": "ATL FITNESS 24/7 WOODSTOCK"
+    }
+  },
+  {
+    "type": "view",
+    "ref": "P054",
+    "ts": "2026-07-10T20:14:09.994Z"
+  }
+]
