@@ -200,7 +200,7 @@ function renderLandingPage(ref) {
   const site = loadSite();
   const video = site.videoEmbed
     ? `<div class="vframe"><iframe src="${site.videoEmbed}" frameborder="0" allowfullscreen></iframe></div>`
-    : `<div class="vframe"><video src="/media/ohm-promo.mp4" controls preload="metadata" playsinline></video></div>`;
+    : `<div class="vframe"><video src="/media/ohm-promo.mp4" autoplay muted loop playsinline controls preload="metadata"></video></div>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Free growth audit · Open Heart Media</title>
@@ -208,11 +208,11 @@ function renderLandingPage(ref) {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
 <style>
-:root{--ink:#141414;--ink2:#1c1c1c;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff;--cream:#fcfaf5;--soft:#9a9a9a;--line:rgba(255,255,255,.09);--lineL:#eceae3}
+:root{--ink:#1a2b4c;--ink2:#14223d;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff;--cream:#fcfaf5;--soft:#a9b4c9;--line:rgba(255,255,255,.11);--lineL:#eceae3}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{font-family:Inter,-apple-system,sans-serif;color:#fff;background:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}
-.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(20,20,20,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(20,33,61,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
 .logo{font-weight:800;letter-spacing:.4px;font-size:15px}.logo span{color:var(--red)}
 .navcta{font-size:14px;font-weight:600;color:#fff;text-decoration:none;background:var(--red);padding:9px 18px;border-radius:8px;transition:transform .2s,filter .2s}.navcta:hover{filter:brightness(1.1);transform:translateY(-1px)}
 .sec{padding:96px 32px}.inner{max-width:960px;margin:0 auto}
@@ -228,11 +228,11 @@ body{font-family:Inter,-apple-system,sans-serif;color:#fff;background:var(--ink)
 .trust{display:flex;gap:26px;flex-wrap:wrap;margin-top:40px;color:var(--soft);font-size:14px;font-weight:500}
 .trust b{color:#fff;font-weight:800;font-size:22px;display:block;font-variant-numeric:tabular-nums}
 /* audit form */
-.formwrap{margin-top:52px;background:linear-gradient(180deg,#232323,#191919);border:1px solid var(--line);border-radius:20px;padding:32px;max-width:560px;box-shadow:0 30px 80px -30px rgba(0,0,0,.7)}
+.formwrap{margin-top:52px;background:linear-gradient(180deg,#22314f,#182640);border:1px solid var(--line);border-radius:20px;padding:32px;max-width:560px;box-shadow:0 30px 80px -30px rgba(0,0,0,.7)}
 .formwrap h2{font-size:24px;font-weight:800;letter-spacing:-.01em}
 .formwrap .fp{color:var(--soft);font-size:14px;margin:6px 0 18px}
 label{display:block;font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--soft);margin:16px 0 7px}
-input,select{width:100%;padding:14px 15px;border:1px solid #3a3a3a;border-radius:11px;font:inherit;font-size:15px;background:#141414;color:#fff;transition:border-color .2s,box-shadow .2s}
+input,select{width:100%;padding:14px 15px;border:1px solid #33466b;border-radius:11px;font:inherit;font-size:15px;background:#122039;color:#fff;transition:border-color .2s,box-shadow .2s}
 input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(94,151,255,.2)}
 input::placeholder{color:#6b6b6b}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--red);color:#fff;font-weight:700;font-size:16px;padding:16px 30px;border-radius:12px;border:0;cursor:pointer;width:100%;margin-top:22px;transition:transform .15s,filter .2s;font-family:inherit}
@@ -282,7 +282,6 @@ input::placeholder{color:#6b6b6b}
     <div class="eyebrow reveal">${bizName ? 'Free growth audit for ' + esc(bizName) : 'Free instant growth audit'}</div>
     <h1 class="reveal">You're a great business. You're just <em>leaving money</em> on the table.</h1>
     <p class="sub reveal">We scan your website and online presence live, then show you the exact gaps quietly costing you leads and revenue. Free, instant, no call required to see it.</p>
-    <div class="trust reveal"><div><b>$2.34M</b>revenue driven, one client</div><div><b>~90x</b>return on ad spend</div><div><b>+96%</b>traffic in 6 months</div></div>
 
     <div class="formwrap reveal" id="auditbox">
       <h2>Get your free instant audit</h2>
@@ -343,8 +342,8 @@ input::placeholder{color:#6b6b6b}
 
 <section class="sec">
   <div class="inner">
-    <div class="eyebrow reveal">See how we think</div>
-    <div class="ctitle reveal" style="color:#fff;max-width:24ch">A quick look at how Open Heart Media grows local businesses.</div>
+    <div class="eyebrow reveal">Our clients</div>
+    <div class="ctitle reveal" style="color:#fff;max-width:24ch">The kind of growth we drive for the businesses we work with.</div>
     ${video}
   </div>
 </section>
