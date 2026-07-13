@@ -199,116 +199,206 @@ function renderLandingPage(ref) {
   const prefillSite = prospect ? (prospect.website || '') : '';
   const site = loadSite();
   const video = site.videoEmbed
-    ? `<div class="video"><iframe src="${site.videoEmbed}" frameborder="0" allowfullscreen></iframe></div>`
-    : `<div class="video"><video src="/media/ohm-promo.mp4" controls preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover"></video></div>`;
-  const casesHtml = (site.cases || []).map(c => `<div class="case"><b>${esc(c.stat)}</b><span>${esc(c.label)}</span></div>`).join('');
+    ? `<div class="vframe"><iframe src="${site.videoEmbed}" frameborder="0" allowfullscreen></iframe></div>`
+    : `<div class="vframe"><video src="/media/ohm-promo.mp4" controls preload="metadata" playsinline></video></div>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Free growth audit · Open Heart Media</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
 <style>
-:root{--ink:#1c1c1c;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff;--soft:#6b7280;--line:#e7e4dc;--bg:#fff;--cream:#fcfaf5}
-*{box-sizing:border-box}body{margin:0;font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
-.nav{display:flex;align-items:center;padding:16px 28px;background:var(--ink)}
-.logo{font-weight:800;letter-spacing:.5px;color:#fff}.logo span{color:var(--red)}
-.wrap{max-width:820px;margin:0 auto;padding:48px 24px 80px}
-.tag{color:var(--red);font-weight:700;letter-spacing:2px;text-transform:uppercase;font-size:12px}
-h1{font-size:38px;line-height:1.13;margin:8px 0 14px}
-.lead{font-size:19px;color:var(--soft);margin-bottom:30px}
-.card{background:var(--cream);border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin:18px 0}
-.card h2{margin:0 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:1px;color:var(--soft)}
-.gap{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}.gap:last-child{border-bottom:0}
-.gnum{flex:0 0 32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
-.gap h3{margin:2px 0 4px;font-size:17px}.gap p{margin:0;color:var(--soft)}
-.video{aspect-ratio:16/9;border-radius:14px;overflow:hidden;margin:22px 0;background:#000}
-.video iframe{width:100%;height:100%}
-.cases{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:18px 0}
-.case{background:var(--cream);border:1px solid var(--line);border-radius:12px;padding:18px}
-.case b{font-size:25px;color:var(--red);display:block;font-weight:800}.case span{font-size:13px;color:var(--soft)}
-.form h2{font-size:22px;text-transform:none;letter-spacing:0;color:var(--ink);margin:0 0 6px}
-label{display:block;font-size:13px;color:var(--soft);margin:12px 0 4px}
-input,select{width:100%;padding:12px;border:1px solid #d8d4ca;border-radius:9px;font:inherit;background:#fff}
-.btn{display:inline-block;background:var(--red);color:#fff;font-weight:700;padding:15px 34px;border-radius:10px;text-decoration:none;font-size:16px;cursor:pointer;border:0;width:100%;margin-top:16px}
-.btn:disabled{opacity:.6}
-.scores{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:6px 0 18px}
-.score{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
-.score b{font-size:30px;font-weight:800;display:block;color:var(--navy)}.score span{font-size:12px;color:var(--soft)}
-.find{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}.find:last-child{border-bottom:0}
-.dot{flex:0 0 10px;height:10px;border-radius:50%;background:var(--red);margin-top:7px}
-.find h3{margin:0 0 3px;font-size:16px}.find p{margin:0;color:var(--soft);font-size:15px}
-.cta{background:var(--ink);color:#fff;border-radius:16px;padding:32px;text-align:center;margin-top:26px}
-.cta h2{color:#fff;font-size:23px;margin:0 0 8px}.cta p{color:#c7cad1;margin:0 0 18px}
-.cta .btn{background:var(--red);max-width:320px;margin:0 auto}
-.est{font-weight:600;font-size:17px;color:var(--navy);margin-top:8px}
-.foot{text-align:center;color:var(--soft);font-size:13px;margin-top:40px}
+:root{--ink:#141414;--ink2:#1c1c1c;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff;--cream:#fcfaf5;--soft:#9a9a9a;--line:rgba(255,255,255,.09);--lineL:#eceae3}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:Inter,-apple-system,sans-serif;color:#fff;background:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}
+.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(20,20,20,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.logo{font-weight:800;letter-spacing:.4px;font-size:15px}.logo span{color:var(--red)}
+.navcta{font-size:14px;font-weight:600;color:#fff;text-decoration:none;background:var(--red);padding:9px 18px;border-radius:8px;transition:transform .2s,filter .2s}.navcta:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.sec{padding:96px 32px}.inner{max-width:960px;margin:0 auto}
+.eyebrow{color:var(--red);font-weight:700;letter-spacing:3px;text-transform:uppercase;font-size:12px;margin-bottom:18px}
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+/* hero */
+.hero{padding:120px 32px 90px;background:radial-gradient(1200px 500px at 70% -10%,rgba(94,151,255,.14),transparent 60%),var(--ink)}
+.hero h1{font-size:clamp(38px,6.4vw,72px);font-weight:900;letter-spacing:-.02em;line-height:1.02;max-width:15ch}
+.hero h1 em{font-style:normal;color:var(--red)}
+.hero p.sub{font-size:clamp(17px,2.2vw,21px);color:#cfcfcf;max-width:56ch;margin:26px 0 0;line-height:1.55}
+.trust{display:flex;gap:26px;flex-wrap:wrap;margin-top:40px;color:var(--soft);font-size:14px;font-weight:500}
+.trust b{color:#fff;font-weight:800;font-size:22px;display:block;font-variant-numeric:tabular-nums}
+/* audit form */
+.formwrap{margin-top:52px;background:linear-gradient(180deg,#232323,#191919);border:1px solid var(--line);border-radius:20px;padding:32px;max-width:560px;box-shadow:0 30px 80px -30px rgba(0,0,0,.7)}
+.formwrap h2{font-size:24px;font-weight:800;letter-spacing:-.01em}
+.formwrap .fp{color:var(--soft);font-size:14px;margin:6px 0 18px}
+label{display:block;font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--soft);margin:16px 0 7px}
+input,select{width:100%;padding:14px 15px;border:1px solid #3a3a3a;border-radius:11px;font:inherit;font-size:15px;background:#141414;color:#fff;transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(94,151,255,.2)}
+input::placeholder{color:#6b6b6b}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--red);color:#fff;font-weight:700;font-size:16px;padding:16px 30px;border-radius:12px;border:0;cursor:pointer;width:100%;margin-top:22px;transition:transform .15s,filter .2s;font-family:inherit}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.btn:active{transform:scale(.99)}.btn:disabled{opacity:.6;cursor:default;transform:none}
+.err{color:#ff8a8a;font-size:13px;margin-top:10px;min-height:16px}
+/* results */
+.results{background:var(--cream);color:var(--ink)}
+.scoregrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:8px 0 30px}
+.scard{background:#fff;border:1px solid var(--lineL);border-radius:16px;padding:24px 18px;text-align:center;position:relative;overflow:hidden}
+.scard b{font-size:clamp(38px,7vw,54px);font-weight:900;color:var(--navy);display:block;line-height:1;font-variant-numeric:tabular-nums}
+.scard .of{color:#b9b6ac;font-weight:700}.scard span{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--soft);margin-top:8px;display:block}
+.scard .meter{height:5px;border-radius:3px;background:#eceae3;margin-top:14px;overflow:hidden}.scard .meter i{display:block;height:100%;background:var(--red);border-radius:3px}
+.find{display:flex;gap:16px;padding:20px 0;border-bottom:1px solid var(--lineL)}.find:last-child{border-bottom:0}
+.find .n{flex:0 0 30px;height:30px;border-radius:9px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.find h3{font-size:18px;font-weight:700;margin-bottom:4px}.find p{color:#5c5c5c;font-size:15px}
+.est{background:var(--ink);color:#fff;border-radius:16px;padding:22px 26px;margin-top:22px;font-size:18px;font-weight:600;line-height:1.5}.est b{color:var(--red)}
+/* case studies */
+.case{border-top:1px solid var(--line)}
+.case.cream{background:var(--cream);color:var(--ink);border-top:0}
+.chero{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;margin-bottom:8px}
+.bignum{font-size:clamp(58px,12vw,120px);font-weight:900;letter-spacing:-.04em;line-height:.9;color:var(--red);font-variant-numeric:tabular-nums}
+.case.cream .bignum{color:var(--navy)}
+.chero .cl{font-size:15px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--soft)}
+.ctitle{font-size:clamp(24px,3.6vw,34px);font-weight:800;letter-spacing:-.01em;margin:6px 0 26px;max-width:20ch}
+.cstory{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin-top:8px}
+.cstory .blk h4{font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);margin-bottom:8px}
+.case.cream .cstory .blk h4{color:var(--navy)}
+.cstory .blk p{font-size:15px;color:#c3c3c3;line-height:1.6}.case.cream .cstory .blk p{color:#57534e}
+.cmetrics{display:flex;gap:30px;flex-wrap:wrap;margin-top:30px;padding-top:26px;border-top:1px solid var(--line)}.case.cream .cmetrics{border-top:1px solid var(--lineL)}
+.cmetrics .m b{font-size:26px;font-weight:900;display:block;font-variant-numeric:tabular-nums}.cmetrics .m span{font-size:13px;color:var(--soft)}
+/* video */
+.vframe{aspect-ratio:16/9;border-radius:18px;overflow:hidden;background:#000;margin-top:28px;border:1px solid var(--line);box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
+.vframe video,.vframe iframe{width:100%;height:100%;object-fit:cover;display:block}
+/* booking */
+.book{background:var(--ink2);text-align:center}
+.book h2{font-size:clamp(30px,4.4vw,46px);font-weight:900;letter-spacing:-.02em;max-width:18ch;margin:0 auto}
+.book p{color:#cfcfcf;font-size:18px;margin:18px auto 8px;max-width:52ch}
+.calwrap{margin-top:30px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#fff}
+.foot{padding:40px 32px;text-align:center;color:var(--soft);font-size:13px;border-top:1px solid var(--line)}
 .hide{display:none}
-@media(max-width:640px){.cases,.scores{grid-template-columns:1fr}h1{font-size:30px}}
+@media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.formwrap{padding:24px}}
 </style></head><body>
-<div class="nav"><div class="logo">OPEN HEART <span>MEDIA</span></div></div>
-<div class="wrap">
-  <div class="tag">${bizName ? 'Free growth audit for ' + esc(bizName) : 'For local Georgia businesses'}</div>
-  <h1>See exactly where your business is losing leads and revenue.</h1>
-  <p class="lead">We scan your website and online presence live, then show you the specific gaps costing you customers. Free, instant, no call required to get it.</p>
+<div class="nav"><div class="logo">OPEN HEART <span>MEDIA</span></div><a class="navcta" href="#book">Book a call</a></div>
 
-  <div class="card form" id="auditbox">
-    <h2>Get your free instant audit</h2>
-    <p style="color:var(--soft);margin:0 0 4px">Takes about 20 seconds. We will scan your site and show your scores.</p>
-    <label>Your website</label>
-    <input id="f_site" placeholder="yourbusiness.com" value="${esc(prefillSite)}"/>
-    <label>What matters most right now</label>
-    <select id="f_goal">
-      <option value="more leads">More leads</option>
-      <option value="more phone calls">More phone calls</option>
-      <option value="more booked appointments">More booked appointments</option>
-      <option value="more sales">More sales</option>
-      <option value="more of everything">More of everything</option>
-    </select>
-    <label>Where should we send your audit</label>
-    <input id="f_email" type="email" placeholder="you@yourbusiness.com"/>
-    <button class="btn" id="run">Scan my business</button>
-    <p id="err" style="color:var(--red);font-size:13px;margin:8px 0 0"></p>
+<section class="hero">
+  <div class="inner">
+    <div class="eyebrow reveal">${bizName ? 'Free growth audit for ' + esc(bizName) : 'Free instant growth audit'}</div>
+    <h1 class="reveal">You're a great business. You're just <em>leaving money</em> on the table.</h1>
+    <p class="sub reveal">We scan your website and online presence live, then show you the exact gaps quietly costing you leads and revenue. Free, instant, no call required to see it.</p>
+    <div class="trust reveal"><div><b>$2.34M</b>revenue driven, one client</div><div><b>~90x</b>return on ad spend</div><div><b>+96%</b>traffic in 6 months</div></div>
+
+    <div class="formwrap reveal" id="auditbox">
+      <h2>Get your free instant audit</h2>
+      <p class="fp">About 20 seconds. We scan your site live and show your scores.</p>
+      <label for="f_site">Your website</label>
+      <input id="f_site" placeholder="yourbusiness.com" value="${esc(prefillSite)}"/>
+      <label for="f_goal">What matters most right now</label>
+      <select id="f_goal"><option value="more leads">More leads</option><option value="more phone calls">More phone calls</option><option value="more booked appointments">More booked appointments</option><option value="more sales">More sales</option><option value="more of everything">More of everything</option></select>
+      <label for="f_email">Where should we send your audit</label>
+      <input id="f_email" type="email" placeholder="you@yourbusiness.com"/>
+      <button class="btn" id="run">Scan my business</button>
+      <p class="err" id="err"></p>
+    </div>
   </div>
+</section>
 
-  <div id="result" class="hide"></div>
+<section class="sec results hide" id="result"></section>
 
-  <h2 style="margin-top:40px">Real results we have driven</h2>
-  ${video}
-  <div class="cases">${casesHtml}</div>
+<section class="case" id="proof">
+  <div class="inner">
+    <div class="eyebrow reveal">Proof, not promises</div>
+    <div class="chero reveal"><span class="bignum">$2.34M</span><span class="cl">Home services · 20 months</span></div>
+    <div class="ctitle reveal">From zero online presence to $2.34M in tracked revenue, on $26K of ad spend.</div>
+    <div class="cstory">
+      <div class="blk reveal"><h4>The challenge</h4><p>A great local reputation but nothing digital working for them. No paid ads, no lead tracking, no reliable pipeline. Revenue moved with the season, not a system.</p></div>
+      <div class="blk reveal"><h4>What we did</h4><p>Built a growth system, not a campaign. Google Search plus Performance Max on high intent buyers, every call and text tracked to the dollar, and monthly optimization.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>Twenty months of compounding growth. Average monthly revenue climbed from $68K to over $111K, with April 2026 the best month on record at $157,970.</p></div>
+    </div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">~90x</b><span>Return on ad spend</span></div><div class="m"><b>$0.39</b><span>Avg cost per click</span></div><div class="m"><b>2.91M</b><span>Impressions</span></div><div class="m"><b>67,100</b><span>Clicks, all traced to revenue</span></div></div>
+  </div>
+</section>
 
-  <div class="foot">Open Heart Media · Georgia · zac@openheartmediaco.com</div>
-</div>
+<section class="case cream">
+  <div class="inner">
+    <div class="chero reveal"><span class="bignum">$312.5K</span><span class="cl">E-commerce · first 30 days</span></div>
+    <div class="ctitle reveal">Their best sales month in 23 months, without spending more on traffic.</div>
+    <div class="cstory">
+      <div class="blk reveal"><h4>The challenge</h4><p>Strong product, loyal customers, but growth was decelerating three months straight, from +95% to +35% to +16%. Too many hands on strategy at once.</p></div>
+      <div class="blk reveal"><h4>What we did</h4><p>One owner, one strategy, every channel aligned. Google, Meta, Amazon, organic social and email all reinforcing the same offer and audience insight.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>Growth reaccelerated inside 30 days. Traffic stayed roughly flat, but every visitor was simply worth more. Best sales month in nearly two years.</p></div>
+    </div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">+62%</b><span>Month over month growth</span></div><div class="m"><b>$401</b><span>Avg order value, 2-year high</span></div><div class="m"><b>$5.81</b><span>Revenue per session, best on record</span></div></div>
+  </div>
+</section>
+
+<section class="case">
+  <div class="inner">
+    <div class="chero reveal"><span class="bignum">+96%</span><span class="cl">Home healthcare · 6 months</span></div>
+    <div class="ctitle reveal">Six months of 2026 already beat their entire prior year online.</div>
+    <div class="cstory">
+      <div class="blk reveal"><h4>The challenge</h4><p>The prior year ran on social reach alone. Google was barely tested, phone calls were not tracked, and there was no way to tie spend to a real lead.</p></div>
+      <div class="blk reveal"><h4>What we did</h4><p>One fully tracked channel. Consolidated budget into Performance Max, made the phone call the primary action, and tracked every call, form and contact-page visit.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>$203,450 in internet and social sales through June, versus $196,052 for all of the prior year. Monthly pace more than doubled, now traceable to the dollar.</p></div>
+    </div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">15%</b><span>Conversion rate, ~3x benchmark</span></div><div class="m"><b>229</b><span>Tracked conversions in one quarter</span></div><div class="m"><b>$1.74</b><span>Avg cost per click</span></div></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="inner">
+    <div class="eyebrow reveal">See how we think</div>
+    <div class="ctitle reveal" style="color:#fff;max-width:24ch">A quick look at how Open Heart Media grows local businesses.</div>
+    ${video}
+  </div>
+</section>
+
+<section class="sec book" id="book">
+  <div class="inner">
+    <div class="eyebrow reveal" style="text-align:center">Book your free call</div>
+    <h2 class="reveal">Let's find the leads your business is missing.</h2>
+    <p class="reveal">Grab a free 15 minute call. We'll walk through your audit and exactly what we'd do. No pitch, no pressure.</p>
+    <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
+  </div>
+</section>
+
+<div class="foot">Open Heart Media · Georgia · zac@openheartmediaco.com</div>
+
+<script src="https://assets.calendly.com/assets/external/widget.js" async></script>
 <script>
   var REF = ${JSON.stringify(ref || '')};
-  var CAL = ${JSON.stringify(CALENDLY)};
   function track(t){ try{ navigator.sendBeacon('/api/track', new Blob([JSON.stringify({type:t,ref:REF})],{type:'application/json'})); }catch(e){} }
   track('view');
-  function bookUrl(){ var u=CAL; if(REF)u+=(u.indexOf('?')>-1?'&':'?')+'utm_content='+encodeURIComponent(REF); return u; }
-  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var revs=document.querySelectorAll('.reveal');
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.08});
+    revs.forEach(function(el){io.observe(el);});
+    // safety net: never leave content hidden
+    setTimeout(function(){revs.forEach(function(el){el.classList.add('in');});},1600);
+  } else { revs.forEach(function(el){el.classList.add('in');}); }
+  document.querySelector('.navcta').addEventListener('click',function(){track('click');});
   document.getElementById('run').addEventListener('click', function(){
     var email=document.getElementById('f_email').value.trim();
-    var site=document.getElementById('f_site').value.trim();
+    var sitev=document.getElementById('f_site').value.trim();
     var goal=document.getElementById('f_goal').value;
     var err=document.getElementById('err');
     if(email.indexOf('@')<0){ err.textContent='Please enter a valid email.'; return; }
-    err.textContent='';
-    var btn=this; btn.disabled=true; btn.textContent='Scanning your business...';
-    fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,email:email,website:site,goal:goal})})
-     .then(function(r){ return r.json(); })
+    err.textContent=''; var btn=this; btn.disabled=true; btn.textContent='Scanning your business...';
+    fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,email:email,website:sitev,goal:goal})})
+     .then(function(r){return r.json();})
      .then(function(d){
        if(d.error){ err.textContent=d.error; btn.disabled=false; btn.textContent='Scan my business'; return; }
        var a=d.report;
-       var findings=(a.findings||[]).map(function(f){ return '<div class="find"><div class="dot"></div><div><h3>'+esc(f.title)+'</h3><p>'+esc(f.detail)+'</p></div></div>'; }).join('');
-       var html='<div class="card"><div class="tag" style="margin-bottom:6px">Your audit results</div>'
-         +'<h2 style="font-size:22px;text-transform:none;letter-spacing:0;color:var(--ink);margin:0 0 14px">'+esc(a.headline||'Your growth audit')+'</h2>'
-         +'<div class="scores"><div class="score"><b>'+a.websiteScore+'</b><span>Website / 100</span></div>'
-         +'<div class="score"><b>'+a.visibilityScore+'</b><span>Local visibility / 10</span></div>'
-         +'<div class="score"><b>'+a.socialScore+'</b><span>Social / 10</span></div></div>'
-         +findings+'<p class="est">'+esc(a.estimate||'')+'</p></div>'
-         +'<div class="cta"><h2>Want us to fix these and grow your '+esc(goal)+'?</h2>'
-         +'<p>Book a free 15 minute call. We will walk through your audit and exactly what we would do. No pitch, no pressure.</p>'
-         +'<a class="btn" id="book" href="'+bookUrl()+'" target="_blank" rel="noopener">Book my free call</a></div>';
+       function mtr(v,max){return '<div class="meter"><i style="width:'+Math.round(v/max*100)+'%"></i></div>';}
+       var findings=(a.findings||[]).map(function(f,i){return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
+       var html='<div class="inner"><div class="eyebrow">Your audit results</div>'
+        +'<div class="ctitle" style="color:var(--ink)">'+esc(a.headline||'Where you are leaving leads on the table')+'</div>'
+        +'<div class="scoregrid">'
+        +'<div class="scard"><b>'+a.websiteScore+'<span class="of">/100</span></b><span>Website</span>'+mtr(a.websiteScore,100)+'</div>'
+        +'<div class="scard"><b>'+a.visibilityScore+'<span class="of">/10</span></b><span>Local visibility</span>'+mtr(a.visibilityScore,10)+'</div>'
+        +'<div class="scard"><b>'+a.socialScore+'<span class="of">/10</span></b><span>Social</span>'+mtr(a.socialScore,10)+'</div></div>'
+        +findings
+        +'<div class="est"><b>The upside: </b>'+esc(a.estimate||'')+'</div>'
+        +'<a class="btn" id="rbook" href="#book" style="max-width:340px;margin:26px auto 0;text-decoration:none">See your booking options below</a></div>';
        var res=document.getElementById('result'); res.innerHTML=html; res.classList.remove('hide');
-       document.getElementById('auditbox').classList.add('hide');
-       document.getElementById('book').addEventListener('click', function(){ track('click'); });
+       document.getElementById('auditbox').style.display='none';
+       document.getElementById('rbook').addEventListener('click',function(){track('click');});
        res.scrollIntoView({behavior:'smooth'});
      })
      .catch(function(){ err.textContent='Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Scan my business'; });
@@ -316,7 +406,6 @@ input,select{width:100%;padding:12px;border:1px solid #d8d4ca;border-radius:9px;
 </script>
 </body></html>`;
 }
-
 function sentToday() {
   const today = new Date().toISOString().slice(0, 10);
   return prospects.filter(p => p.status === 'sent' && (p.sent_at || '').slice(0, 10) === today).length;

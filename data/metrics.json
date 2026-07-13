@@ -44,5 +44,20 @@
     "ts": "2026-07-10T20:55:37.106Z",
     "email": "zac@openheartmediaco.com",
     "business": "The Beauty Barn®"
+  },
+  {
+    "type": "view",
+    "ref": "P054",
+    "ts": "2026-07-10T23:42:48.514Z"
+  },
+  {
+    "type": "view",
+    "ref": "P054",
+    "ts": "2026-07-13T00:45:59.295Z"
+  },
+  {
+    "type": "view",
+    "ref": "P054",
+    "ts": "2026-07-13T01:03:31.075Z"
   }
 ]
