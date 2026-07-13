@@ -239,11 +239,21 @@ input::placeholder{color:#6b6b6b}
 .btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.btn:active{transform:scale(.99)}.btn:disabled{opacity:.6;cursor:default;transform:none}
 .err{color:#ff8a8a;font-size:13px;margin-top:10px;min-height:16px}
 /* results */
-.results{background:var(--cream);color:var(--ink)}
+.results{background:#0d1729;color:#fff}
+.results .ctitle{color:#fff !important}
+.results .scard{background:#16233d;border-color:rgba(255,255,255,.09)}
+.results .scard .of{color:#7f8ca8}
+.results .scard span{color:#9fb0cf}
+.results .scard .meter{background:rgba(255,255,255,.13)}
+.results .find{border-bottom-color:rgba(255,255,255,.1)}
+.results .find .n{background:var(--red)}
+.results .find h3{color:#fff}
+.results .find p{color:#b7c1d6}
+.results .est{background:#16233d;border:1px solid rgba(223,49,49,.4);color:#fff}
 .rhead{display:flex;align-items:center;gap:16px;margin-bottom:20px}
 .rlogo{height:32px}
-.rtag{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--red);border-left:2px solid var(--lineL);padding-left:14px}
-.grade{display:flex;align-items:center;gap:22px;background:var(--navy);color:#fff;border-radius:18px;padding:26px 30px;margin:4px 0 28px}
+.rtag{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--red);border-left:2px solid rgba(255,255,255,.18);padding-left:14px}
+.grade{display:flex;align-items:center;gap:22px;background:linear-gradient(135deg,#1c2d4e,#14233f);border:1px solid rgba(255,255,255,.08);color:#fff;border-radius:18px;padding:26px 30px;margin:4px 0 28px}
 .gbig{font-size:66px;font-weight:900;line-height:.9;font-variant-numeric:tabular-nums}.gbig span{font-size:26px;color:#9fb0cf;font-weight:800}
 .glabel b{font-size:17px;font-weight:700;display:block}.glabel span{font-size:14px;color:#c1cde3}
 .sc-good b{color:#178a49 !important}.sc-good .meter i{background:#178a49}
@@ -404,7 +414,7 @@ input::placeholder{color:#6b6b6b}
        function scard(v,max,label){return '<div class="scard '+cls(v,max)+'"><b>'+v+'<span class="of">/'+max+'</span></b><span>'+label+'</span>'+mtr(v,max)+'</div>';}
        var findings=(a.findings||[]).map(function(f,i){return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
        var html='<div class="inner">'
-        +'<div class="rhead"><img class="rlogo" src="/media/logo-navy.png" alt="Open Heart Media"/><div class="rtag">Growth Audit · '+esc(biz)+'</div></div>'
+        +'<div class="rhead"><img class="rlogo" src="/media/logo-white.png" alt="Open Heart Media"/><div class="rtag">Growth Audit · '+esc(biz)+'</div></div>'
         +'<div class="ctitle" style="color:var(--ink)">'+esc(a.headline||'Where you are leaving leads on the table')+'</div>'
         +'<div class="grade"><div class="gbig">'+overall+'<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>'+verdict+'</span></div></div>'
         +'<div class="scoregrid">'+scard(a.websiteScore,100,'Website')+scard(a.visibilityScore,10,'Local visibility')+scard(a.socialScore,10,'Social')+'</div>'
