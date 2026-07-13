@@ -213,7 +213,7 @@ function renderLandingPage(ref) {
 html{scroll-behavior:smooth}
 body{font-family:Inter,-apple-system,sans-serif;color:#fff;background:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}
 .nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(15,26,48,.86);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-.logo{font-weight:800;letter-spacing:.4px;font-size:15px}.logo span{color:var(--red)}
+.logo{height:30px;display:block}
 .navcta{font-size:14px;font-weight:600;color:#fff;text-decoration:none;background:var(--red);padding:9px 18px;border-radius:8px;transition:transform .2s,filter .2s}.navcta:hover{filter:brightness(1.1);transform:translateY(-1px)}
 .sec{padding:96px 32px}.inner{max-width:960px;margin:0 auto}
 .eyebrow{color:var(--red);font-weight:700;letter-spacing:3px;text-transform:uppercase;font-size:12px;margin-bottom:18px}
@@ -275,7 +275,7 @@ input::placeholder{color:#6b6b6b}
 .hide{display:none}
 @media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.formwrap{padding:24px}}
 </style></head><body>
-<div class="nav"><div class="logo">OPEN HEART <span>MEDIA</span></div><a class="navcta" href="#book">Book a call</a></div>
+<div class="nav"><img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/><a class="navcta" href="#book">Book a call</a></div>
 
 <section class="hero">
   <div class="inner">
@@ -371,6 +371,8 @@ input::placeholder{color:#6b6b6b}
     // safety net: never leave content hidden
     setTimeout(function(){revs.forEach(function(el){el.classList.add('in');});},1600);
   } else { revs.forEach(function(el){el.classList.add('in');}); }
+  var vid=document.querySelector('.vframe video');
+  if(vid){ vid.loop=true; vid.muted=true; vid.setAttribute('loop',''); vid.play().catch(function(){}); vid.addEventListener('ended',function(){ try{vid.currentTime=0; vid.play();}catch(e){} }); }
   document.querySelector('.navcta').addEventListener('click',function(){track('click');});
   document.getElementById('run').addEventListener('click', function(){
     var email=document.getElementById('f_email').value.trim();
