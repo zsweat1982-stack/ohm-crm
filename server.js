@@ -240,7 +240,17 @@ input::placeholder{color:#6b6b6b}
 .err{color:#ff8a8a;font-size:13px;margin-top:10px;min-height:16px}
 /* results */
 .results{background:var(--cream);color:var(--ink)}
-.scoregrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:8px 0 30px}
+.rhead{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+.rlogo{height:32px}
+.rtag{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--red);border-left:2px solid var(--lineL);padding-left:14px}
+.grade{display:flex;align-items:center;gap:22px;background:var(--navy);color:#fff;border-radius:18px;padding:26px 30px;margin:4px 0 28px}
+.gbig{font-size:66px;font-weight:900;line-height:.9;font-variant-numeric:tabular-nums}.gbig span{font-size:26px;color:#9fb0cf;font-weight:800}
+.glabel b{font-size:17px;font-weight:700;display:block}.glabel span{font-size:14px;color:#c1cde3}
+.sc-good b{color:#178a49 !important}.sc-good .meter i{background:#178a49}
+.sc-mid b{color:#c07d0c !important}.sc-mid .meter i{background:#c07d0c}
+.sc-bad b{color:var(--red) !important}.sc-bad .meter i{background:var(--red)}
+.fhead{font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);margin:6px 0 4px}
+.scoregrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:8px 0 26px}
 .scard{background:#fff;border:1px solid var(--lineL);border-radius:16px;padding:24px 18px;text-align:center;position:relative;overflow:hidden}
 .scard b{font-size:clamp(38px,7vw,54px);font-weight:900;color:var(--navy);display:block;line-height:1;font-variant-numeric:tabular-nums}
 .scard .of{color:#b9b6ac;font-weight:700}.scard span{font-size:12px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--soft);margin-top:8px;display:block}
@@ -386,17 +396,21 @@ input::placeholder{color:#6b6b6b}
      .then(function(d){
        if(d.error){ err.textContent=d.error; btn.disabled=false; btn.textContent='Scan my business'; return; }
        var a=d.report;
-       function mtr(v,max){return '<div class="meter"><i style="width:'+Math.round(v/max*100)+'%"></i></div>';}
+       var biz=d.business||'your business';
+       function cls(v,max){var p=v/max;return p>=.7?'sc-good':p>=.4?'sc-mid':'sc-bad';}
+       function mtr(v,max){return '<div class="meter"><i style="width:'+Math.max(6,Math.round(v/max*100))+'%"></i></div>';}
+       var overall=Math.round((Number(a.websiteScore)+Number(a.visibilityScore)*10+Number(a.socialScore)*10)/3);
+       var verdict=overall>=70?'Solid foundation, real room to grow':overall>=45?'Leaving real money on the table':'Big, fixable gaps costing you leads';
+       function scard(v,max,label){return '<div class="scard '+cls(v,max)+'"><b>'+v+'<span class="of">/'+max+'</span></b><span>'+label+'</span>'+mtr(v,max)+'</div>';}
        var findings=(a.findings||[]).map(function(f,i){return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
-       var html='<div class="inner"><div class="eyebrow">Your audit results</div>'
+       var html='<div class="inner">'
+        +'<div class="rhead"><img class="rlogo" src="/media/logo-navy.png" alt="Open Heart Media"/><div class="rtag">Growth Audit · '+esc(biz)+'</div></div>'
         +'<div class="ctitle" style="color:var(--ink)">'+esc(a.headline||'Where you are leaving leads on the table')+'</div>'
-        +'<div class="scoregrid">'
-        +'<div class="scard"><b>'+a.websiteScore+'<span class="of">/100</span></b><span>Website</span>'+mtr(a.websiteScore,100)+'</div>'
-        +'<div class="scard"><b>'+a.visibilityScore+'<span class="of">/10</span></b><span>Local visibility</span>'+mtr(a.visibilityScore,10)+'</div>'
-        +'<div class="scard"><b>'+a.socialScore+'<span class="of">/10</span></b><span>Social</span>'+mtr(a.socialScore,10)+'</div></div>'
-        +findings
+        +'<div class="grade"><div class="gbig">'+overall+'<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>'+verdict+'</span></div></div>'
+        +'<div class="scoregrid">'+scard(a.websiteScore,100,'Website')+scard(a.visibilityScore,10,'Local visibility')+scard(a.socialScore,10,'Social')+'</div>'
+        +'<div class="fhead">What is costing you leads</div>'+findings
         +'<div class="est"><b>The upside: </b>'+esc(a.estimate||'')+'</div>'
-        +'<a class="btn" id="rbook" href="#book" style="max-width:340px;margin:26px auto 0;text-decoration:none">See your booking options below</a></div>';
+        +'<a class="btn" id="rbook" href="#book" style="max-width:360px;margin:28px auto 0;text-decoration:none">Book my free call to fix this</a></div>';
        var res=document.getElementById('result'); res.innerHTML=html; res.classList.remove('hide');
        document.getElementById('auditbox').style.display='none';
        document.getElementById('rbook').addEventListener('click',function(){track('click');});
