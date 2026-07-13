@@ -208,11 +208,11 @@ function renderLandingPage(ref) {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
 <style>
-:root{--ink:#1a2b4c;--ink2:#14223d;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff;--cream:#fcfaf5;--soft:#a9b4c9;--line:rgba(255,255,255,.11);--lineL:#eceae3}
+:root{--ink:#0f1a30;--ink2:#0b1424;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff;--cream:#fcfaf5;--soft:#98a3ba;--line:rgba(255,255,255,.1);--lineL:#eceae3}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{font-family:Inter,-apple-system,sans-serif;color:#fff;background:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}
-.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(20,33,61,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:rgba(15,26,48,.86);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
 .logo{font-weight:800;letter-spacing:.4px;font-size:15px}.logo span{color:var(--red)}
 .navcta{font-size:14px;font-weight:600;color:#fff;text-decoration:none;background:var(--red);padding:9px 18px;border-radius:8px;transition:transform .2s,filter .2s}.navcta:hover{filter:brightness(1.1);transform:translateY(-1px)}
 .sec{padding:96px 32px}.inner{max-width:960px;margin:0 auto}
@@ -342,8 +342,8 @@ input::placeholder{color:#6b6b6b}
 
 <section class="sec">
   <div class="inner">
-    <div class="eyebrow reveal">Our clients</div>
-    <div class="ctitle reveal" style="color:#fff;max-width:24ch">The kind of growth we drive for the businesses we work with.</div>
+    <div class="eyebrow reveal">See it for yourself</div>
+    <div class="ctitle reveal" style="color:#fff;max-width:24ch">What it looks like to work with us.</div>
     ${video}
   </div>
 </section>
