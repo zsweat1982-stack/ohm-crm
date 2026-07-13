@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Anthropic from '@anthropic-ai/sdk';
 import sgMail from '@sendgrid/mail';
+import PDFDocument from 'pdfkit';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(__dirname, 'data', 'prospects.json');
@@ -157,18 +158,89 @@ Score each area honestly from the data. Low PageSpeed = low website score. No me
 Return ONLY JSON:
 {
  "websiteScore": <0-100>,
+ "websiteWhy": "2 sentences explaining exactly why the website scored this, citing the real scan data (PageSpeed number, HTTPS, mobile, lead form, meta description). Be specific.",
  "visibilityScore": <0-10>,
+ "visibilityWhy": "2 sentences explaining the local visibility score, citing their Google rating, review count vs a typical ${p.category} in ${p.city}, and how findable they are.",
  "socialScore": <0-10>,
+ "socialWhy": "2 to 3 sentences explaining the social score in real depth: which platforms were found or missing on their site (${Object.keys(scan.socials).join(', ') || 'none found'}), what that means for a ${p.category}, and specifically what is holding the score down (no presence, inconsistent posting, no video, missing platforms). This must feel substantive, not one vague line.",
  "headline": "one line, e.g. 'Here is where ${p.business || 'your business'} is leaving leads on the table'",
  "findings": [ {"area":"Website|Local visibility|Social|Conversion","title":"punchy specific title","detail":"2 sentences tied to lost leads/revenue, referencing the actual scan finding"} ],
  "summary": "2 sentences, direct and honest",
  "estimate": "one line on the money/leads impact of fixing these"
 }
-Give 4 to 5 findings, ordered by biggest revenue impact. No em dashes. No hype words. Specific to the scan, never generic.`;
+Give 4 to 5 findings, ordered by biggest revenue impact. The three "Why" fields must each be specific and genuinely explain the number. No em dashes. No hype words. Specific to the scan, never generic.`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 1100, messages: [{ role: 'user', content: prompt }] });
   let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/); if (m) txt = m[0];
   return JSON.parse(txt);
+}
+
+// ---------- Branded PDF audit report ----------
+function buildAuditPDF(business, report, bookingUrl) {
+  return new Promise((resolve) => {
+    const doc = new PDFDocument({ size: 'LETTER', margin: 0 });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    const W = 612, M = 48, NAVY = '#0f1a30', NAVY2 = '#16233d', RED = '#df3131', MUT = '#8a97ad';
+    const clr = (v, max) => v / max >= .7 ? '#2fae5f' : v / max >= .4 ? '#e0a340' : RED;
+    // header band
+    doc.rect(0, 0, W, 120).fill(NAVY);
+    try { doc.image(path.join(__dirname, 'public', 'media', 'logo-white.png'), M, 38, { height: 30 }); } catch (e) {}
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(10).text('GROWTH AUDIT', M, 82, { characterSpacing: 2 });
+    doc.fillColor('#c1cde3').font('Helvetica').fontSize(11).text(business || 'Your business', M, 96);
+    // headline
+    let y = 152;
+    doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(20).text(report.headline || 'Where you are leaving leads on the table', M, y, { width: W - M * 2, lineGap: 2 });
+    y = doc.y + 18;
+    // overall score card
+    const overall = Math.round((Number(report.websiteScore) + Number(report.visibilityScore) * 10 + Number(report.socialScore) * 10) / 3);
+    doc.roundedRect(M, y, W - M * 2, 84, 12).fill(NAVY);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(46).text(String(overall), M + 26, y + 18, { continued: true }).fillColor('#9fb0cf').fontSize(18).text(' /100');
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13).text('Overall growth score', M + 150, y + 28);
+    doc.fillColor('#c1cde3').font('Helvetica').fontSize(11).text(overall >= 70 ? 'Solid foundation, real room to grow' : overall >= 45 ? 'Leaving real money on the table' : 'Big, fixable gaps costing you leads', M + 150, y + 47);
+    y += 104;
+    const nl = need => { if (y + need > 720) { doc.addPage(); y = 56; } };
+    // score breakdown WITH explanations (depth)
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text('SCORE BREAKDOWN', M, y, { characterSpacing: 1 });
+    y += 22;
+    const rows = [['Website', report.websiteScore, 100, report.websiteWhy], ['Local visibility', report.visibilityScore, 10, report.visibilityWhy], ['Social', report.socialScore, 10, report.socialWhy]];
+    rows.forEach(r => {
+      nl(70);
+      doc.roundedRect(M, y, 66, 54, 8).fill('#f4f2ec');
+      doc.fillColor(clr(r[1], r[2])).font('Helvetica-Bold').fontSize(24).text(String(r[1]), M, y + 10, { width: 66, align: 'center' });
+      doc.fillColor(MUT).font('Helvetica').fontSize(8).text('/ ' + r[2], M, y + 36, { width: 66, align: 'center' });
+      doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(13).text(r[0], M + 82, y + 2, { width: W - M * 2 - 82 });
+      doc.fillColor('#57607a').font('Helvetica').fontSize(10.5).text(r[3] || '', M + 82, doc.y + 2, { width: W - M * 2 - 82, lineGap: 1 });
+      y = Math.max(y + 54, doc.y) + 16;
+    });
+    // findings
+    nl(40);
+    y += 6;
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text('WHAT IS COSTING YOU LEADS', M, y, { characterSpacing: 1 });
+    y += 22;
+    (report.findings || []).forEach((f, i) => {
+      nl(60);
+      doc.circle(M + 9, y + 7, 9).fill(RED);
+      doc.fillColor('#fff').font('Helvetica-Bold').fontSize(9).text(String(i + 1), M, y + 3, { width: 18, align: 'center' });
+      doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(12.5).text(f.title, M + 30, y, { width: W - M * 2 - 30 });
+      doc.fillColor('#57607a').font('Helvetica').fontSize(10.5).text(f.detail, M + 30, doc.y + 2, { width: W - M * 2 - 30, lineGap: 1 });
+      y = doc.y + 14;
+    });
+    // upside
+    nl(90);
+    y += 4;
+    const uh = doc.heightOfString('The upside: ' + (report.estimate || ''), { width: W - M * 2 - 40, fontSize: 12 }) + 28;
+    doc.roundedRect(M, y, W - M * 2, uh, 10).fill(NAVY2);
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(12).text('The upside: ', M + 20, y + 14, { continued: true, width: W - M * 2 - 40 }).fillColor('#fff').font('Helvetica').text(report.estimate || '', { width: W - M * 2 - 40 });
+    y += uh + 22;
+    // CTA
+    doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(13).text('Want us to fix these and grow your business?', M, y);
+    doc.fillColor(MUT).font('Helvetica').fontSize(11).text('Book a free 15 minute call: ', M, doc.y + 4, { continued: true }).fillColor(RED).text(bookingUrl);
+    // footer
+    doc.fillColor(MUT).font('Helvetica').fontSize(9).text('Open Heart Media  ·  Georgia  ·  zac@openheartmediaco.com', M, 730, { width: W - M * 2, align: 'center' });
+    doc.end();
+  });
 }
 
 // ---------- ONE living landing page (the funnel) + metrics ----------
@@ -412,13 +484,16 @@ input::placeholder{color:#6b6b6b}
        var overall=Math.round((Number(a.websiteScore)+Number(a.visibilityScore)*10+Number(a.socialScore)*10)/3);
        var verdict=overall>=70?'Solid foundation, real room to grow':overall>=45?'Leaving real money on the table':'Big, fixable gaps costing you leads';
        function scard(v,max,label){return '<div class="scard '+cls(v,max)+'"><b>'+v+'<span class="of">/'+max+'</span></b><span>'+label+'</span>'+mtr(v,max)+'</div>';}
+       function colHex(v,max){var p=v/max;return p>=.7?'#3fbf6a':p>=.4?'#e0a340':'#df3131';}
+       var bd=[['Website',a.websiteScore,100,a.websiteWhy],['Local visibility',a.visibilityScore,10,a.visibilityWhy],['Social',a.socialScore,10,a.socialWhy]].map(function(r){return '<div class="find"><div class="n" style="background:'+colHex(r[1],r[2])+'">'+r[1]+'</div><div><h3>'+r[0]+'  <span style="color:#8fa0bd;font-weight:600;font-size:14px">'+r[1]+'/'+r[2]+'</span></h3><p>'+esc(r[3]||'')+'</p></div></div>';}).join('');
        var findings=(a.findings||[]).map(function(f,i){return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
        var html='<div class="inner">'
         +'<div class="rhead"><img class="rlogo" src="/media/logo-white.png" alt="Open Heart Media"/><div class="rtag">Growth Audit · '+esc(biz)+'</div></div>'
         +'<div class="ctitle" style="color:var(--ink)">'+esc(a.headline||'Where you are leaving leads on the table')+'</div>'
         +'<div class="grade"><div class="gbig">'+overall+'<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>'+verdict+'</span></div></div>'
         +'<div class="scoregrid">'+scard(a.websiteScore,100,'Website')+scard(a.visibilityScore,10,'Local visibility')+scard(a.socialScore,10,'Social')+'</div>'
-        +'<div class="fhead">What is costing you leads</div>'+findings
+        +'<div class="fhead">Score breakdown</div>'+bd
+        +'<div class="fhead" style="margin-top:22px">What is costing you leads</div>'+findings
         +'<div class="est"><b>The upside: </b>'+esc(a.estimate||'')+'</div>'
         +'<a class="btn" id="rbook" href="#book" style="max-width:360px;margin:28px auto 0;text-decoration:none">Book my free call to fix this</a></div>';
        var res=document.getElementById('result'); res.innerHTML=html; res.classList.remove('hide');
@@ -506,6 +581,24 @@ app.get('/go', (req, res) => {
   res.send(renderLandingPage(req.query.ref));
 });
 
+// Preview the branded PDF audit design (sample data)
+app.get('/api/audit-pdf-preview', async (_, res) => {
+  const sample = { websiteScore: 42, visibilityScore: 7, socialScore: 6,
+    websiteWhy: 'Your site scored a 38 on Google mobile PageSpeed and is still running on HTTP instead of HTTPS, so it loads slowly and browsers flag it as not secure. There is a booking link but no clear meta description, which weakens how you show up in search.',
+    visibilityWhy: 'A 4.9 rating from 820 reviews is elite for a med spa and puts you near the top in Canton, which is why this score is high. The gap is that not everyone searching for a med spa in Canton is finding you first, so some of that reputation never converts.',
+    socialWhy: 'We found Facebook and Instagram linked from your site but no TikTok or YouTube, and no sign of consistent recent posting. For a med spa, short before-and-after video is what drives new bookings, and right now that channel is barely working, which is the single biggest reason this score is a 6 and not a 9.',
+    headline: 'Here is where The Beauty Barn is leaving booked appointments on the table',
+    findings: [
+      { title: 'No HTTPS, so browsers flag you Not Secure', detail: 'New clients entering their info at booking see a security warning and leave. That is booked revenue lost at the finish line.' },
+      { title: 'Missing meta description costs you clicks from Google', detail: 'Google auto-generates a weak snippet, so people searching for a med spa in Canton scroll past you to a competitor.' },
+      { title: 'Your reviews are elite, your content engine is not', detail: '820 five-star reviews prove people love you, but no consistent content means new clients never see it before they book elsewhere.' }],
+    estimate: 'Fixing these could conservatively recover 8 to 15 additional booked appointments a month at your review volume.' };
+  const pdf = await buildAuditPDF('The Beauty Barn', sample, `${CALENDLY}?utm_content=preview`);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename="growth-audit-sample.pdf"');
+  res.send(pdf);
+});
+
 // Tracking beacon from the landing page (view / click)
 app.post('/api/track', (req, res) => {
   const { type, ref } = req.body || {};
@@ -566,7 +659,7 @@ app.post('/api/calendly-webhook', async (req, res) => {
   } catch (e) { console.error('[calendly-webhook]', e.message); }
 });
 
-async function notifyAudit(p, email, report) {
+async function notifyAudit(p, email, report, pdf) {
   if (!process.env.SENDGRID_API_KEY || !NOTIFY.length) return;
   const text = `New audit completed (hot lead).\n\n`
     + `Business: ${p?.business || 'unknown'}\n`
@@ -575,10 +668,22 @@ async function notifyAudit(p, email, report) {
     + `Scores:   website ${report.websiteScore}/100, visibility ${report.visibilityScore}/10, social ${report.socialScore}/10\n\n`
     + (report.findings || []).map(f => `- ${f.title}`).join('\n')
     + `\n\nThey saw this and got a Book-a-call CTA. Follow up fast.`;
+  const msg = { to: NOTIFY, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+    subject: `🔥 Audit completed${p?.business ? ' — ' + p.business : ''}`, text };
+  if (pdf) msg.attachments = [{ content: pdf.toString('base64'), filename: 'audit-' + (p?.business || 'lead').replace(/[^a-z0-9]/gi, '-') + '.pdf', type: 'application/pdf', disposition: 'attachment' }];
+  try { await sgMail.sendMultiple(msg); } catch (e) { console.error('[notifyAudit]', e.message); }
+}
+
+// Email the branded PDF audit to the prospect who filled out the form
+async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
+  if (!process.env.SENDGRID_API_KEY || !to) return;
+  const overall = Math.round((Number(report.websiteScore) + Number(report.visibilityScore) * 10 + Number(report.socialScore) * 10) / 3);
+  const text = `Hi,\n\nHere is your free growth audit for ${business || 'your business'}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${report.findings?.[0]?.title || 'a few fixable gaps'}.\n\nWant us to fix these and grow your business? Grab a free 15 minute call here:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
   try {
-    await sgMail.sendMultiple({ to: NOTIFY, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
-      subject: `🔥 Audit completed${p?.business ? ' — ' + p.business : ''}`, text });
-  } catch (e) { console.error('[notifyAudit]', e.message); }
+    await sgMail.send({ to, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+      subject: `your growth audit for ${business || 'your business'}`, text,
+      attachments: [{ content: pdf.toString('base64'), filename: 'growth-audit.pdf', type: 'application/pdf', disposition: 'attachment' }] });
+  } catch (e) { console.error('[audit-email]', e.message); }
 }
 
 // Run the live scan + audit when a prospect fills out the form
@@ -591,6 +696,9 @@ app.post('/api/audit', async (req, res) => {
     const scan = await scanWebsite(site);
     const ps = await runPageSpeed(scan.finalUrl || scan.url);
     const report = await generateAuditReport(p || {}, scan, ps, { goal });
+    const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
+    let pdf = null;
+    try { pdf = await buildAuditPDF(p?.business || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
     if (p) {
       p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
       p.audit_scan = { pagespeed: ps, socials: scan.socials, reachable: scan.reachable };
@@ -599,7 +707,8 @@ app.post('/api/audit', async (req, res) => {
     }
     events.push({ type: 'audit', ref: ref || null, ts: new Date().toISOString(), email, business: p?.business || null });
     saveMetrics();
-    await notifyAudit(p, email, report);
+    await notifyAudit(p, email, report, pdf);
+    if (pdf) await sendAuditToProspect(email, p?.business, report, pdf, bookingUrl);
     res.json({ report, business: p?.business || null });
   } catch (e) { console.error('[audit]', e.message); res.status(500).json({ error: 'scan failed, please try again' }); }
 });
