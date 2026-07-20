@@ -589,15 +589,44 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/prospects', (_, res) => {
   const counts = {};
   for (const p of prospects) counts[p.status] = (counts[p.status] || 0) + 1;
-  res.json({ prospects, counts, sentToday: sentToday(), dailyCap: DAILY_CAP });
+  const wonValue = prospects.filter(p => p.status === 'won').reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
+  const openValue = prospects.filter(p => ['replied', 'booked'].includes(p.status)).reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
+  res.json({ prospects, counts, sentToday: sentToday(), dailyCap: DAILY_CAP, team: TEAM, wonValue, openValue });
 });
+
+// Team members who can be "on" a response. Configurable via TEAM env (comma list).
+const TEAM = (process.env.TEAM || 'Zac,Michelle').split(',').map(s => s.trim()).filter(Boolean);
 
 app.patch('/api/prospects/:id', (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  for (const k of ['email', 'subject', 'body', 'status']) {
+  const prevStatus = p.status;
+  for (const k of ['email', 'subject', 'body', 'status', 'handled_by']) {
     if (req.body[k] !== undefined) p[k] = req.body[k];
   }
+  if (req.body.deal_value !== undefined) {
+    const v = Number(String(req.body.deal_value).replace(/[^0-9.]/g, ''));
+    p.deal_value = isNaN(v) ? 0 : v;
+  }
+  // stamp the moment a lead moves into a key stage, so the timeline is real
+  if (req.body.status && req.body.status !== prevStatus) {
+    const now = new Date().toISOString();
+    const stamp = { replied: 'replied_at', booked: 'booked_at', won: 'won_at', lost: 'lost_at', rejected: 'rejected_at' };
+    if (stamp[req.body.status] && !p[stamp[req.body.status]]) p[stamp[req.body.status]] = now;
+  }
+  p.updated_at = new Date().toISOString();
+  save(prospects);
+  res.json(p);
+});
+
+// Append a timestamped note to a lead's activity log
+app.post('/api/prospects/:id/note', (req, res) => {
+  const p = prospects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const text = (req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'empty note' });
+  if (!Array.isArray(p.notes)) p.notes = [];
+  p.notes.push({ ts: new Date().toISOString(), by: (req.body?.by || '').trim() || null, text });
   p.updated_at = new Date().toISOString();
   save(prospects);
   res.json(p);

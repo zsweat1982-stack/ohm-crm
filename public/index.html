@@ -8,68 +8,114 @@
   :root { --bg:#f5f7fb; --panel:#ffffff; --panel2:#f0f3f9; --line:#e2e8f2; --txt:#0f1a30; --mut:#68758c; --navy:#1a2b4c; --accent:#5e97ff; --green:#1f9d57; --amber:#c98a1e; --red:#df3131; --purple:#6b5bd2; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:20px; position:sticky; top:0; background:var(--navy); z-index:5; flex-wrap:wrap; box-shadow:0 2px 12px rgba(15,26,48,.10); }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:18px; position:sticky; top:0; background:var(--navy); z-index:20; flex-wrap:wrap; box-shadow:0 2px 12px rgba(15,26,48,.10); }
   header::after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--red); }
   header .logo { height:26px; display:block; }
-  .stats { display:flex; gap:12px; margin-left:auto; flex-wrap:wrap; }
-  .stat { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); border-radius:9px; padding:7px 12px; font-size:12px; color:#b9c6de; }
+  .htag { color:#8ea0c0; font-size:13px; font-weight:500; letter-spacing:.3px; border-left:1px solid rgba(255,255,255,.18); padding-left:16px; }
+  .stats { display:flex; gap:10px; margin-left:auto; flex-wrap:wrap; }
+  .stat { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); border-radius:9px; padding:6px 11px; font-size:11px; color:#b9c6de; text-align:center; }
   .stat b { color:#fff; font-size:15px; display:block; }
-  .bar { padding:12px 24px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel); }
+  .stat.win b { color:#7ff0ad; } .stat.val b { color:#ffd27f; }
+  .logoutbtn { margin-left:6px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18); color:#cdd8ea; font-size:12px; padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .bar { padding:12px 24px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:57px; z-index:15; }
   button { background:#fff; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 13px; cursor:pointer; font-size:13px; }
   button:hover { border-color:var(--accent); }
   button.primary { background:var(--navy); border-color:var(--navy); color:#fff; font-weight:600; }
   button.primary:hover { background:#132038; }
   button.green { background:var(--green); border-color:var(--green); color:#fff; }
+  button.red { background:var(--red); border-color:var(--red); color:#fff; }
   button:disabled { opacity:.45; cursor:not-allowed; }
   select { background:#fff; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; }
-  .wrap { padding:16px 24px; }
+  .search { flex:1; min-width:220px; max-width:420px; position:relative; }
+  .search input { width:100%; padding:9px 12px 9px 34px; border:1px solid var(--line); border-radius:9px; font:inherit; background:#fff; }
+  .search input:focus { outline:none; border-color:var(--accent); }
+  .search svg { position:absolute; left:11px; top:50%; transform:translateY(-50%); width:15px; height:15px; opacity:.4; }
+  .wrap { padding:16px 24px 60px; }
   table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
   th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); padding:11px 12px; border-bottom:1px solid var(--line); background:#f7f9fc; }
-  td { padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
-  tr:hover td { background:#f7f9fd; }
+  td { padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover td { background:#f7f9fd; }
   .biz { font-weight:600; color:var(--navy); }
   .sub { color:var(--mut); font-size:12px; }
-  .pill { font-size:11px; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; font-weight:600; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; font-weight:600; display:inline-block; }
   .s-new{background:#eef1f6;color:#68758c} .s-drafted{background:#efeaff;color:#6b5bd2}
   .s-approved{background:#e2f5ea;color:#1f9d57} .s-sent{background:#e6effd;color:#3273d6}
-  .s-replied{background:#fbf1de;color:#b3791a} .s-rejected{background:#fce8e8;color:#df3131}
-  .s-clicked{background:#f2e9fb;color:#8a5bd2} .s-booked{background:#dff3e6;color:#178047}
+  .s-clicked{background:#f2e9fb;color:#8a5bd2} .s-audited{background:#e9f7ff;color:#2b8fc0}
+  .s-replied{background:#fbf1de;color:#b3791a} .s-booked{background:#dff3e6;color:#178047}
+  .s-won{background:#178047;color:#fff} .s-lost{background:#eceff3;color:#8a94a6}
+  .s-rejected{background:#fce8e8;color:#df3131}
   .metrics{display:flex;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);background:#eef2f8;flex-wrap:wrap;align-items:center}
   .m{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 15px;font-size:12px;color:var(--mut)}
   .m b{color:var(--navy);font-size:18px;display:block}
   .metrics a{color:var(--red);font-weight:600;font-size:12px;text-decoration:none;margin-left:auto}
   input, textarea { width:100%; background:#fff; color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit; }
   input:focus, textarea:focus { outline:none; border-color:var(--accent); }
-  textarea { min-height:90px; resize:vertical; }
-  .email-cell { min-width:340px; }
-  .row-actions { display:flex; gap:6px; flex-wrap:wrap; }
-  .row-actions button { padding:6px 9px; font-size:12px; }
+  textarea { min-height:70px; resize:vertical; }
   .muted { color:var(--mut); }
   .warn { color:var(--red); font-size:12px; }
-  .toast { position:fixed; bottom:20px; right:20px; background:var(--navy); color:#fff; border:1px solid var(--navy); padding:12px 16px; border-radius:9px; opacity:0; transition:.3s; box-shadow:0 8px 24px rgba(15,26,48,.2); }
+  .handled { font-size:11px; color:var(--green); font-weight:600; }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--navy); color:#fff; border:1px solid var(--navy); padding:12px 16px; border-radius:9px; opacity:0; transition:.3s; box-shadow:0 8px 24px rgba(15,26,48,.2); z-index:100; }
   .toast.show { opacity:1; }
-  .genbtn { font-size:12px; }
+  /* drawer */
+  .scrim { position:fixed; inset:0; background:rgba(15,26,48,.4); opacity:0; pointer-events:none; transition:.25s; z-index:40; }
+  .scrim.open { opacity:1; pointer-events:auto; }
+  .drawer { position:fixed; top:0; right:0; height:100%; width:min(560px,94vw); background:var(--bg); box-shadow:-12px 0 40px rgba(15,26,48,.2); transform:translateX(100%); transition:transform .28s cubic-bezier(.16,1,.3,1); z-index:41; display:flex; flex-direction:column; }
+  .drawer.open { transform:none; }
+  .dhead { background:var(--navy); color:#fff; padding:20px 24px; position:relative; }
+  .dhead::after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--red); }
+  .dhead h2 { margin:0; font-size:19px; }
+  .dhead .dsub { color:#b9c6de; font-size:13px; margin-top:3px; }
+  .dclose { position:absolute; top:16px; right:18px; background:rgba(255,255,255,.12); border:0; color:#fff; width:30px; height:30px; border-radius:8px; font-size:17px; cursor:pointer; }
+  .dbody { padding:20px 24px; overflow-y:auto; flex:1; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
+  .card h4 { margin:0 0 12px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); }
+  .kv { display:flex; justify-content:space-between; gap:12px; padding:5px 0; font-size:13px; }
+  .kv span { color:var(--mut); } .kv b { font-weight:600; text-align:right; word-break:break-word; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .actions button { flex:1; min-width:120px; }
+  .row2 { display:flex; gap:10px; } .row2 > div { flex:1; }
+  .fld label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); margin-bottom:5px; }
+  .timeline { position:relative; padding-left:18px; }
+  .timeline .ev { position:relative; padding:0 0 12px 4px; font-size:13px; }
+  .timeline .ev::before { content:""; position:absolute; left:-14px; top:5px; width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .timeline .ev:not(:last-child)::after { content:""; position:absolute; left:-11px; top:13px; bottom:-2px; width:2px; background:var(--line); }
+  .timeline .ev .when { color:var(--mut); font-size:11px; }
+  .note { border-left:2px solid var(--line); padding:2px 0 8px 12px; margin-bottom:8px; font-size:13px; }
+  .note .meta { color:var(--mut); font-size:11px; margin-top:2px; }
+  .dealbig { font-size:22px; font-weight:800; color:var(--navy); }
+  .emailbox { background:#f7f9fc; border:1px solid var(--line); border-radius:9px; padding:12px; font-size:13px; white-space:pre-wrap; max-height:200px; overflow-y:auto; }
 </style>
 </head>
 <body>
 <header>
   <img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/>
-  <span style="color:#8ea0c0;font-size:13px;font-weight:500;letter-spacing:.3px;border-left:1px solid rgba(255,255,255,.18);padding-left:16px">Outreach CRM</span>
+  <span class="htag">Outreach CRM</span>
   <div class="stats" id="stats"></div>
-  <button onclick="logout()" style="margin-left:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#cdd8ea;font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer">Log out</button>
+  <button class="logoutbtn" onclick="logout()">Log out</button>
 </header>
 <script>function logout(){fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login');}</script>
 <div class="bar">
   <button class="primary" onclick="generateAll()">✍️ Draft next 25 with AI</button>
-  <button class="green" onclick="sendApproved()">📤 Send approved (respects daily cap)</button>
+  <button class="green" onclick="sendApproved()">📤 Send approved</button>
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <input id="q" placeholder="Search business, city, email, category…" oninput="render()"/>
+  </div>
   <label class="muted">Filter:
     <select id="filter" onchange="render()">
       <option value="all">All</option>
+      <option value="needsresponse">🔥 Needs response</option>
       <option value="new">New</option>
-      <option value="drafted">Drafted (needs review)</option>
-      <option value="approved">Approved (ready to send)</option>
+      <option value="drafted">Drafted</option>
+      <option value="approved">Approved</option>
       <option value="sent">Sent</option>
+      <option value="clicked">Clicked</option>
+      <option value="audited">Audited</option>
       <option value="replied">Replied</option>
+      <option value="booked">Booked</option>
+      <option value="won">Won</option>
+      <option value="lost">Lost</option>
       <option value="rejected">Rejected</option>
       <option value="needsemail">Missing email</option>
     </select>
@@ -79,14 +125,19 @@
 <div class="metrics" id="metrics"></div>
 <div class="wrap">
   <table>
-    <thead><tr><th>Business</th><th>Email</th><th class="email-cell">Draft</th><th>Status</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Business</th><th>Email</th><th>Status</th><th>On it</th><th>Value</th><th>Updated</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
 </div>
+
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"><div id="drawerContent"></div></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-let state = { prospects: [], counts: {}, sentToday: 0, dailyCap: 40 };
+let state = { prospects: [], counts: {}, sentToday: 0, dailyCap: 40, team: ['Zac','Michelle'], wonValue:0, openValue:0 };
+let openId = null;
 
 async function api(url, method='GET', body) {
   const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined });
@@ -94,10 +145,15 @@ async function api(url, method='GET', body) {
   return r.json();
 }
 function toast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function money(n){ n=Number(n)||0; return n? '$'+n.toLocaleString() : ''; }
+function ago(iso){ if(!iso) return ''; const d=(Date.now()-new Date(iso))/86400000; if(d<1) return 'today'; if(d<2) return 'yesterday'; return Math.floor(d)+'d ago'; }
+function when(iso){ if(!iso) return ''; return new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
 
 async function load() {
   state = await api('/api/prospects');
   renderStats(); render(); loadMetrics();
+  if (openId) { const p = state.prospects.find(x=>x.id===openId); if(p) renderDrawer(p); }
 }
 async function loadMetrics() {
   try {
@@ -109,50 +165,147 @@ async function loadMetrics() {
     + `<div class="m">Book clicks<b>${t.clicks}</b></div>`
     + `<div class="m">📅 Calls booked<b>${t.booked||0}</b></div>`
     + `<div class="m">Visit rate<b>${t.clickRate}%</b></div>`
-    + `<div class="m">Book rate<b>${t.bookRate}%</b></div>`
     + `<a href="/go?ref=PREVIEW" target="_blank">↗ View the live landing page</a>`;
   } catch(e){}
 }
 function renderStats() {
   const c = state.counts;
-  const order = [['new','New'],['drafted','Drafted'],['approved','Approved'],['sent','Sent'],['replied','Replied']];
-  document.getElementById('stats').innerHTML = order.map(([k,l])=>`<div class="stat">${l}<b>${c[k]||0}</b></div>`).join('')
-    + `<div class="stat">Sent today<b>${state.sentToday}/${state.dailyCap}</b></div>`;
-  document.getElementById('capnote').textContent = `Daily cap ${state.dailyCap}. ${Math.max(0,state.dailyCap-state.sentToday)} sends left today.`;
+  const order = [['new','New'],['drafted','Drafted'],['approved','Approved'],['sent','Sent'],['replied','Replied'],['booked','Booked']];
+  let h = order.map(([k,l])=>`<div class="stat">${l}<b>${c[k]||0}</b></div>`).join('');
+  h += `<div class="stat win">Won<b>${c.won||0}</b></div>`;
+  h += `<div class="stat val">Pipeline<b>${money(state.openValue)||'$0'}</b></div>`;
+  h += `<div class="stat val">Won $<b>${money(state.wonValue)||'$0'}</b></div>`;
+  document.getElementById('stats').innerHTML = h;
+  document.getElementById('capnote').textContent = `Sent today ${state.sentToday}/${state.dailyCap}. ${Math.max(0,state.dailyCap-state.sentToday)} sends left.`;
 }
+function needsResponse(p){ return p.status==='replied' || (p.status==='booked' && !p.handled_by); }
 function render() {
   const f = document.getElementById('filter').value;
-  let list = state.prospects;
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  let list = state.prospects.slice();
   if (f==='needsemail') list = list.filter(p=>!p.email||!p.email.includes('@'));
+  else if (f==='needsresponse') list = list.filter(needsResponse);
   else if (f!=='all') list = list.filter(p=>p.status===f);
-  document.getElementById('rows').innerHTML = list.map(rowHtml).join('') || '<tr><td colspan=5 class="muted">No prospects in this view.</td></tr>';
+  if (q) list = list.filter(p => [p.business,p.city,p.category,p.email].some(v=>(v||'').toLowerCase().includes(q)));
+  // sort: needs-response first, then most recently updated
+  list.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
+  document.getElementById('rows').innerHTML = list.slice(0,400).map(rowHtml).join('') || '<tr><td colspan=6 class="muted">No leads in this view.</td></tr>';
+  document.getElementById('capnote').setAttribute('title', list.length+' matching');
 }
-function esc(s){return (s||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
 function rowHtml(p) {
   const hasEmail = p.email && p.email.includes('@');
-  return `<tr>
-    <td><div class="biz">${esc(p.business)}</div><div class="sub">${esc(p.category)} · ${esc(p.city)}</div>
-        <div class="sub">${p.rating?('⭐'+p.rating+' ('+p.reviews+')'):''}</div></td>
-    <td style="min-width:190px">
-      <input value="${esc(p.email)}" placeholder="add email…" onchange="upd('${p.id}',{email:this.value})"/>
-      ${!hasEmail?'<div class="warn">needs email</div>':''}
-    </td>
-    <td class="email-cell">
-      ${p.body ? `<input value="${esc(p.subject)}" onchange="upd('${p.id}',{subject:this.value})" style="margin-bottom:6px;font-weight:600"/>
-        <textarea onchange="upd('${p.id}',{body:this.value})">${esc(p.body)}</textarea>`
-      : `<button class="genbtn" onclick="gen('${p.id}')">✍️ Generate draft</button>`}
-    </td>
+  const flag = needsResponse(p) ? '🔥 ' : '';
+  return `<tr onclick="openDrawer('${p.id}')">
+    <td><div class="biz">${flag}${esc(p.business)}</div><div class="sub">${esc(p.category)} · ${esc(p.city)}${p.rating?' · ⭐'+esc(p.rating):''}</div></td>
+    <td class="sub">${hasEmail?esc(p.email):'<span class="warn">needs email</span>'}</td>
     <td><span class="pill s-${p.status}">${p.status}</span></td>
-    <td><div class="row-actions">
-      ${p.body?`<button onclick="gen('${p.id}')" title="regenerate">🔄</button>`:''}
-      ${p.status!=='approved'&&p.body?`<button class="green" onclick="upd('${p.id}',{status:'approved'})">✓ Approve</button>`:''}
-      ${p.status==='approved'?`<button class="primary" onclick="sendOne('${p.id}')" ${!hasEmail?'disabled':''}>📤 Send</button>`:''}
-      ${p.status!=='rejected'?`<button onclick="upd('${p.id}',{status:'rejected'})">✕</button>`:''}
-      ${p.status==='sent'?`<button onclick="upd('${p.id}',{status:'replied'})">💬 Replied</button>`:''}
-    </div></td>
+    <td class="handled">${p.handled_by?esc(p.handled_by):''}</td>
+    <td class="sub" style="font-weight:700;color:var(--navy)">${money(p.deal_value)}</td>
+    <td class="sub">${ago(p.updated_at)}</td>
   </tr>`;
 }
-async function upd(id, patch) { try { await api('/api/prospects/'+id,'PATCH',patch); await load(); } catch(e){toast(e.message);} }
+
+/* ---------- Lead detail drawer ---------- */
+function openDrawer(id){ openId=id; const p=state.prospects.find(x=>x.id===id); if(!p)return; renderDrawer(p); document.getElementById('drawer').classList.add('open'); document.getElementById('scrim').classList.add('open'); }
+function closeDrawer(){ openId=null; document.getElementById('drawer').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
+
+function renderDrawer(p){
+  const hasEmail = p.email && p.email.includes('@');
+  const teamOpts = ['<option value="">Unassigned</option>'].concat(state.team.map(t=>`<option value="${esc(t)}" ${p.handled_by===t?'selected':''}>${esc(t)}</option>`)).join('');
+  // timeline
+  const evs = [
+    ['Added', p.created_at],
+    ['Drafted', p.status!=='new'&&p.body? (p.drafted_at||null):null],
+    ['Sent', p.sent_at],
+    ['Opened landing page', p.viewed_at],
+    ['Clicked book', p.clicked_at],
+    ['Ran audit', p.audited_at],
+    p.last_followup_at?[`Follow-up ${p.followup_step||''} sent`, p.last_followup_at]:null,
+    ['Replied', p.replied_at],
+    ['Booked call', p.booked_at],
+    ['Won', p.won_at],
+    ['Lost', p.lost_at],
+    ['Rejected', p.rejected_at],
+  ].filter(x=>x&&x[1]).sort((a,b)=>new Date(a[1])-new Date(b[1]));
+  const tl = evs.length? evs.map(e=>`<div class="ev"><div>${esc(e[0])}</div><div class="when">${when(e[1])}</div></div>`).join('') : '<div class="muted" style="font-size:13px">No activity yet.</div>';
+  const notes = (p.notes||[]).slice().reverse().map(n=>`<div class="note">${esc(n.text)}<div class="meta">${n.by?esc(n.by)+' · ':''}${when(n.ts)}</div></div>`).join('') || '<div class="muted" style="font-size:13px">No notes yet.</div>';
+  const st = p.status;
+  document.getElementById('drawerContent').innerHTML = `
+  <div class="dhead">
+    <button class="dclose" onclick="closeDrawer()">×</button>
+    <h2>${esc(p.business)}</h2>
+    <div class="dsub">${esc(p.category)} · ${esc(p.city)}, GA ${p.rating?'· ⭐'+esc(p.rating)+' ('+esc(p.reviews)+')':''}</div>
+    <div style="margin-top:10px"><span class="pill s-${st}">${st}</span></div>
+  </div>
+  <div class="dbody">
+    <div class="card">
+      <h4>Move this lead</h4>
+      <div class="actions">
+        ${p.body&&st!=='approved'?`<button class="green" onclick="setStatus('${p.id}','approved')">✓ Approve</button>`:''}
+        ${st==='approved'?`<button class="primary" onclick="sendOne('${p.id}')" ${!hasEmail?'disabled':''}>📤 Send now</button>`:''}
+        ${['sent','clicked','audited'].includes(st)?`<button class="green" onclick="setStatus('${p.id}','replied')">💬 They replied</button>`:''}
+        ${['sent','clicked','audited','replied'].includes(st)?`<button onclick="setStatus('${p.id}','booked')">📅 Booked a call</button>`:''}
+        ${['replied','booked','audited','clicked'].includes(st)?`<button class="green" onclick="markWon('${p.id}')">🏆 Won</button>`:''}
+        ${st!=='lost'&&st!=='won'?`<button onclick="setStatus('${p.id}','lost')">Lost</button>`:''}
+        ${st!=='rejected'?`<button class="red" onclick="setStatus('${p.id}','rejected')">Reject</button>`:''}
+        ${st==='new'||!p.body?`<button class="primary" onclick="gen('${p.id}')">✍️ Generate email</button>`:''}
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Response &amp; deal</h4>
+      <div class="row2">
+        <div class="fld"><label>Who's on it (responses)</label>
+          <select onchange="patch('${p.id}',{handled_by:this.value})">${teamOpts}</select></div>
+        <div class="fld"><label>Deal value</label>
+          <input value="${p.deal_value?esc(p.deal_value):''}" placeholder="$0" onchange="patch('${p.id}',{deal_value:this.value})"/></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Contact</h4>
+      <div class="fld"><label>Email</label>
+        <input value="${esc(p.email)}" placeholder="add email…" onchange="patch('${p.id}',{email:this.value})"/></div>
+      <div class="kv"><span>Phone</span><b>${esc(p.phone)||'—'}</b></div>
+      <div class="kv"><span>Website</span><b>${p.website?`<a href="${esc(p.website)}" target="_blank">${esc(p.website)}</a>`:'—'}</b></div>
+      <div class="kv"><span>Landing page</span><b><a href="/go?ref=${p.id}" target="_blank">open ↗</a></b></div>
+    </div>
+
+    ${p.body?`<div class="card"><h4>Outreach email</h4>
+      <div class="fld"><label>Subject</label><input value="${esc(p.subject)}" onchange="patch('${p.id}',{subject:this.value})"/></div>
+      <div class="fld" style="margin-top:10px"><label>Body</label><textarea onchange="patch('${p.id}',{body:this.value})" style="min-height:150px">${esc(p.body)}</textarea></div>
+      <button style="margin-top:10px" onclick="gen('${p.id}')">🔄 Regenerate</button>
+    </div>`:''}
+
+    ${p.audit_report?`<div class="card"><h4>Audit scores</h4>
+      <div class="kv"><span>Website</span><b>${esc(p.audit_report.websiteScore)}/100</b></div>
+      <div class="kv"><span>Local visibility</span><b>${esc(p.audit_report.visibilityScore)}/10</b></div>
+      <div class="kv"><span>Social</span><b>${esc(p.audit_report.socialScore)}/10</b></div>
+      ${p.audit_email?`<div class="kv"><span>Audit email</span><b>${esc(p.audit_email)}</b></div>`:''}
+    </div>`:''}
+
+    <div class="card">
+      <h4>Timeline</h4>
+      <div class="timeline">${tl}</div>
+    </div>
+
+    <div class="card">
+      <h4>Notes</h4>
+      <textarea id="noteInput" placeholder="Log a call, a reply, next step…"></textarea>
+      <div class="row2" style="margin-top:8px;align-items:center">
+        <select id="noteBy" style="flex:0 0 130px">${['<option value="">— by —</option>'].concat(state.team.map(t=>`<option>${esc(t)}</option>`)).join('')}</select>
+        <button class="primary" onclick="addNote('${p.id}')">Add note</button>
+      </div>
+      <div style="margin-top:14px">${notes}</div>
+    </div>
+  </div>`;
+}
+
+async function patch(id, body){ try{ await api('/api/prospects/'+id,'PATCH',body); await load(); }catch(e){toast(e.message);} }
+async function setStatus(id, status){ await patch(id,{status}); toast('Moved to '+status); }
+async function markWon(id){ const v=prompt('Deal value for this win? (numbers only)',''); const body={status:'won'}; if(v!==null&&v.trim())body.deal_value=v; await patch(id,body); toast('🏆 Marked won'); }
+async function addNote(id){ const t=document.getElementById('noteInput').value.trim(); const by=document.getElementById('noteBy').value; if(!t){toast('Write a note first');return;} try{ await api('/api/prospects/'+id+'/note','POST',{text:t,by}); document.getElementById('noteInput').value=''; await load(); toast('Note added'); }catch(e){toast(e.message);} }
 async function gen(id) { toast('Drafting…'); try { await api('/api/prospects/'+id+'/generate','POST'); await load(); toast('Draft ready'); } catch(e){toast(e.message);} }
 async function generateAll() { toast('Drafting next 25 (may take a minute)…'); try { const r=await api('/api/generate-all','POST',{limit:25}); await load(); toast('Drafted '+r.drafted); } catch(e){toast(e.message);} }
 async function sendOne(id) { try { await api('/api/prospects/'+id+'/send','POST'); await load(); toast('Sent'); } catch(e){toast('Send failed: '+e.message);} }

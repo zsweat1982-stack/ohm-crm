@@ -11,8 +11,11 @@
     "email": "woodstock@atlfitness247.com",
     "subject": "",
     "body": "",
-    "status": "new",
-    "updated_at": "2026-07-10T16:45:19.311Z"
+    "status": "audited",
+    "updated_at": "2026-07-20T06:15:20.908Z",
+    "handled_by": "",
+    "deal_value": 0,
+    "notes": []
   },
   {
     "id": "P003",
@@ -361,7 +364,7 @@
   },
   {
     "id": "P054",
-    "business": "The Beauty Barn\u00ae",
+    "business": "The Beauty Barn®",
     "category": "Medical spa",
     "city": "Canton",
     "phone": "(678) 946-2050",
@@ -380,7 +383,7 @@
       "websiteScore": 42,
       "visibilityScore": 7,
       "socialScore": 6,
-      "headline": "Here is where The Beauty Barn\u00ae is leaving booked appointments on the table",
+      "headline": "Here is where The Beauty Barn® is leaving booked appointments on the table",
       "findings": [
         {
           "area": "Website",
@@ -3799,7 +3802,7 @@
   },
   {
     "id": "F572",
-    "business": "HA\u016aS OF HAIR",
+    "business": "HAŪS OF HAIR",
     "category": "Hair salon",
     "city": "Sandy Springs",
     "phone": "(770) 970-5410",
@@ -5104,7 +5107,7 @@
   },
   {
     "id": "F765",
-    "business": "Nail On The Head Renovation Pro\u2019s LLC. (NOTH)",
+    "business": "Nail On The Head Renovation Pro’s LLC. (NOTH)",
     "category": "Pressure washing service",
     "city": "Atlanta",
     "phone": "(912) 527-1532",
@@ -7534,7 +7537,7 @@
   },
   {
     "id": "X1261",
-    "business": "Garrett\u2019s Bespoke Barber Shop, LLC",
+    "business": "Garrett’s Bespoke Barber Shop, LLC",
     "category": "Barber shop",
     "city": "Marietta",
     "phone": "",
@@ -8449,7 +8452,7 @@
   },
   {
     "id": "X1379",
-    "business": "Pebble\u2019s Polish Sweet Spa",
+    "business": "Pebble’s Polish Sweet Spa",
     "category": "Children's party service",
     "city": "Marietta",
     "phone": "(770) 822-4343",
@@ -9664,7 +9667,7 @@
   },
   {
     "id": "X1577",
-    "business": "Red Hat Painting Atlanta\u00ae",
+    "business": "Red Hat Painting Atlanta®",
     "category": "Painter",
     "city": "Chamblee",
     "phone": "(470) 470-4075",
@@ -14284,7 +14287,7 @@
   },
   {
     "id": "X2333",
-    "business": "Red Hat Painting Lake Lanier\u00ae",
+    "business": "Red Hat Painting Lake Lanier®",
     "category": "Painter",
     "city": "Cumming",
     "phone": "(470) 470-4075",
@@ -15094,7 +15097,7 @@
   },
   {
     "id": "X2451",
-    "business": "L\u00e9hc\u00e4r Aesthetics",
+    "business": "Léhcär Aesthetics",
     "category": "Medical spa",
     "city": "Cumming",
     "phone": "(678) 773-6117",
@@ -15514,7 +15517,7 @@
   },
   {
     "id": "X2493",
-    "business": "McManes Law \u2013 Personal Injury Attorneys in Alpharetta",
+    "business": "McManes Law – Personal Injury Attorneys in Alpharetta",
     "category": "Personal injury attorney",
     "city": "Alpharetta",
     "phone": "(770) 645-8801",
@@ -15949,7 +15952,7 @@
   },
   {
     "id": "X2557",
-    "business": "Coll\u00e1ge Salon",
+    "business": "Colláge Salon",
     "category": "Hair salon",
     "city": "Alpharetta",
     "phone": "(770) 752-8092",
@@ -17029,7 +17032,7 @@
   },
   {
     "id": "X2731",
-    "business": "Chelo\u2019s Barber Studio",
+    "business": "Chelo’s Barber Studio",
     "category": "Barber shop",
     "city": "Buford",
     "phone": "(470) 912-6265",
@@ -17314,7 +17317,7 @@
   },
   {
     "id": "X2772",
-    "business": "Lux\u00e2me Salon Studios",
+    "business": "Luxâme Salon Studios",
     "category": "Hair salon",
     "city": "Sugar Hill",
     "phone": "(470) 499-4522",
@@ -17974,7 +17977,7 @@
   },
   {
     "id": "X2878",
-    "business": "Mia Med Spa \ubbf8\uc544 \uba54\ub4dc\uc2a4\ud30c",
+    "business": "Mia Med Spa 미아 메드스파",
     "category": "Skin care clinic",
     "city": "Duluth",
     "phone": "(678) 777-3845",
@@ -21289,7 +21292,7 @@
   },
   {
     "id": "X3451",
-    "business": "Cathy\u2019s Hair Shack",
+    "business": "Cathy’s Hair Shack",
     "category": "Hair salon",
     "city": "Dallas",
     "phone": "(678) 858-4557",
