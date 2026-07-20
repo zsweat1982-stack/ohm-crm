@@ -811,7 +811,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // Prospect-facing routes + login stay open; everything else needs the cookie (when APP_PASSWORD set).
 // Prospect-facing routes stay open: the landing page, its live-scan audit submit, tracking
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
-const PUBLIC_PATHS = ['/go', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout', '/api/ps-debug'];
+const PUBLIC_PATHS = ['/go', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -938,20 +938,6 @@ app.post('/api/generate-all', async (req, res) => {
     } catch (e) { /* skip on error */ }
   }
   res.json({ drafted: done });
-});
-
-// TEMP diagnostic: shows why PageSpeed is or is not returning data (no key leak).
-app.get('/api/ps-debug', async (req, res) => {
-  const url = req.query.url || 'https://example.com';
-  const key = process.env.PAGESPEED_KEY || '';
-  const t0 = Date.now();
-  try {
-    const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance${key ? '&key=' + key : ''}`;
-    const r = await fetch(api, { signal: AbortSignal.timeout(30000) });
-    const body = await r.text();
-    let errMsg = null; try { errMsg = JSON.parse(body)?.error?.message || null; } catch {}
-    res.json({ pagespeedKeyPresent: !!key, placesKeyPresent: !!(process.env.PLACES_KEY), httpStatus: r.status, ok: r.ok, tookMs: Date.now() - t0, googleError: errMsg, snippet: body.slice(0, 200) });
-  } catch (e) { res.json({ pagespeedKeyPresent: !!key, tookMs: Date.now() - t0, fetchError: e.message }); }
 });
 
 // THE living landing page — one URL for everyone. ?ref=<prospectId> for attribution.
