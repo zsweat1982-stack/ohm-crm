@@ -299,7 +299,7 @@ Return ONLY JSON:
  "estimate": "one line on the realistic leads/revenue upside of closing these gaps"
 }
 Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype words like leverage, unlock, synergy, supercharge. Specific to THIS scan, never generic.`;
-  const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] });
+  const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
   let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/); if (m) txt = m[0];
   const report = JSON.parse(txt);

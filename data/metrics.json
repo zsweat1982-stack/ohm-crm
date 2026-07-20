@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "type": "audit",
+    "ref": null,
+    "ts": "2026-07-20T07:18:01.813Z",
+    "email": "test@example.com",
+    "business": null
+  }
+]
