@@ -595,7 +595,7 @@ app.get('/api/prospects', (_, res) => {
 });
 
 // Team members who can be "on" a response. Configurable via TEAM env (comma list).
-const TEAM = (process.env.TEAM || 'Zac,Michelle').split(',').map(s => s.trim()).filter(Boolean);
+const TEAM = (process.env.TEAM || 'Zac,Michelle,Brad,Griffin').split(',').map(s => s.trim()).filter(Boolean);
 
 app.patch('/api/prospects/:id', (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
