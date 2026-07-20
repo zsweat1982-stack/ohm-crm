@@ -312,7 +312,7 @@ async function generateAuditReport(p, scan, ps, gbp, answers) {
   const prompt = `You are a senior growth strategist at Open Heart Media (OHM). Produce a thorough, elite growth audit for a local business based ONLY on the real scan data below. It must read like a paid consultant did it: specific, researched, and honest. Tie findings to lost leads and revenue. This report is what earns the discovery call, so it must be genuinely valuable and impressively detailed, while keeping the exact HOW of fixing things at a strategic level (name the gap and the opportunity, do not write the full implementation playbook).
 
 BUSINESS: ${p.business || 'this business'}, a ${p.category || 'local business'} in ${p.city || 'their area'}, GA. Google rating ${p.rating || 'n/a'} from ${p.reviews || 'n/a'} reviews.
-THEIR STATED GOAL: ${answers.goal || 'more customers'}
+WHAT THEY WANT MORE OF: ${answers.goal || 'more customers'}  (weave this in naturally where relevant. NEVER write the phrases "stated goal", "stated business goal", or "your stated goal". Just refer to what they want in plain words.)
 
 FULL TECHNICAL + MARKETING SCAN (real, just run):
 GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, bestPractices: ps.bestPractices, LCP: ps.lcpLabel, CLS: ps.clsLabel, TBT: ps.tbtLabel }) : 'unavailable'}
