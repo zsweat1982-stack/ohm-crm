@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ohm-crm
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: NODE_VERSION
+        value: "20"
+      # Secrets below are set in the Render dashboard, not committed:
+      # APP_PASSWORD, AUTH_SECRET, ANTHROPIC_API_KEY, SENDGRID_API_KEY,
+      # SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, CALENDLY_URL, NOTIFY_EMAILS,
+      # LANDING_URL, DAILY_SEND_CAP, PAGESPEED_KEY
+    disk:
+      name: ohm-data
+      mountPath: /data
+      sizeGB: 1

@@ -9,7 +9,18 @@ import PDFDocument from 'pdfkit';
 import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA = path.join(__dirname, 'data', 'prospects.json');
+// Runtime data lives in DATA_DIR (a persistent disk in production). The committed ./data folder
+// is the seed: on first boot to a fresh disk, copy the seed prospects in so nothing is lost.
+const SEED_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || SEED_DIR;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+if (DATA_DIR !== SEED_DIR) {
+  for (const f of ['prospects.json', 'metrics.json']) {
+    const dst = path.join(DATA_DIR, f), src = path.join(SEED_DIR, f);
+    if (!fs.existsSync(dst) && fs.existsSync(src)) fs.copyFileSync(src, dst);
+  }
+}
+const DATA = path.join(DATA_DIR, 'prospects.json');
 const CSV = path.join(__dirname, '..', 'PROSPECTS_cherokee_LOCAL.csv');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -261,7 +272,7 @@ function loadSite() {
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SITE_FILE, 'utf8')) }; } catch { return defaults; }
 }
 
-const METRICS = path.join(__dirname, 'data', 'metrics.json');
+const METRICS = path.join(DATA_DIR, 'metrics.json');
 function loadMetrics() { try { return JSON.parse(fs.readFileSync(METRICS, 'utf8')); } catch { return []; } }
 function saveMetrics() { fs.writeFileSync(METRICS, JSON.stringify(events, null, 2)); }
 let events = loadMetrics();
