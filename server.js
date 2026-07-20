@@ -257,7 +257,7 @@ function buildAuditPDF(business, report, bookingUrl) {
 
 // ---------- ONE living landing page (the funnel) + metrics ----------
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-const CALENDLY = process.env.CALENDLY_URL || 'https://calendly.com/openheartmedia/discovery';
+const CALENDLY = process.env.CALENDLY_URL || 'https://calendly.com/michelle-openheartmediaco/discovery-call-with-open-heart-media';
 // Editable page content (video + case studies) — edit app/data/site.json, no code changes needed.
 const SITE_FILE = path.join(__dirname, 'data', 'site.json');
 function loadSite() {
