@@ -533,7 +533,9 @@ const APP_PASSWORD = process.env.APP_PASSWORD || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'ohm-default-secret';
 const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-access-v1').digest('hex');
 // Prospect-facing routes + login stay open; everything else needs the cookie (when APP_PASSWORD set).
-const PUBLIC_PATHS = ['/go', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+// Prospect-facing routes stay open: the landing page, its live-scan audit submit, tracking
+// beacon, and the Calendly webhook. Everything else needs the team login cookie.
+const PUBLIC_PATHS = ['/go', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
