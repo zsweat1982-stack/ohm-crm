@@ -509,9 +509,9 @@ function buildAuditPDF(business, report, bookingUrl) {
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(14).text('Want us to help you close these gaps?', M, y);
     doc.fillColor(BODY).font('Helvetica').fontSize(10.5).text(report.summary || 'Book a free 30 minute discovery call and we will walk through your biggest opportunities and see if we are the right fit.', M, doc.y + 5, { width: CW, lineGap: 1 });
     y = doc.y + 12;
-    doc.roundedRect(M, y, 250, 38, 9).fill(RED);
-    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(12).text('Book your free discovery call', M, y + 13, { width: 250, align: 'center', link: bookingUrl, underline: false });
-    doc.fillColor(MUT).font('Helvetica').fontSize(9).text(bookingUrl, M + 262, y + 15, { width: CW - 262, link: bookingUrl });
+    doc.roundedRect(M, y, 250, 40, 9).fill(RED);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(12.5).text('Book your free discovery call', M, y + 14, { width: 250, align: 'center', link: bookingUrl, underline: false });
+    doc.fillColor(MUT).font('Helvetica').fontSize(9.5).text('30 minutes. No pitch, no pressure.', M + 262, y + 15, { width: CW - 262, link: bookingUrl });
 
     // footer on every page
     const range = doc.bufferedPageRange();
@@ -1065,10 +1065,30 @@ async function notifyAudit(p, email, report, pdf) {
 async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
   if (!process.env.SENDGRID_API_KEY || !to) return;
   const overall = overallScore(report);
-  const text = `Hi,\n\nHere is your free growth audit for ${business || 'your business'}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${report.findings?.[0]?.title || 'a few fixable gaps'}.\n\nWant us to help you close these gaps? Grab a free 30 minute discovery call here:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
+  const biz = business || 'your business';
+  const topGap = report.findings?.[0]?.title || 'a few fixable gaps';
+  // Plain-text fallback (the raw URL lives here, out of sight of most readers)
+  const text = `Hi,\n\nHere is your free growth audit for ${biz}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${topGap}.\n\nWant us to help you close these gaps? Book a free 30 minute discovery call:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
+  // Branded HTML with a clean button instead of a raw link
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f1a30;line-height:1.55">
+  <div style="background:#1a2b4c;border-radius:12px 12px 0 0;padding:22px 26px;border-bottom:3px solid #df3131">
+    <div style="color:#fff;font-weight:800;font-size:16px;letter-spacing:.3px">OPEN HEART MEDIA</div>
+    <div style="color:#8ea0c0;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-top:2px">Growth Audit</div>
+  </div>
+  <div style="border:1px solid #e4e9f2;border-top:0;border-radius:0 0 12px 12px;padding:26px">
+    <p style="margin:0 0 14px">Hi,</p>
+    <p style="margin:0 0 14px">Here is your free growth audit for <b>${esc(biz)}</b>, attached as a PDF.</p>
+    <p style="margin:0 0 6px">Your overall growth score:</p>
+    <div style="font-size:34px;font-weight:800;color:#1a2b4c;margin:0 0 14px">${overall}<span style="font-size:16px;color:#8a97ad">/100</span></div>
+    <p style="margin:0 0 20px">The biggest thing costing you leads right now: <b>${esc(topGap)}</b>.</p>
+    <p style="margin:0 0 18px">Want us to help you close these gaps? Grab a free 30 minute discovery call. No pitch, no pressure.</p>
+    <a href="${bookingUrl}" style="display:inline-block;background:#df3131;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 30px;border-radius:10px">Book your discovery call</a>
+    <p style="margin:26px 0 0;color:#68758c;font-size:13px">Zac<br/>Open Heart Media</p>
+  </div>
+</div>`;
   try {
     await sgMail.send({ to, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
-      subject: `your growth audit for ${business || 'your business'}`, text,
+      subject: `your growth audit for ${biz}`, text, html,
       attachments: [{ content: pdf.toString('base64'), filename: 'growth-audit.pdf', type: 'application/pdf', disposition: 'attachment' }] });
   } catch (e) { console.error('[audit-email]', e.message); }
 }
