@@ -114,28 +114,80 @@ Return ONLY JSON: {"subject": "...", "body": "..."}`;
 }
 const LANDING_URL = process.env.LANDING_URL || `http://localhost:${process.env.PORT || 4100}/go`;
 
-// ---------- SCANNING AUDIT ENGINE (real website + social scan) ----------
+// ---------- SCANNING AUDIT ENGINE (deep website + social + marketing scan) ----------
 async function scanWebsite(rawUrl) {
   let url = (rawUrl || '').trim();
   if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
-  const out = { url, reachable: false, https: url.startsWith('https'), title: null, description: null,
-    hasPhone: false, hasEmailLink: false, hasForm: false, hasBooking: false, mobileViewport: false, socials: {} };
+  const out = {
+    url, reachable: false, https: url.startsWith('https'), redirectsToHttps: false, finalUrl: null,
+    // content / SEO
+    title: null, titleLen: 0, description: null, descriptionLen: 0, h1Count: 0, wordCount: 0,
+    mobileViewport: false, favicon: false, ogTitle: false, ogImage: false, schemaLocalBusiness: false, canonical: false,
+    // conversion
+    hasPhone: false, hasEmailLink: false, hasForm: false, hasBooking: false, hasNewsletter: false,
+    hasLiveChat: false, hasCta: false, napAddress: false,
+    // tracking / data
+    analytics: false, analyticsType: null, fbPixel: false, googleAdsTag: false,
+    // media / trust
+    imgCount: 0, imgMissingAlt: 0, hasVideo: false, mixedContent: false, copyrightYear: null,
+    // social
+    socials: {},
+  };
   if (!url) return out;
   try {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(12000), headers: { 'User-Agent': 'Mozilla/5.0 (OHM Audit Bot)' } });
+    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(13000), headers: { 'User-Agent': 'Mozilla/5.0 (OHM Audit Bot)' } });
     out.reachable = res.ok;
     out.finalUrl = res.url;
-    const html = (await res.text()).slice(0, 500000);
+    out.redirectsToHttps = res.url.startsWith('https');
+    out.https = res.url.startsWith('https');
+    const html = (await res.text()).slice(0, 800000);
+    const head = html.slice(0, 200000);
+
+    // ----- content / SEO -----
     out.title = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || null;
-    out.description = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || [])[1] || null;
-    out.mobileViewport = /<meta[^>]+name=["']viewport["']/i.test(html);
+    out.titleLen = out.title ? out.title.length : 0;
+    out.description = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [])[1] || null;
+    out.descriptionLen = out.description ? out.description.length : 0;
+    out.mobileViewport = /<meta[^>]+name=["']viewport["']/i.test(head);
+    out.favicon = /<link[^>]+rel=["'][^"']*icon[^"']*["']/i.test(head);
+    out.ogTitle = /<meta[^>]+property=["']og:title["']/i.test(head);
+    out.ogImage = /<meta[^>]+property=["']og:image["']/i.test(head);
+    out.canonical = /<link[^>]+rel=["']canonical["']/i.test(head);
+    out.schemaLocalBusiness = /("@type"\s*:\s*"(LocalBusiness|Dentist|MedicalBusiness|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|ProfessionalService|Store|HealthAndBeautyBusiness)"|itemtype=["'][^"']*schema.org\/LocalBusiness)/i.test(html);
+    out.h1Count = (html.match(/<h1[\s>]/gi) || []).length;
+    const textOnly = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    out.wordCount = textOnly ? textOnly.split(' ').length : 0;
+
+    // ----- conversion -----
     out.hasPhone = /href=["']tel:/i.test(html);
     out.hasEmailLink = /href=["']mailto:/i.test(html);
     out.hasForm = /<form/i.test(html);
-    out.hasBooking = /(book now|schedule|appointment|calendly|acuity|book online|reserve|request (a )?quote)/i.test(html);
+    out.hasBooking = /(book now|schedule|appointment|calendly|acuity|squareup\.com\/appointments|book online|reserve|request (a )?quote|get (a )?quote)/i.test(html);
+    out.hasNewsletter = /(newsletter|subscribe|join (our )?(email|list|mailing)|sign up for)/i.test(html) || /<input[^>]+type=["']email["']/i.test(html);
+    out.hasLiveChat = /(intercom|drift\.com|tawk\.to|zendesk|tidio|crisp\.chat|hubspot.*conversations|livechatinc|facebook.*customerchat|messenger.*chat|gorgias|podium)/i.test(html);
+    out.hasCta = /(get (a |your )?(free )?(quote|estimate|consultation|audit|demo)|call now|contact us|book (a |your )?|schedule|request )/i.test(html);
+    out.napAddress = /\b\d{1,6}\s+[A-Za-z0-9.\s]{3,40}\b(street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|suite|ste\.?|hwy|highway|pkwy|parkway)\b/i.test(textOnly) || /\bGA\s+3\d{4}\b/.test(textOnly);
+
+    // ----- tracking / data -----
+    if (/googletagmanager\.com\/gtm|GTM-[A-Z0-9]+/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Tag Manager'; }
+    else if (/gtag\(|googletagmanager\.com\/gtag|G-[A-Z0-9]{6,}/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Analytics 4'; }
+    else if (/google-analytics\.com\/analytics|ga\('create'|UA-\d{4,}/i.test(html)) { out.analytics = true; out.analyticsType = 'Universal Analytics (legacy)'; }
+    out.fbPixel = /connect\.facebook\.net\/[^"']*fbevents|fbq\(/i.test(html);
+    out.googleAdsTag = /AW-\d{6,}|googleadservices\.com|google_conversion/i.test(html);
+
+    // ----- media / trust -----
+    const imgs = html.match(/<img[^>]*>/gi) || [];
+    out.imgCount = imgs.length;
+    out.imgMissingAlt = imgs.filter(t => !/alt=["'][^"']+["']/i.test(t)).length;
+    out.hasVideo = /(<video|youtube\.com\/embed|player\.vimeo\.com|wistia|<iframe[^>]+youtube)/i.test(html);
+    out.mixedContent = out.https && /(src|href)=["']http:\/\/(?!localhost)/i.test(html);
+    out.copyrightYear = (html.match(/(?:©|&copy;|copyright)\s*(20\d{2})/i) || [])[1] || null;
+
+    // ----- social -----
     const socialRe = { facebook: /facebook\.com\/[A-Za-z0-9._%-]+/i, instagram: /instagram\.com\/[A-Za-z0-9._%-]+/i,
       tiktok: /tiktok\.com\/@?[A-Za-z0-9._%-]+/i, youtube: /youtube\.com\/[A-Za-z0-9@._%/-]+/i,
-      linkedin: /linkedin\.com\/(company|in)\/[A-Za-z0-9._%-]+/i };
+      linkedin: /linkedin\.com\/(company|in)\/[A-Za-z0-9._%-]+/i, x: /(twitter\.com|x\.com)\/[A-Za-z0-9._%-]+/i };
     for (const [k, re] of Object.entries(socialRe)) { const m = html.match(re); if (m) out.socials[k] = m[0]; }
   } catch (e) { out.error = e.message; }
   return out;
@@ -145,112 +197,274 @@ async function runPageSpeed(url) {
   if (!url) return null;
   try {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
-    const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility${key}`;
+    const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices${key}`;
     const r = await fetch(api, { signal: AbortSignal.timeout(28000) });
     if (!r.ok) return null;
     const d = await r.json();
     const c = d.lighthouseResult?.categories || {};
+    const a = d.lighthouseResult?.audits || {};
     const s = x => x?.score != null ? Math.round(x.score * 100) : null;
-    return { performance: s(c.performance), seo: s(c.seo), accessibility: s(c.accessibility) };
+    const num = k => a[k]?.numericValue != null ? a[k].numericValue : null;
+    // Core Web Vitals + key timings (numericValue in ms, except CLS unitless)
+    return {
+      performance: s(c.performance), seo: s(c.seo), accessibility: s(c.accessibility), bestPractices: s(c['best-practices']),
+      lcp: num('largest-contentful-paint'), cls: num('cumulative-layout-shift'), tbt: num('total-blocking-time'),
+      fcp: num('first-contentful-paint'), si: num('speed-index'),
+      lcpLabel: a['largest-contentful-paint']?.displayValue || null,
+      clsLabel: a['cumulative-layout-shift']?.displayValue || null,
+      tbtLabel: a['total-blocking-time']?.displayValue || null,
+    };
   } catch { return null; }
 }
 
+// Build a full pass/fail checklist from the scan so the audit shows everything we looked at.
+function buildChecklist(scan, ps) {
+  const socials = Object.keys(scan.socials || {});
+  return [
+    { group: 'Foundation & Speed', items: [
+      { label: 'Secure HTTPS connection', ok: scan.https },
+      { label: 'Mobile friendly (responsive viewport)', ok: scan.mobileViewport },
+      { label: 'Mobile page speed', ok: ps?.performance != null ? ps.performance >= 50 : null, note: ps?.performance != null ? ps.performance + '/100' : 'n/a' },
+      { label: 'Largest Contentful Paint under 2.5s', ok: ps?.lcp != null ? ps.lcp <= 2500 : null, note: ps?.lcpLabel || '' },
+      { label: 'Layout stable while loading (CLS)', ok: ps?.cls != null ? ps.cls <= 0.1 : null, note: ps?.clsLabel || '' },
+      { label: 'No insecure mixed content', ok: !scan.mixedContent },
+    ]},
+    { group: 'Getting Found (SEO)', items: [
+      { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : false, note: scan.title ? scan.titleLen + ' chars' : 'missing' },
+      { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : false, note: scan.description ? scan.descriptionLen + ' chars' : 'missing' },
+      { label: 'Single clear H1 headline', ok: scan.h1Count === 1, note: scan.h1Count + ' found' },
+      { label: 'Local business schema markup', ok: scan.schemaLocalBusiness },
+      { label: 'Canonical tag set', ok: scan.canonical },
+      { label: 'Enough content on the page', ok: scan.wordCount >= 300, note: scan.wordCount + ' words' },
+    ]},
+    { group: 'Turning Visitors Into Leads', items: [
+      { label: 'Click to call phone number', ok: scan.hasPhone },
+      { label: 'Lead capture form', ok: scan.hasForm },
+      { label: 'Online booking / scheduling', ok: scan.hasBooking },
+      { label: 'Clear call to action', ok: scan.hasCta },
+      { label: 'Live chat', ok: scan.hasLiveChat },
+      { label: 'Email / newsletter capture', ok: scan.hasNewsletter },
+      { label: 'Address listed (local trust)', ok: scan.napAddress },
+    ]},
+    { group: 'Tracking & Ad Readiness', items: [
+      { label: 'Website analytics installed', ok: scan.analytics, note: scan.analyticsType || '' },
+      { label: 'Facebook / Meta pixel (retargeting)', ok: scan.fbPixel },
+      { label: 'Google Ads conversion tag', ok: scan.googleAdsTag },
+    ]},
+    { group: 'Content, Media & Social', items: [
+      { label: 'Video on site', ok: scan.hasVideo },
+      { label: 'Images have alt text', ok: scan.imgCount ? scan.imgMissingAlt === 0 : null, note: scan.imgCount ? (scan.imgCount - scan.imgMissingAlt) + '/' + scan.imgCount : 'none' },
+      { label: 'Social share preview (Open Graph)', ok: scan.ogTitle && scan.ogImage },
+      { label: 'Facebook linked', ok: socials.includes('facebook') },
+      { label: 'Instagram linked', ok: socials.includes('instagram') },
+      { label: 'YouTube linked', ok: socials.includes('youtube') },
+      { label: 'TikTok linked', ok: socials.includes('tiktok') },
+    ]},
+  ];
+}
+
 async function generateAuditReport(p, scan, ps, answers) {
-  const prompt = `You are a sharp marketing auditor at Open Heart Media (OHM). Produce a REAL, specific growth audit for a local business, based ONLY on the scan data below. It must feel researched, not generic. Tie every finding to lost leads or revenue.
+  const checklist = buildChecklist(scan, ps);
+  const flat = checklist.flatMap(g => g.items.map(i => `${i.ok === true ? 'PASS' : i.ok === false ? 'FAIL' : 'n/a'} - ${g.group}: ${i.label}${i.note ? ' (' + i.note + ')' : ''}`)).join('\n');
+  const prompt = `You are a senior growth strategist at Open Heart Media (OHM). Produce a thorough, elite growth audit for a local business based ONLY on the real scan data below. It must read like a paid consultant did it: specific, researched, and honest. Tie findings to lost leads and revenue. This report is what earns the discovery call, so it must be genuinely valuable and impressively detailed, while keeping the exact HOW of fixing things at a strategic level (name the gap and the opportunity, do not write the full implementation playbook).
 
 BUSINESS: ${p.business || 'this business'}, a ${p.category || 'local business'} in ${p.city || 'their area'}, GA. Google rating ${p.rating || 'n/a'} from ${p.reviews || 'n/a'} reviews.
 THEIR STATED GOAL: ${answers.goal || 'more customers'}
 
-WEBSITE SCAN: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileReady: scan.mobileViewport, clearPhone: scan.hasPhone, leadForm: scan.hasForm, onlineBooking: scan.hasBooking, title: scan.title, metaDescription: scan.description ? 'present' : 'MISSING' })}
-GOOGLE PAGESPEED (mobile, 0-100): ${ps ? JSON.stringify(ps) : 'unavailable'}
-SOCIAL LINKS FOUND ON SITE: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
+FULL TECHNICAL + MARKETING SCAN (real, just run):
+GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, bestPractices: ps.bestPractices, LCP: ps.lcpLabel, CLS: ps.clsLabel, TBT: ps.tbtLabel }) : 'unavailable'}
+SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileViewport: scan.mobileViewport, title: scan.title, titleLen: scan.titleLen, metaDescription: scan.description ? 'present (' + scan.descriptionLen + ' chars)' : 'MISSING', h1Count: scan.h1Count, wordCount: scan.wordCount, schemaLocalBusiness: scan.schemaLocalBusiness, canonical: scan.canonical, hasPhone: scan.hasPhone, hasForm: scan.hasForm, hasBooking: scan.hasBooking, hasCta: scan.hasCta, hasLiveChat: scan.hasLiveChat, hasNewsletter: scan.hasNewsletter, napAddress: scan.napAddress, analytics: scan.analyticsType || false, facebookPixel: scan.fbPixel, googleAdsTag: scan.googleAdsTag, hasVideo: scan.hasVideo, images: scan.imgCount, imagesMissingAlt: scan.imgMissingAlt, ogShareTags: scan.ogTitle && scan.ogImage, mixedContent: scan.mixedContent })}
+SOCIAL LINKS FOUND: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
 
-Score each area honestly from the data. Low PageSpeed = low website score. No meta description / no lead form / no online booking = points off. Few/no socials = low social score. Strong Google rating helps visibility score.
+PASS/FAIL CHECKLIST (already computed, use it to ground your scores):
+${flat}
+
+Score each of the six categories 0-100 HONESTLY from the data (a site failing many checks should score low, do not inflate). Base "Local visibility" mostly on the Google rating and review count versus a typical ${p.category} in ${p.city}, plus schema and address signals. Base "Tracking & data" on analytics, pixel, and ads tag. Every "why" must cite specific real findings (actual PageSpeed numbers, which checks failed).
 
 Return ONLY JSON:
 {
- "websiteScore": <0-100>,
- "websiteWhy": "2 sentences explaining exactly why the website scored this, citing the real scan data (PageSpeed number, HTTPS, mobile, lead form, meta description). Be specific.",
- "visibilityScore": <0-10>,
- "visibilityWhy": "2 sentences explaining the local visibility score, citing their Google rating, review count vs a typical ${p.category} in ${p.city}, and how findable they are.",
- "socialScore": <0-10>,
- "socialWhy": "2 to 3 sentences explaining the social score in real depth: which platforms were found or missing on their site (${Object.keys(scan.socials).join(', ') || 'none found'}), what that means for a ${p.category}, and specifically what is holding the score down (no presence, inconsistent posting, no video, missing platforms). This must feel substantive, not one vague line.",
- "headline": "one line, e.g. 'Here is where ${p.business || 'your business'} is leaving leads on the table'",
- "findings": [ {"area":"Website|Local visibility|Social|Conversion","title":"punchy specific title","detail":"2 sentences tied to lost leads/revenue, referencing the actual scan finding"} ],
- "summary": "2 sentences, direct and honest",
- "estimate": "one line on the money/leads impact of fixing these"
+ "headline": "one specific line, e.g. 'Where ${p.business || 'your business'} is quietly losing customers'",
+ "overallVerdict": "one honest sentence summarizing the state of their online presence",
+ "categories": [
+   {"name": "Website & Speed", "score": <0-100>, "why": "2 sentences citing the real PageSpeed number, HTTPS, mobile, Core Web Vitals"},
+   {"name": "Getting Found (SEO)", "score": <0-100>, "why": "2 sentences citing title/meta/schema/H1/content findings"},
+   {"name": "Converting Visitors", "score": <0-100>, "why": "2 sentences citing phone, form, booking, CTA, chat findings"},
+   {"name": "Local Visibility", "score": <0-100>, "why": "2 sentences citing Google rating, reviews vs typical ${p.category} in ${p.city}, schema, address"},
+   {"name": "Tracking & Data", "score": <0-100>, "why": "2 sentences on analytics, Meta pixel, Google Ads tag, and what not tracking costs them"},
+   {"name": "Social & Content", "score": <0-100>, "why": "2 to 3 sentences on which platforms are linked or missing, video presence, and what that means for a ${p.category}"}
+ ],
+ "findings": [ {"title": "punchy specific title", "detail": "2 to 3 sentences tied to lost leads or revenue, referencing the actual scan finding", "impact": "High|Medium|Low"} ],
+ "quickWins": ["3 to 4 short fixes they could do fast, each one line, specific to what failed"],
+ "summary": "2 to 3 sentences, direct and honest, that make working with OHM the obvious next step without giving away the full playbook",
+ "estimate": "one line on the realistic leads/revenue upside of closing these gaps"
 }
-Give 4 to 5 findings, ordered by biggest revenue impact. The three "Why" fields must each be specific and genuinely explain the number. No em dashes. No hype words. Specific to the scan, never generic.`;
-  const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 1100, messages: [{ role: 'user', content: prompt }] });
+Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype words like leverage, unlock, synergy, supercharge. Specific to THIS scan, never generic.`;
+  const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] });
   let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/); if (m) txt = m[0];
-  return JSON.parse(txt);
+  const report = JSON.parse(txt);
+  report.checklist = checklist;
+  report.pagespeed = ps || null;
+  return report;
 }
 
-// ---------- Branded PDF audit report ----------
+// overall growth score = average of the six category scores
+function overallScore(report) {
+  const cats = report.categories || [];
+  if (!cats.length) return 0;
+  return Math.round(cats.reduce((s, c) => s + (Number(c.score) || 0), 0) / cats.length);
+}
+
+// ---------- Branded PDF audit report (thorough, multi-page) ----------
 function buildAuditPDF(business, report, bookingUrl) {
   return new Promise((resolve) => {
-    const doc = new PDFDocument({ size: 'LETTER', margin: 0 });
+    const doc = new PDFDocument({ size: 'LETTER', margin: 0, bufferPages: true });
     const chunks = [];
     doc.on('data', c => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
-    const W = 612, M = 48, NAVY = '#0f1a30', NAVY2 = '#16233d', RED = '#df3131', MUT = '#8a97ad';
-    const clr = (v, max) => v / max >= .7 ? '#2fae5f' : v / max >= .4 ? '#e0a340' : RED;
-    // header band
-    doc.rect(0, 0, W, 120).fill(NAVY);
-    try { doc.image(path.join(__dirname, 'public', 'media', 'logo-white.png'), M, 38, { height: 30 }); } catch (e) {}
-    doc.fillColor(RED).font('Helvetica-Bold').fontSize(10).text('GROWTH AUDIT', M, 82, { characterSpacing: 2 });
-    doc.fillColor('#c1cde3').font('Helvetica').fontSize(11).text(business || 'Your business', M, 96);
-    // headline
-    let y = 152;
-    doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(20).text(report.headline || 'Where you are leaving leads on the table', M, y, { width: W - M * 2, lineGap: 2 });
-    y = doc.y + 18;
-    // overall score card
-    const overall = Math.round((Number(report.websiteScore) + Number(report.visibilityScore) * 10 + Number(report.socialScore) * 10) / 3);
-    doc.roundedRect(M, y, W - M * 2, 84, 12).fill(NAVY);
-    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(46).text(String(overall), M + 26, y + 18, { continued: true }).fillColor('#9fb0cf').fontSize(18).text(' /100');
-    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13).text('Overall growth score', M + 150, y + 28);
-    doc.fillColor('#c1cde3').font('Helvetica').fontSize(11).text(overall >= 70 ? 'Solid foundation, real room to grow' : overall >= 45 ? 'Leaving real money on the table' : 'Big, fixable gaps costing you leads', M + 150, y + 47);
-    y += 104;
-    const nl = need => { if (y + need > 720) { doc.addPage(); y = 56; } };
-    // score breakdown WITH explanations (depth)
-    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text('SCORE BREAKDOWN', M, y, { characterSpacing: 1 });
-    y += 22;
-    const rows = [['Website', report.websiteScore, 100, report.websiteWhy], ['Local visibility', report.visibilityScore, 10, report.visibilityWhy], ['Social', report.socialScore, 10, report.socialWhy]];
-    rows.forEach(r => {
-      nl(70);
-      doc.roundedRect(M, y, 66, 54, 8).fill('#f4f2ec');
-      doc.fillColor(clr(r[1], r[2])).font('Helvetica-Bold').fontSize(24).text(String(r[1]), M, y + 10, { width: 66, align: 'center' });
-      doc.fillColor(MUT).font('Helvetica').fontSize(8).text('/ ' + r[2], M, y + 36, { width: 66, align: 'center' });
-      doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(13).text(r[0], M + 82, y + 2, { width: W - M * 2 - 82 });
-      doc.fillColor('#57607a').font('Helvetica').fontSize(10.5).text(r[3] || '', M + 82, doc.y + 2, { width: W - M * 2 - 82, lineGap: 1 });
-      y = Math.max(y + 54, doc.y) + 16;
+    const W = 612, H = 792, M = 48, CW = W - M * 2;
+    const NAVY = '#0f1a30', NAVY2 = '#16233d', RED = '#df3131', INK = '#12203a', BODY = '#57607a', MUT = '#8a97ad', LINE = '#e7e4dc';
+    const GREEN = '#2fae5f', AMBER = '#e0a340';
+    const scoreColor = v => v >= 70 ? GREEN : v >= 45 ? AMBER : RED;
+    let y = 0;
+    const foot = () => {
+      doc.fillColor(MUT).font('Helvetica').fontSize(8).text('Open Heart Media  ·  Georgia  ·  openheartmediaco.com', M, H - 34, { width: CW, align: 'center', lineBreak: false });
+    };
+    const nl = need => { if (y + need > H - 56) { doc.addPage(); y = 56; } };
+    const sectionLabel = t => { doc.fillColor(RED).font('Helvetica-Bold').fontSize(10.5).text(t.toUpperCase(), M, y, { characterSpacing: 1.5 }); y = doc.y + 12; };
+
+    // ---- header band ----
+    doc.rect(0, 0, W, 122).fill(NAVY);
+    try { doc.image(path.join(__dirname, 'public', 'media', 'logo-white.png'), M, 36, { height: 30 }); } catch (e) {}
+    doc.rect(M, 74, 34, 3).fill(RED);
+    doc.fillColor('#c1cde3').font('Helvetica-Bold').fontSize(10).text('GROWTH AUDIT', M, 86, { characterSpacing: 2 });
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13).text(business || 'Your business', M, 99, { width: CW - 120 });
+    doc.fillColor('#8ea0c0').font('Helvetica').fontSize(9).text(new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), M, 99, { width: CW, align: 'right' });
+
+    // ---- headline + overall ----
+    y = 150;
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(19).text(report.headline || 'Where your business is quietly losing customers', M, y, { width: CW, lineGap: 1 });
+    y = doc.y + 14;
+    const overall = overallScore(report);
+    doc.roundedRect(M, y, CW, 92, 12).fill(NAVY);
+    doc.fillColor(scoreColor(overall)).font('Helvetica-Bold').fontSize(50).text(String(overall), M + 26, y + 20, { continued: true }).fillColor('#9fb0cf').fontSize(18).text(' /100');
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13).text('Overall growth score', M + 170, y + 24);
+    doc.fillColor('#c1cde3').font('Helvetica').fontSize(10.5).text(report.overallVerdict || (overall >= 70 ? 'Solid foundation with real room to grow.' : overall >= 45 ? 'A working presence that is leaving real money on the table.' : 'Big, fixable gaps are costing you leads right now.'), M + 170, y + 46, { width: CW - 190 });
+    y += 112;
+
+    // ---- category breakdown ----
+    sectionLabel('Score breakdown by area');
+    (report.categories || []).forEach(c => {
+      const why = c.why || '';
+      const whyH = doc.font('Helvetica').fontSize(10).heightOfString(why, { width: CW - 82 });
+      const rowH = Math.max(52, whyH + 26);
+      nl(rowH + 10);
+      doc.roundedRect(M, y, 62, 50, 8).fill('#f5f3ee');
+      doc.fillColor(scoreColor(Number(c.score))).font('Helvetica-Bold').fontSize(23).text(String(c.score), M, y + 9, { width: 62, align: 'center' });
+      doc.fillColor(MUT).font('Helvetica').fontSize(7.5).text('/ 100', M, y + 34, { width: 62, align: 'center' });
+      doc.fillColor(INK).font('Helvetica-Bold').fontSize(12.5).text(c.name, M + 78, y + 1, { width: CW - 82 });
+      doc.fillColor(BODY).font('Helvetica').fontSize(10).text(why, M + 78, doc.y + 2, { width: CW - 82, lineGap: 1 });
+      y = Math.max(y + 50, doc.y) + 14;
     });
-    // findings
-    nl(40);
-    y += 6;
-    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text('WHAT IS COSTING YOU LEADS', M, y, { characterSpacing: 1 });
-    y += 22;
-    (report.findings || []).forEach((f, i) => {
-      nl(60);
-      doc.circle(M + 9, y + 7, 9).fill(RED);
-      doc.fillColor('#fff').font('Helvetica-Bold').fontSize(9).text(String(i + 1), M, y + 3, { width: 18, align: 'center' });
-      doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(12.5).text(f.title, M + 30, y, { width: W - M * 2 - 30 });
-      doc.fillColor('#57607a').font('Helvetica').fontSize(10.5).text(f.detail, M + 30, doc.y + 2, { width: W - M * 2 - 30, lineGap: 1 });
-      y = doc.y + 14;
+
+    // ---- Core Web Vitals / real metrics ----
+    const ps = report.pagespeed;
+    if (ps) {
+      nl(120);
+      y += 4;
+      sectionLabel('Google performance metrics (mobile)');
+      const chips = [
+        ['Performance', ps.performance != null ? ps.performance + '/100' : 'n/a', ps.performance],
+        ['SEO', ps.seo != null ? ps.seo + '/100' : 'n/a', ps.seo],
+        ['Accessibility', ps.accessibility != null ? ps.accessibility + '/100' : 'n/a', ps.accessibility],
+        ['Best practices', ps.bestPractices != null ? ps.bestPractices + '/100' : 'n/a', ps.bestPractices],
+        ['Load (LCP)', ps.lcpLabel || 'n/a', ps.lcp != null ? (ps.lcp <= 2500 ? 80 : 30) : null],
+        ['Stability (CLS)', ps.clsLabel || 'n/a', ps.cls != null ? (ps.cls <= 0.1 ? 80 : 30) : null],
+      ];
+      const cwv = (CW - 10 * 2) / 3;
+      chips.forEach((c, i) => {
+        const col = i % 3, row = Math.floor(i / 3);
+        const cx = M + col * (cwv + 10), cy = y + row * 60;
+        doc.roundedRect(cx, cy, cwv, 50, 8).fill('#f5f3ee');
+        doc.fillColor(c[2] == null ? MUT : scoreColor(c[2])).font('Helvetica-Bold').fontSize(17).text(String(c[1]), cx + 12, cy + 10, { width: cwv - 24 });
+        doc.fillColor(BODY).font('Helvetica').fontSize(8.5).text(c[0], cx + 12, cy + 32, { width: cwv - 24 });
+      });
+      y += 60 * Math.ceil(chips.length / 3) + 10;
+    }
+
+    // ---- full scanned checklist (the rundown) ----
+    nl(60);
+    y += 2;
+    sectionLabel('Everything we scanned');
+    doc.fillColor(BODY).font('Helvetica').fontSize(9.5).text('A live check of your site across the signals that drive local growth. Green passed, red is an opportunity.', M, y, { width: CW });
+    y = doc.y + 12;
+    const mark = (x, cy, ok) => {
+      if (ok === true) { doc.lineWidth(1.6).strokeColor(GREEN).moveTo(x, cy + 1).lineTo(x + 3, cy + 4).lineTo(x + 8, cy - 3).stroke(); }
+      else if (ok === false) { doc.lineWidth(1.6).strokeColor(RED).moveTo(x, cy - 3).lineTo(x + 8, cy + 4).moveTo(x + 8, cy - 3).lineTo(x, cy + 4).stroke(); }
+      else { doc.lineWidth(1.6).strokeColor(MUT).moveTo(x, cy + 1).lineTo(x + 8, cy + 1).stroke(); }
+    };
+    (report.checklist || []).forEach(group => {
+      nl(40);
+      doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(11).text(group.group, M, y);
+      y = doc.y + 6;
+      group.items.forEach(it => {
+        nl(20);
+        mark(M + 1, y + 6, it.ok);
+        doc.fillColor(INK).font('Helvetica').fontSize(10).text(it.label, M + 18, y, { width: CW - 120, lineBreak: false });
+        if (it.note) doc.fillColor(MUT).font('Helvetica').fontSize(9).text(String(it.note), M, y + 1, { width: CW, align: 'right', lineBreak: false });
+        y += 17;
+      });
+      y += 8;
     });
-    // upside
-    nl(90);
+
+    // ---- findings ----
+    nl(50);
     y += 4;
-    const uh = doc.heightOfString('The upside: ' + (report.estimate || ''), { width: W - M * 2 - 40, fontSize: 12 }) + 28;
-    doc.roundedRect(M, y, W - M * 2, uh, 10).fill(NAVY2);
-    doc.fillColor(RED).font('Helvetica-Bold').fontSize(12).text('The upside: ', M + 20, y + 14, { continued: true, width: W - M * 2 - 40 }).fillColor('#fff').font('Helvetica').text(report.estimate || '', { width: W - M * 2 - 40 });
-    y += uh + 22;
-    // CTA
-    doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(13).text('Want us to fix these and grow your business?', M, y);
-    doc.fillColor(MUT).font('Helvetica').fontSize(11).text('Book a free 30 minute call: ', M, doc.y + 4, { continued: true }).fillColor(RED).text(bookingUrl);
-    // footer
-    doc.fillColor(MUT).font('Helvetica').fontSize(9).text('Open Heart Media  ·  Georgia  ·  zac@openheartmediaco.com', M, 730, { width: W - M * 2, align: 'center' });
+    sectionLabel('What is costing you leads');
+    (report.findings || []).forEach((f, i) => {
+      const detailH = doc.font('Helvetica').fontSize(10).heightOfString(f.detail || '', { width: CW - 34 });
+      nl(detailH + 40);
+      const impactC = f.impact === 'High' ? RED : f.impact === 'Medium' ? AMBER : MUT;
+      doc.circle(M + 9, y + 8, 9).fill(NAVY);
+      doc.fillColor('#fff').font('Helvetica-Bold').fontSize(9).text(String(i + 1), M, y + 4, { width: 18, align: 'center' });
+      doc.fillColor(INK).font('Helvetica-Bold').fontSize(12.5).text(f.title, M + 30, y, { width: CW - 34 - 60 });
+      if (f.impact) { doc.roundedRect(W - M - 62, y - 1, 62, 16, 8).fill(impactC); doc.fillColor('#fff').font('Helvetica-Bold').fontSize(7).text(f.impact.toUpperCase() + ' IMPACT', W - M - 62, y + 3.5, { width: 62, align: 'center', characterSpacing: 0.3, lineBreak: false }); }
+      doc.fillColor(BODY).font('Helvetica').fontSize(10).text(f.detail, M + 30, doc.y + 3, { width: CW - 34, lineGap: 1 });
+      y = doc.y + 15;
+    });
+
+    // ---- quick wins ----
+    if (report.quickWins && report.quickWins.length) {
+      nl(50 + report.quickWins.length * 18);
+      y += 4;
+      sectionLabel('Quick wins you can start now');
+      report.quickWins.forEach(q => {
+        nl(20);
+        doc.circle(M + 4, y + 6, 2).fill(RED);
+        doc.fillColor(BODY).font('Helvetica').fontSize(10.5).text(q, M + 16, y, { width: CW - 16 });
+        y = doc.y + 8;
+      });
+    }
+
+    // ---- upside + CTA ----
+    nl(150);
+    y += 8;
+    const est = report.estimate || '';
+    const uh = doc.font('Helvetica').fontSize(11.5).heightOfString('The upside: ' + est, { width: CW - 40 }) + 26;
+    doc.roundedRect(M, y, CW, uh, 10).fill(NAVY2);
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11.5).text('The upside: ', M + 20, y + 13, { continued: true, width: CW - 40 }).fillColor('#fff').font('Helvetica').text(est, { width: CW - 40 });
+    y += uh + 20;
+    nl(90);
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(14).text('Want us to help you close these gaps?', M, y);
+    doc.fillColor(BODY).font('Helvetica').fontSize(10.5).text(report.summary || 'Book a free 30 minute discovery call and we will walk through your biggest opportunities and see if we are the right fit.', M, doc.y + 5, { width: CW, lineGap: 1 });
+    y = doc.y + 12;
+    doc.roundedRect(M, y, 250, 38, 9).fill(RED);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(12).text('Book your free discovery call', M, y + 13, { width: 250, align: 'center', link: bookingUrl, underline: false });
+    doc.fillColor(MUT).font('Helvetica').fontSize(9).text(bookingUrl, M + 262, y + 15, { width: CW - 262, link: bookingUrl });
+
+    // footer on every page
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) { doc.switchToPage(i); foot(); }
     doc.end();
   });
 }
@@ -491,23 +705,34 @@ input::placeholder{color:#6b6b6b}
        if(d.error){ err.textContent=d.error; btn.disabled=false; btn.textContent='Scan my business'; return; }
        var a=d.report;
        var biz=d.business||'your business';
-       function cls(v,max){var p=v/max;return p>=.7?'sc-good':p>=.4?'sc-mid':'sc-bad';}
-       function mtr(v,max){return '<div class="meter"><i style="width:'+Math.max(6,Math.round(v/max*100))+'%"></i></div>';}
-       var overall=Math.round((Number(a.websiteScore)+Number(a.visibilityScore)*10+Number(a.socialScore)*10)/3);
-       var verdict=overall>=70?'Solid foundation, real room to grow':overall>=45?'Leaving real money on the table':'Big, fixable gaps costing you leads';
-       function scard(v,max,label){return '<div class="scard '+cls(v,max)+'"><b>'+v+'<span class="of">/'+max+'</span></b><span>'+label+'</span>'+mtr(v,max)+'</div>';}
-       function colHex(v,max){var p=v/max;return p>=.7?'#3fbf6a':p>=.4?'#e0a340':'#df3131';}
-       var bd=[['Website',a.websiteScore,100,a.websiteWhy],['Local visibility',a.visibilityScore,10,a.visibilityWhy],['Social',a.socialScore,10,a.socialWhy]].map(function(r){return '<div class="find"><div class="n" style="background:'+colHex(r[1],r[2])+'">'+r[1]+'</div><div><h3>'+r[0]+'  <span style="color:#8fa0bd;font-weight:600;font-size:14px">'+r[1]+'/'+r[2]+'</span></h3><p>'+esc(r[3]||'')+'</p></div></div>';}).join('');
-       var findings=(a.findings||[]).map(function(f,i){return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
+       var cats=a.categories||[];
+       function cls(v){return v>=70?'sc-good':v>=45?'sc-mid':'sc-bad';}
+       function mtr(v){return '<div class="meter"><i style="width:'+Math.max(6,Math.round(v))+'%"></i></div>';}
+       function colHex(v){return v>=70?'#3fbf6a':v>=45?'#e0a340':'#df3131';}
+       var overall=cats.length?Math.round(cats.reduce(function(s,c){return s+(Number(c.score)||0);},0)/cats.length):0;
+       var verdict=a.overallVerdict||(overall>=70?'Solid foundation, real room to grow':overall>=45?'Leaving real money on the table':'Big, fixable gaps costing you leads');
+       function scard(v,label){return '<div class="scard '+cls(v)+'"><b>'+v+'<span class="of">/100</span></b><span>'+esc(label)+'</span>'+mtr(v)+'</div>';}
+       var scards=cats.map(function(c){return scard(Number(c.score),c.name);}).join('');
+       var bd=cats.map(function(c){return '<div class="find"><div class="n" style="background:'+colHex(Number(c.score))+'">'+c.score+'</div><div><h3>'+esc(c.name)+'  <span style="color:#8fa0bd;font-weight:600;font-size:14px">'+c.score+'/100</span></h3><p>'+esc(c.why||'')+'</p></div></div>';}).join('');
+       // full scanned checklist
+       function markSym(ok){return ok===true?'<span style="color:#3fbf6a;font-weight:800">&#10003;</span>':ok===false?'<span style="color:#ff6a6a;font-weight:800">&#10007;</span>':'<span style="color:#8fa0bd">&#8211;</span>';}
+       var checklist=(a.checklist||[]).map(function(g){
+         var items=g.items.map(function(it){return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px"><span style="width:16px;text-align:center">'+markSym(it.ok)+'</span><span style="flex:1;color:#dbe2ef">'+esc(it.label)+'</span>'+(it.note?'<span style="color:#8fa0bd;font-size:12px">'+esc(it.note)+'</span>':'')+'</div>';}).join('');
+         return '<div style="margin-top:16px"><div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:4px">'+esc(g.group)+'</div>'+items+'</div>';
+       }).join('');
+       var findings=(a.findings||[]).map(function(f,i){var ic=f.impact==='High'?'#df3131':f.impact==='Medium'?'#e0a340':'#8fa0bd';return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+(f.impact?' <span style="font-size:11px;font-weight:700;color:#fff;background:'+ic+';padding:2px 7px;border-radius:20px;vertical-align:middle">'+esc(f.impact).toUpperCase()+'</span>':'')+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
+       var quick=(a.quickWins||[]).map(function(q){return '<li style="margin-bottom:8px;color:#c7d0e0">'+esc(q)+'</li>';}).join('');
        var html='<div class="inner">'
         +'<div class="rhead"><img class="rlogo" src="/media/logo-white.png" alt="Open Heart Media"/><div class="rtag">Growth Audit · '+esc(biz)+'</div></div>'
         +'<div class="ctitle" style="color:var(--ink)">'+esc(a.headline||'Where you are leaving leads on the table')+'</div>'
-        +'<div class="grade"><div class="gbig">'+overall+'<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>'+verdict+'</span></div></div>'
-        +'<div class="scoregrid">'+scard(a.websiteScore,100,'Website')+scard(a.visibilityScore,10,'Local visibility')+scard(a.socialScore,10,'Social')+'</div>'
+        +'<div class="grade"><div class="gbig">'+overall+'<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>'+esc(verdict)+'</span></div></div>'
+        +'<div class="scoregrid">'+scards+'</div>'
         +'<div class="fhead">Score breakdown</div>'+bd
-        +'<div class="fhead" style="margin-top:22px">What is costing you leads</div>'+findings
+        +'<div class="fhead" style="margin-top:22px">Everything we scanned</div>'+checklist
+        +'<div class="fhead" style="margin-top:26px">What is costing you leads</div>'+findings
+        +(quick?'<div class="fhead" style="margin-top:22px">Quick wins</div><ul style="margin:8px 0 0;padding-left:20px">'+quick+'</ul>':'')
         +'<div class="est"><b>The upside: </b>'+esc(a.estimate||'')+'</div>'
-        +'<a class="btn" id="rbook" href="#book" style="max-width:360px;margin:28px auto 0;text-decoration:none">Book my free call to fix this</a></div>';
+        +'<a class="btn" id="rbook" href="#book" style="max-width:360px;margin:28px auto 0;text-decoration:none">Book my free discovery call</a></div>';
        var res=document.getElementById('result'); res.innerHTML=html; res.classList.remove('hide');
        document.getElementById('auditbox').style.display='none';
        document.getElementById('rbook').addEventListener('click',function(){track('click');});
@@ -669,18 +894,39 @@ app.get('/go', (req, res) => {
   res.send(renderLandingPage(req.query.ref));
 });
 
-// Preview the branded PDF audit design (sample data)
+// Preview the branded PDF audit design (sample data mirroring a real scan)
 app.get('/api/audit-pdf-preview', async (_, res) => {
-  const sample = { websiteScore: 42, visibilityScore: 7, socialScore: 6,
-    websiteWhy: 'Your site scored a 38 on Google mobile PageSpeed and is still running on HTTP instead of HTTPS, so it loads slowly and browsers flag it as not secure. There is a booking link but no clear meta description, which weakens how you show up in search.',
-    visibilityWhy: 'A 4.9 rating from 820 reviews is elite for a med spa and puts you near the top in Canton, which is why this score is high. The gap is that not everyone searching for a med spa in Canton is finding you first, so some of that reputation never converts.',
-    socialWhy: 'We found Facebook and Instagram linked from your site but no TikTok or YouTube, and no sign of consistent recent posting. For a med spa, short before-and-after video is what drives new bookings, and right now that channel is barely working, which is the single biggest reason this score is a 6 and not a 9.',
-    headline: 'Here is where The Beauty Barn is leaving booked appointments on the table',
+  const sampleScan = { url: 'https://thebeautybarn.com', https: true, mobileViewport: true, title: 'The Beauty Barn Med Spa | Canton GA', titleLen: 35,
+    description: null, descriptionLen: 0, h1Count: 2, wordCount: 420, schemaLocalBusiness: false, canonical: true,
+    hasPhone: true, hasEmailLink: false, hasForm: true, hasBooking: true, hasCta: true, hasLiveChat: false, hasNewsletter: false, napAddress: true,
+    analytics: false, analyticsType: null, fbPixel: false, googleAdsTag: false, hasVideo: false, imgCount: 22, imgMissingAlt: 14,
+    ogTitle: true, ogImage: false, mixedContent: false, socials: { facebook: 'facebook.com/beautybarn', instagram: 'instagram.com/beautybarn' } };
+  const samplePs = { performance: 38, seo: 82, accessibility: 71, bestPractices: 75, lcp: 4100, cls: 0.02, tbt: 620,
+    lcpLabel: '4.1 s', clsLabel: '0.02', tbtLabel: '620 ms' };
+  const sample = {
+    headline: 'Where The Beauty Barn is quietly losing booked appointments',
+    overallVerdict: 'A strong reputation held back by a slow, under-tracked website that is not converting its traffic.',
+    categories: [
+      { name: 'Website & Speed', score: 44, why: 'Mobile PageSpeed came in at 38 out of 100 with a Largest Contentful Paint of 4.1 seconds, well past the 2.5 second mark, so the page feels slow on a phone. HTTPS and mobile layout are in place, which keeps this from scoring lower.' },
+      { name: 'Getting Found (SEO)', score: 52, why: 'The page is missing a meta description and has two H1 tags instead of one, and there is no local business schema, so Google has less to work with. The title is present and sized reasonably, which helps.' },
+      { name: 'Converting Visitors', score: 68, why: 'Click to call, a lead form, and online booking are all present, which is strong. There is no live chat and no email capture, so visitors who are not ready to book have no lighter way to raise a hand.' },
+      { name: 'Local Visibility', score: 82, why: 'A 4.9 rating from 820 reviews is elite for a med spa in Canton and puts real trust behind the name. Missing local business schema and inconsistent address markup keep it from fully translating into search visibility.' },
+      { name: 'Tracking & Data', score: 20, why: 'No analytics, no Meta pixel, and no Google Ads tag were detected, so there is no way to see where visitors come from or to retarget them. Every dollar of future marketing would be flying blind.' },
+      { name: 'Social & Content', score: 40, why: 'Facebook and Instagram are linked but TikTok and YouTube are absent, and no video was found on the site. For a med spa, short before and after video is the single biggest driver of new bookings, and that channel is missing.' },
+    ],
     findings: [
-      { title: 'No HTTPS, so browsers flag you Not Secure', detail: 'New clients entering their info at booking see a security warning and leave. That is booked revenue lost at the finish line.' },
-      { title: 'Missing meta description costs you clicks from Google', detail: 'Google auto-generates a weak snippet, so people searching for a med spa in Canton scroll past you to a competitor.' },
-      { title: 'Your reviews are elite, your content engine is not', detail: '820 five-star reviews prove people love you, but no consistent content means new clients never see it before they book elsewhere.' }],
-    estimate: 'Fixing these could conservatively recover 8 to 15 additional booked appointments a month at your review volume.' };
+      { title: 'You are not tracking a single visitor', detail: 'No analytics or pixel means you cannot see what is working or retarget the people who visited and did not book. This quietly caps the return on any ad or content spend before it starts.', impact: 'High' },
+      { title: 'A 4.1 second mobile load is bleeding bookings', detail: 'Most of your traffic is on a phone, and pages this slow lose a large share of visitors before they ever see your offer. That is booked revenue lost at the front door.', impact: 'High' },
+      { title: 'Missing meta description costs you clicks from Google', detail: 'Google auto generates a weak snippet, so people searching for a med spa in Canton scroll past you to a competitor with a sharper listing.', impact: 'Medium' },
+      { title: 'Elite reviews, no video engine', detail: '820 five star reviews prove people love you, but with no video and thin social, new clients never feel that before they book elsewhere.', impact: 'Medium' },
+      { title: 'No local business schema', detail: 'Without structured data, search engines are guessing at your hours, location, and service, which weakens how you show up in local results.', impact: 'Low' },
+    ],
+    quickWins: ['Add a meta description to the homepage', 'Install Google Analytics 4 and the Meta pixel this week', 'Compress the hero images to cut load time', 'Add alt text to the 14 images missing it'],
+    summary: 'The reputation is already there. The gap is a slow, invisible website that is not capturing or measuring the demand you have earned. That is exactly the kind of thing we fix.',
+    estimate: 'Closing these gaps could realistically recover 8 to 15 additional booked appointments a month at your review volume.',
+  };
+  sample.checklist = buildChecklist(sampleScan, samplePs);
+  sample.pagespeed = samplePs;
   const pdf = await buildAuditPDF('The Beauty Barn', sample, `${CALENDLY}?utm_content=preview`);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'inline; filename="growth-audit-sample.pdf"');
@@ -753,8 +999,9 @@ async function notifyAudit(p, email, report, pdf) {
     + `Business: ${p?.business || 'unknown'}\n`
     + `Email:    ${email}\n`
     + `Website:  ${p?.website || 'n/a'}\n`
-    + `Scores:   website ${report.websiteScore}/100, visibility ${report.visibilityScore}/10, social ${report.socialScore}/10\n\n`
-    + (report.findings || []).map(f => `- ${f.title}`).join('\n')
+    + `Overall growth score: ${overallScore(report)}/100\n`
+    + (report.categories || []).map(c => `  ${c.name}: ${c.score}/100`).join('\n') + `\n\n`
+    + (report.findings || []).map(f => `- [${f.impact || ''}] ${f.title}`).join('\n')
     + `\n\nThey saw this and got a Book-a-call CTA. Follow up fast.`;
   const msg = { to: NOTIFY, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
     subject: `🔥 Audit completed${p?.business ? ' — ' + p.business : ''}`, text };
@@ -765,8 +1012,8 @@ async function notifyAudit(p, email, report, pdf) {
 // Email the branded PDF audit to the prospect who filled out the form
 async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
   if (!process.env.SENDGRID_API_KEY || !to) return;
-  const overall = Math.round((Number(report.websiteScore) + Number(report.visibilityScore) * 10 + Number(report.socialScore) * 10) / 3);
-  const text = `Hi,\n\nHere is your free growth audit for ${business || 'your business'}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${report.findings?.[0]?.title || 'a few fixable gaps'}.\n\nWant us to fix these and grow your business? Grab a free 30 minute call here:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
+  const overall = overallScore(report);
+  const text = `Hi,\n\nHere is your free growth audit for ${business || 'your business'}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${report.findings?.[0]?.title || 'a few fixable gaps'}.\n\nWant us to help you close these gaps? Grab a free 30 minute discovery call here:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
   try {
     await sgMail.send({ to, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
       subject: `your growth audit for ${business || 'your business'}`, text,

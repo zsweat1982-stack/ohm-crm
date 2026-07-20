@@ -278,10 +278,8 @@ function renderDrawer(p){
       <button style="margin-top:10px" onclick="gen('${p.id}')">🔄 Regenerate</button>
     </div>`:''}
 
-    ${p.audit_report?`<div class="card"><h4>Audit scores</h4>
-      <div class="kv"><span>Website</span><b>${esc(p.audit_report.websiteScore)}/100</b></div>
-      <div class="kv"><span>Local visibility</span><b>${esc(p.audit_report.visibilityScore)}/10</b></div>
-      <div class="kv"><span>Social</span><b>${esc(p.audit_report.socialScore)}/10</b></div>
+    ${p.audit_report?`<div class="card"><h4>Audit results</h4>
+      ${p.audit_report.categories?`<div class="kv"><span>Overall score</span><b>${(function(){var c=p.audit_report.categories;return c.length?Math.round(c.reduce(function(s,x){return s+(Number(x.score)||0);},0)/c.length):0;})()}/100</b></div>`+p.audit_report.categories.map(c=>`<div class="kv"><span>${esc(c.name)}</span><b>${esc(c.score)}/100</b></div>`).join(''):''}
       ${p.audit_email?`<div class="kv"><span>Audit email</span><b>${esc(p.audit_email)}</b></div>`:''}
     </div>`:''}
 
