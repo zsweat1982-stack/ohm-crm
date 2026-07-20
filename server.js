@@ -547,24 +547,30 @@ app.use((req, res, next) => {
 function renderLogin(err) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Open Heart Media — Sign in</title><style>
-:root{--ink:#0f1a30;--red:#df3131;--line:rgba(255,255,255,.12)}
-*{box-sizing:border-box}body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh}
-.card{width:340px;padding:36px 32px;text-align:center}
-.logo{font-weight:800;letter-spacing:.5px;margin-bottom:26px}.logo span{color:var(--red)}
-h1{font-size:19px;font-weight:600;margin:0 0 6px}p.sub{color:#9fb0cf;font-size:13px;margin:0 0 22px}
-input{width:100%;padding:13px 14px;border:1px solid #33466b;border-radius:11px;background:#122039;color:#fff;font:inherit;margin-bottom:12px}
-input:focus{outline:none;border-color:#5e97ff}
+:root{--ink:#0f1a30;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#f5f7fb;color:var(--ink);display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{width:360px;background:#fff;border:1px solid #e4e9f2;border-radius:18px;padding:40px 36px 34px;text-align:center;box-shadow:0 12px 40px rgba(26,43,76,.10)}
+.card::before{content:"";display:block;height:3px;width:46px;background:var(--red);border-radius:3px;margin:0 auto 26px}
+.logo{height:40px;margin-bottom:24px}
+h1{font-size:19px;font-weight:700;margin:0 0 6px;color:var(--ink)}
+p.sub{color:#68758c;font-size:13px;margin:0 0 24px}
+input{width:100%;padding:13px 14px;border:1px solid #d3dbe8;border-radius:11px;background:#fbfcfe;color:var(--ink);font:inherit;margin-bottom:12px}
+input:focus{outline:none;border-color:var(--blue);background:#fff}
 button{width:100%;padding:14px;border:0;border-radius:11px;background:var(--red);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
-.err{color:#ff8a8a;font-size:13px;margin-top:12px;min-height:16px}
+button:hover{background:#c92626}
+.err{color:var(--red);font-size:13px;margin-top:12px;min-height:16px}
+.foot{margin-top:22px;color:#9aa7bd;font-size:11px;letter-spacing:.3px}
 </style></head><body>
 <div class="card">
-  <div class="logo">OPEN HEART <span>MEDIA</span></div>
+  <img class="logo" src="/media/logo-navy.png" alt="Open Heart Media"/>
   <h1>Team sign in</h1><p class="sub">Enter the shared team password to access the CRM.</p>
   <form method="POST" action="/api/login">
     <input type="password" name="password" placeholder="Team password" autofocus/>
     <button type="submit">Sign in</button>
   </form>
   <div class="err">${err ? 'Wrong password. Try again.' : ''}</div>
+  <div class="foot">OPEN HEART MEDIA · OUTREACH CRM</div>
 </div></body></html>`;
 }
 app.get('/login', (_, res) => res.send(renderLogin(false)));

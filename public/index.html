@@ -5,54 +5,58 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Open Heart Media — Outreach Dashboard</title>
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --txt:#e7e9ee; --mut:#9aa2b1; --accent:#5b8cff; --green:#2fbf71; --amber:#e0a340; --red:#e05353; --purple:#a78bff; }
+  :root { --bg:#f5f7fb; --panel:#ffffff; --panel2:#f0f3f9; --line:#e2e8f2; --txt:#0f1a30; --mut:#68758c; --navy:#1a2b4c; --accent:#5e97ff; --green:#1f9d57; --amber:#c98a1e; --red:#df3131; --purple:#6b5bd2; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:16px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:20px; position:sticky; top:0; background:var(--bg); z-index:5; flex-wrap:wrap; }
-  header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
-  .stats { display:flex; gap:14px; margin-left:auto; flex-wrap:wrap; }
-  .stat { background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:7px 12px; font-size:12px; color:var(--mut); }
-  .stat b { color:var(--txt); font-size:15px; display:block; }
-  .bar { padding:12px 22px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel); }
-  button { background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 13px; cursor:pointer; font-size:13px; }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:20px; position:sticky; top:0; background:var(--navy); z-index:5; flex-wrap:wrap; box-shadow:0 2px 12px rgba(15,26,48,.10); }
+  header::after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--red); }
+  header .logo { height:26px; display:block; }
+  .stats { display:flex; gap:12px; margin-left:auto; flex-wrap:wrap; }
+  .stat { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); border-radius:9px; padding:7px 12px; font-size:12px; color:#b9c6de; }
+  .stat b { color:#fff; font-size:15px; display:block; }
+  .bar { padding:12px 24px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--line); background:var(--panel); }
+  button { background:#fff; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 13px; cursor:pointer; font-size:13px; }
   button:hover { border-color:var(--accent); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.primary { background:var(--navy); border-color:var(--navy); color:#fff; font-weight:600; }
+  button.primary:hover { background:#132038; }
   button.green { background:var(--green); border-color:var(--green); color:#fff; }
   button:disabled { opacity:.45; cursor:not-allowed; }
-  select { background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; }
-  .wrap { padding:16px 22px; }
-  table { width:100%; border-collapse:collapse; }
-  th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); padding:8px 10px; border-bottom:1px solid var(--line); }
-  td { padding:10px; border-bottom:1px solid var(--line); vertical-align:top; }
-  tr:hover td { background:#141821; }
-  .biz { font-weight:600; }
+  select { background:#fff; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .wrap { padding:16px 24px; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--mut); padding:11px 12px; border-bottom:1px solid var(--line); background:#f7f9fc; }
+  td { padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:hover td { background:#f7f9fd; }
+  .biz { font-weight:600; color:var(--navy); }
   .sub { color:var(--mut); font-size:12px; }
   .pill { font-size:11px; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; font-weight:600; }
-  .s-new{background:#23262f;color:#9aa2b1} .s-drafted{background:#2a2740;color:#b79bff}
-  .s-approved{background:#183024;color:#4fd18b} .s-sent{background:#12283f;color:#69a9ff}
-  .s-replied{background:#3a2e12;color:#e0a340} .s-rejected{background:#331a1a;color:#e05353}
-  .s-clicked{background:#2b1440;color:#c98bff} .s-booked{background:#12331f;color:#37d67a}
-  .metrics{display:flex;gap:14px;padding:12px 22px;border-bottom:1px solid var(--line);background:#12141a;flex-wrap:wrap;align-items:center}
-  .m{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 14px;font-size:12px;color:var(--mut)}
-  .m b{color:#c98bff;font-size:17px;display:block}
-  .metrics a{color:var(--accent);font-size:12px;text-decoration:none;margin-left:auto}
-  input, textarea { width:100%; background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit; }
+  .s-new{background:#eef1f6;color:#68758c} .s-drafted{background:#efeaff;color:#6b5bd2}
+  .s-approved{background:#e2f5ea;color:#1f9d57} .s-sent{background:#e6effd;color:#3273d6}
+  .s-replied{background:#fbf1de;color:#b3791a} .s-rejected{background:#fce8e8;color:#df3131}
+  .s-clicked{background:#f2e9fb;color:#8a5bd2} .s-booked{background:#dff3e6;color:#178047}
+  .metrics{display:flex;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);background:#eef2f8;flex-wrap:wrap;align-items:center}
+  .m{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 15px;font-size:12px;color:var(--mut)}
+  .m b{color:var(--navy);font-size:18px;display:block}
+  .metrics a{color:var(--red);font-weight:600;font-size:12px;text-decoration:none;margin-left:auto}
+  input, textarea { width:100%; background:#fff; color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:7px; font:inherit; }
+  input:focus, textarea:focus { outline:none; border-color:var(--accent); }
   textarea { min-height:90px; resize:vertical; }
   .email-cell { min-width:340px; }
   .row-actions { display:flex; gap:6px; flex-wrap:wrap; }
   .row-actions button { padding:6px 9px; font-size:12px; }
   .muted { color:var(--mut); }
-  .warn { color:var(--amber); font-size:12px; }
-  .toast { position:fixed; bottom:20px; right:20px; background:var(--panel2); border:1px solid var(--accent); padding:12px 16px; border-radius:9px; opacity:0; transition:.3s; }
+  .warn { color:var(--red); font-size:12px; }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--navy); color:#fff; border:1px solid var(--navy); padding:12px 16px; border-radius:9px; opacity:0; transition:.3s; box-shadow:0 8px 24px rgba(15,26,48,.2); }
   .toast.show { opacity:1; }
   .genbtn { font-size:12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🎥 OPEN HEART MEDIA — Outreach Dashboard</h1>
+  <img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/>
+  <span style="color:#8ea0c0;font-size:13px;font-weight:500;letter-spacing:.3px;border-left:1px solid rgba(255,255,255,.18);padding-left:16px">Outreach CRM</span>
   <div class="stats" id="stats"></div>
-  <button onclick="logout()" style="margin-left:10px;background:transparent;border:1px solid var(--line);color:var(--mut);font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer">Log out</button>
+  <button onclick="logout()" style="margin-left:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#cdd8ea;font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer">Log out</button>
 </header>
 <script>function logout(){fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login');}</script>
 <div class="bar">
