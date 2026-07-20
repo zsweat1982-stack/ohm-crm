@@ -72,9 +72,9 @@ let prospects = load() || seedFromCsv();
 
 // ---------- Claude draft ----------
 async function draftEmail(p) {
-  const prompt = `You are an elite cold-email copywriter for Open Heart Media (OHM), owned by Zac. OHM helps local businesses GET MORE LEADS AND GROW REVENUE. That is what you sell: the outcome (more customers, more booked jobs, more revenue), NOT the mechanism. Video, content, and websites are just how OHM gets there, so mention them only lightly if at all. Lead with the money.
+  const prompt = `You are writing as Michelle, at Open Heart Media (OHM). OHM helps local businesses GET MORE LEADS AND GROW REVENUE. That is what you sell: the outcome (more customers, more booked jobs, more revenue), NOT the mechanism. Video, content, and websites are just how OHM gets there, so mention them only lightly if at all. Lead with the money.
 
-Write ONE short cold email to this local business to get a reply saying yes to a free personalized growth audit (where Zac shows exactly where they are losing leads and revenue, and how to capture more). The audit leads to a discovery call.
+Write ONE short cold email to this local business to get a reply saying yes to a free personalized growth audit (where we show exactly where they are losing leads and revenue, and how to capture more). The audit leads to a discovery call.
 
 BUSINESS:
 - Name: ${p.business}
@@ -89,7 +89,7 @@ RULES (follow exactly):
 - Then the OUTCOME-based gap: a business this good is almost certainly leaving leads and revenue on the table, because the people searching for a ${p.category} in ${p.city} are not all finding them or booking. Frame it as money and customers they are missing, not a feature they lack. Do not lecture about video or social.
 - Then point them to a short breakdown you put together showing where those lost leads and dollars are. One quick line, then put the exact token [LINK] on its own line where the link will go.
 - After the link, one soft line like "worth a look?" Then sign.
-- Sign: Zac, Open Heart Media
+- Sign: Michelle, Open Heart Media
 - NO em dashes. No dashes as punctuation. No exclamation marks. No "hope this finds you well". No buzzwords like "leverage", "synergy", "unlock", "scale".
 
 Also write a lowercase, personal, outcome-flavored subject line under 45 chars (hint at more customers/leads/revenue, no hype, no exclamation). Examples of the vibe: "more patients in ${p.city}", "leads you're probably missing", "quick idea to grow ${p.business}".
@@ -1068,7 +1068,7 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
   const biz = business || 'your business';
   const topGap = report.findings?.[0]?.title || 'a few fixable gaps';
   // Plain-text fallback (the raw URL lives here, out of sight of most readers)
-  const text = `Hi,\n\nHere is your free growth audit for ${biz}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${topGap}.\n\nWant us to help you close these gaps? Book a free 30 minute discovery call:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
+  const text = `Hi,\n\nHere is your free growth audit for ${biz}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${topGap}.\n\nWant us to help you close these gaps? Book a free 30 minute discovery call:\n${bookingUrl}\n\nMichelle\nOpen Heart Media`;
   // Branded HTML with a clean button instead of a raw link
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f1a30;line-height:1.55">
   <div style="background:#1a2b4c;border-radius:12px 12px 0 0;padding:22px 26px;border-bottom:3px solid #df3131">
@@ -1083,7 +1083,7 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
     <p style="margin:0 0 20px">The biggest thing costing you leads right now: <b>${esc(topGap)}</b>.</p>
     <p style="margin:0 0 18px">Want us to help you close these gaps? Grab a free 30 minute discovery call. No pitch, no pressure.</p>
     <a href="${bookingUrl}" style="display:inline-block;background:#df3131;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 30px;border-radius:10px">Book your discovery call</a>
-    <p style="margin:26px 0 0;color:#68758c;font-size:13px">Zac<br/>Open Heart Media</p>
+    <p style="margin:26px 0 0;color:#68758c;font-size:13px">Michelle<br/>Open Heart Media</p>
   </div>
 </div>`;
   try {
@@ -1214,7 +1214,7 @@ async function draftFollowup(p, step) {
     2: 'Open with one quick proof point (we recently drove about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business). Then invite them to grab their free audit.',
     3: 'Last friendly touch, one or two lines. Say you will leave it here, and the free audit is open anytime if they want it.',
   };
-  const prompt = `Write a very short follow-up email (2 to 3 sentences) from Zac at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${angles[step]} Reference their business naturally. Put the exact token [LINK] on its own line for the audit link. Sign "Zac, Open Heart Media". No em dashes, no exclamation marks, no hype. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
+  const prompt = `Write a very short follow-up email (2 to 3 sentences) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${angles[step]} Reference their business naturally. Put the exact token [LINK] on its own line for the audit link. Sign "Michelle, Open Heart Media". No em dashes, no exclamation marks, no hype. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
