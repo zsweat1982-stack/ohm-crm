@@ -1066,22 +1066,36 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
   } catch (e) { console.error('[audit-email]', e.message); }
 }
 
-// Run the live scan + audit when a prospect fills out the form
+// Run the live scan + audit when a prospect fills out the form.
+// TEST MODE: pass {"test": true}. Nothing is emailed to the prospect, no team blast,
+// no prospect record is touched. If AUDIT_TEST_EMAIL is set, a single copy goes only there.
 app.post('/api/audit', async (req, res) => {
-  const { ref, email, goal, website } = req.body || {};
+  const { ref, email, goal, website, test } = req.body || {};
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'valid email required' });
-  const p = ref && prospects.find(x => x.id === ref);
-  const site = website || (p && p.website) || '';
+  const isTest = test === true || test === 'true';
+  const p = !isTest && ref && prospects.find(x => x.id === ref);
+  const lookup = isTest && ref && prospects.find(x => x.id === ref); // for test GBP/name only, no writes
+  const site = website || (p && p.website) || (lookup && lookup.website) || '';
+  const bizName = (p && p.business) || (lookup && lookup.business) || null;
+  const bizCity = (p && p.city) || (lookup && lookup.city) || null;
   try {
     const scan = await scanWebsite(site);
     const [ps, gbp] = await Promise.all([
       runPageSpeed(scan.finalUrl || scan.url),
-      scanGBP(p?.business, p?.city),
+      scanGBP(bizName, bizCity),
     ]);
-    const report = await generateAuditReport(p || {}, scan, ps, gbp, { goal });
+    const report = await generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal });
     const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
     let pdf = null;
-    try { pdf = await buildAuditPDF(p?.business || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
+    try { pdf = await buildAuditPDF(bizName || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
+
+    if (isTest) {
+      // Only email a copy to the internal test address (Zac), never the team or the prospect.
+      const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
+      if (pdf && process.env.SENDGRID_API_KEY) { try { await sendAuditToProspect(testTo, bizName, report, pdf, bookingUrl); } catch (e) {} }
+      return res.json({ test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: bizName });
+    }
+
     if (p) {
       p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
       p.audit_scan = { pagespeed: ps, gbp, socials: scan.socials, reachable: scan.reachable };
