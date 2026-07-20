@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import Anthropic from '@anthropic-ai/sdk';
 import sgMail from '@sendgrid/mail';
 import PDFDocument from 'pdfkit';
+import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(__dirname, 'data', 'prospects.json');
@@ -514,19 +515,58 @@ function sentToday() {
 // ---------- API ----------
 const app = express();
 app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Public routes stay open (prospects must reach these); everything else is password-locked
-// when DASHBOARD_PASSWORD is set (for public hosting). Local runs with no password = open.
-const PUBLIC_PATHS = ['/go', '/api/track', '/api/calendly-webhook'];
+// ---------- Universal team login (one shared password, cookie session) ----------
+const APP_PASSWORD = process.env.APP_PASSWORD || '';
+const AUTH_SECRET = process.env.AUTH_SECRET || 'ohm-default-secret';
+const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-access-v1').digest('hex');
+// Prospect-facing routes + login stay open; everything else needs the cookie (when APP_PASSWORD set).
+const PUBLIC_PATHS = ['/go', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
-  const pw = process.env.DASHBOARD_PASSWORD;
-  if (!pw) return next(); // local dev, no lock
+  if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
+  if (req.path.startsWith('/media/')) return next();                 // assets used by public /go page
   if (PUBLIC_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
-  const hdr = req.headers.authorization || '';
-  const token = hdr.startsWith('Basic ') ? Buffer.from(hdr.slice(6), 'base64').toString().split(':')[1] : null;
-  if (token === pw) return next();
-  res.set('WWW-Authenticate', 'Basic realm="OHM"').status(401).send('Auth required');
+  if (getCookie(req, 'ohm_auth') === AUTH_TOKEN) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'auth required' });
+  return res.redirect('/login');
 });
+
+function renderLogin(err) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Open Heart Media — Sign in</title><style>
+:root{--ink:#0f1a30;--red:#df3131;--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{width:340px;padding:36px 32px;text-align:center}
+.logo{font-weight:800;letter-spacing:.5px;margin-bottom:26px}.logo span{color:var(--red)}
+h1{font-size:19px;font-weight:600;margin:0 0 6px}p.sub{color:#9fb0cf;font-size:13px;margin:0 0 22px}
+input{width:100%;padding:13px 14px;border:1px solid #33466b;border-radius:11px;background:#122039;color:#fff;font:inherit;margin-bottom:12px}
+input:focus{outline:none;border-color:#5e97ff}
+button{width:100%;padding:14px;border:0;border-radius:11px;background:var(--red);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+.err{color:#ff8a8a;font-size:13px;margin-top:12px;min-height:16px}
+</style></head><body>
+<div class="card">
+  <div class="logo">OPEN HEART <span>MEDIA</span></div>
+  <h1>Team sign in</h1><p class="sub">Enter the shared team password to access the CRM.</p>
+  <form method="POST" action="/api/login">
+    <input type="password" name="password" placeholder="Team password" autofocus/>
+    <button type="submit">Sign in</button>
+  </form>
+  <div class="err">${err ? 'Wrong password. Try again.' : ''}</div>
+</div></body></html>`;
+}
+app.get('/login', (_, res) => res.send(renderLogin(false)));
+app.post('/api/login', (req, res) => {
+  const password = (req.body && req.body.password) || '';
+  if (APP_PASSWORD && password === APP_PASSWORD) {
+    res.setHeader('Set-Cookie', `ohm_auth=${AUTH_TOKEN}; HttpOnly; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax`);
+    return res.redirect('/');
+  }
+  res.status(401).send(renderLogin(true));
+});
+app.post('/api/logout', (_, res) => { res.setHeader('Set-Cookie', 'ohm_auth=; HttpOnly; Path=/; Max-Age=0'); res.json({ ok: true }); });
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/prospects', (_, res) => {

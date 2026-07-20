@@ -52,7 +52,9 @@
 <header>
   <h1>🎥 OPEN HEART MEDIA — Outreach Dashboard</h1>
   <div class="stats" id="stats"></div>
+  <button onclick="logout()" style="margin-left:10px;background:transparent;border:1px solid var(--line);color:var(--mut);font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer">Log out</button>
 </header>
+<script>function logout(){fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login');}</script>
 <div class="bar">
   <button class="primary" onclick="generateAll()">✍️ Draft next 25 with AI</button>
   <button class="green" onclick="sendApproved()">📤 Send approved (respects daily cap)</button>
