@@ -217,9 +217,51 @@ async function runPageSpeed(url) {
   } catch { return null; }
 }
 
+// ---------- Google Business Profile scan (Places API) ----------
+async function scanGBP(business, city) {
+  const key = process.env.PLACES_KEY || process.env.GOOGLE_API_KEY || process.env.PAGESPEED_KEY;
+  if (!key || !business) return null;
+  try {
+    const q = encodeURIComponent(`${business} ${city || ''} GA`);
+    const find = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${q}&inputtype=textquery&fields=place_id&key=${key}`, { signal: AbortSignal.timeout(10000) });
+    const fd = await find.json();
+    const pid = fd.candidates?.[0]?.place_id;
+    if (!pid) return { found: false };
+    const fields = 'name,rating,user_ratings_total,opening_hours,website,formatted_phone_number,business_status,types,url,photos,reviews,editorial_summary';
+    const det = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${pid}&fields=${fields}&key=${key}`, { signal: AbortSignal.timeout(10000) });
+    const dd = await det.json();
+    const r = dd.result || {};
+    let latestReviewDays = null;
+    if (Array.isArray(r.reviews) && r.reviews.length) {
+      const newest = Math.max(...r.reviews.map(rv => rv.time || 0));
+      if (newest) latestReviewDays = Math.round((Date.now() / 1000 - newest) / 86400);
+    }
+    const cats = (r.types || []).filter(t => !['point_of_interest', 'establishment', 'store'].includes(t));
+    return {
+      found: true, name: r.name || null, rating: r.rating ?? null, reviews: r.user_ratings_total ?? null,
+      hasHours: !!r.opening_hours, websiteOnGbp: !!r.website, phoneOnGbp: !!r.formatted_phone_number,
+      photos: Array.isArray(r.photos) ? r.photos.length : 0, categories: cats, primaryCategory: cats[0] || null,
+      status: r.business_status || null, hasDescription: !!r.editorial_summary?.overview, latestReviewDays,
+    };
+  } catch (e) { return null; }
+}
+
 // Build a full pass/fail checklist from the scan so the audit shows everything we looked at.
-function buildChecklist(scan, ps) {
+function buildChecklist(scan, ps, gbp) {
   const socials = Object.keys(scan.socials || {});
+  const gbpGroup = gbp && gbp.found ? { group: 'Google Business Profile', items: [
+    { label: 'Business profile found on Google', ok: true },
+    { label: 'Strong star rating (4.5+)', ok: gbp.rating != null ? gbp.rating >= 4.5 : null, note: gbp.rating != null ? gbp.rating + '/5' : '' },
+    { label: 'Healthy review count (50+)', ok: gbp.reviews != null ? gbp.reviews >= 50 : null, note: gbp.reviews != null ? gbp.reviews + ' reviews' : '' },
+    { label: 'Getting recent reviews (last 60 days)', ok: gbp.latestReviewDays != null ? gbp.latestReviewDays <= 60 : null, note: gbp.latestReviewDays != null ? gbp.latestReviewDays + ' days ago' : '' },
+    { label: 'Business hours listed', ok: gbp.hasHours },
+    { label: 'Website linked on profile', ok: gbp.websiteOnGbp },
+    { label: 'Phone number on profile', ok: gbp.phoneOnGbp },
+    { label: 'Photos on profile', ok: gbp.photos >= 5, note: gbp.photos ? gbp.photos + (gbp.photos >= 10 ? '+' : '') + ' photos' : 'none' },
+    { label: 'Business description filled in', ok: gbp.hasDescription },
+  ]} : (gbp && gbp.found === false ? { group: 'Google Business Profile', items: [
+    { label: 'Business profile found on Google', ok: false, note: 'not found' },
+  ]} : null);
   return [
     { group: 'Foundation & Speed', items: [
       { label: 'Secure HTTPS connection', ok: scan.https },
@@ -237,6 +279,7 @@ function buildChecklist(scan, ps) {
       { label: 'Canonical tag set', ok: scan.canonical },
       { label: 'Enough content on the page', ok: scan.wordCount >= 300, note: scan.wordCount + ' words' },
     ]},
+    ...(gbpGroup ? [gbpGroup] : []),
     { group: 'Turning Visitors Into Leads', items: [
       { label: 'Click to call phone number', ok: scan.hasPhone },
       { label: 'Lead capture form', ok: scan.hasForm },
@@ -263,8 +306,8 @@ function buildChecklist(scan, ps) {
   ];
 }
 
-async function generateAuditReport(p, scan, ps, answers) {
-  const checklist = buildChecklist(scan, ps);
+async function generateAuditReport(p, scan, ps, gbp, answers) {
+  const checklist = buildChecklist(scan, ps, gbp);
   const flat = checklist.flatMap(g => g.items.map(i => `${i.ok === true ? 'PASS' : i.ok === false ? 'FAIL' : 'n/a'} - ${g.group}: ${i.label}${i.note ? ' (' + i.note + ')' : ''}`)).join('\n');
   const prompt = `You are a senior growth strategist at Open Heart Media (OHM). Produce a thorough, elite growth audit for a local business based ONLY on the real scan data below. It must read like a paid consultant did it: specific, researched, and honest. Tie findings to lost leads and revenue. This report is what earns the discovery call, so it must be genuinely valuable and impressively detailed, while keeping the exact HOW of fixing things at a strategic level (name the gap and the opportunity, do not write the full implementation playbook).
 
@@ -274,12 +317,13 @@ THEIR STATED GOAL: ${answers.goal || 'more customers'}
 FULL TECHNICAL + MARKETING SCAN (real, just run):
 GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, bestPractices: ps.bestPractices, LCP: ps.lcpLabel, CLS: ps.clsLabel, TBT: ps.tbtLabel }) : 'unavailable'}
 SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileViewport: scan.mobileViewport, title: scan.title, titleLen: scan.titleLen, metaDescription: scan.description ? 'present (' + scan.descriptionLen + ' chars)' : 'MISSING', h1Count: scan.h1Count, wordCount: scan.wordCount, schemaLocalBusiness: scan.schemaLocalBusiness, canonical: scan.canonical, hasPhone: scan.hasPhone, hasForm: scan.hasForm, hasBooking: scan.hasBooking, hasCta: scan.hasCta, hasLiveChat: scan.hasLiveChat, hasNewsletter: scan.hasNewsletter, napAddress: scan.napAddress, analytics: scan.analyticsType || false, facebookPixel: scan.fbPixel, googleAdsTag: scan.googleAdsTag, hasVideo: scan.hasVideo, images: scan.imgCount, imagesMissingAlt: scan.imgMissingAlt, ogShareTags: scan.ogTitle && scan.ogImage, mixedContent: scan.mixedContent })}
-SOCIAL LINKS FOUND: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
+GOOGLE BUSINESS PROFILE (live from Google Places): ${gbp && gbp.found ? JSON.stringify({ rating: gbp.rating, reviews: gbp.reviews, latestReviewDaysAgo: gbp.latestReviewDays, hoursListed: gbp.hasHours, websiteLinked: gbp.websiteOnGbp, phoneListed: gbp.phoneOnGbp, photos: gbp.photos, descriptionFilled: gbp.hasDescription, primaryCategory: gbp.primaryCategory, status: gbp.status }) : (gbp && gbp.found === false ? 'NO GOOGLE BUSINESS PROFILE FOUND (major local visibility gap)' : 'not checked')}
+SOCIAL PROFILES LINKED FROM SITE: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
 
 PASS/FAIL CHECKLIST (already computed, use it to ground your scores):
 ${flat}
 
-Score each of the six categories 0-100 HONESTLY from the data (a site failing many checks should score low, do not inflate). Base "Local visibility" mostly on the Google rating and review count versus a typical ${p.category} in ${p.city}, plus schema and address signals. Base "Tracking & data" on analytics, pixel, and ads tag. Every "why" must cite specific real findings (actual PageSpeed numbers, which checks failed).
+Score each of the six categories 0-100 HONESTLY from the data (a site failing many checks should score low, do not inflate). Base "Local Visibility" mostly on the LIVE Google Business Profile data above (rating, review count and recency versus a typical ${p.category} in ${p.city}, whether hours/website/photos/description are filled, and whether a profile exists at all) plus on-site schema and address. Base "Tracking & Data" on analytics, pixel, and ads tag. For "Social & Content", focus on PRESENCE and OPTIMIZATION, not follower counts (we do not have those): which platforms they are and are not on, whether they have video, and the opportunity to optimize their profiles (complete bios, consistent branding and handles, a clear link in bio, regular posting, and short video content for a ${p.category}). Every "why" must cite specific real findings.
 
 Return ONLY JSON:
 {
@@ -289,9 +333,9 @@ Return ONLY JSON:
    {"name": "Website & Speed", "score": <0-100>, "why": "2 sentences citing the real PageSpeed number, HTTPS, mobile, Core Web Vitals"},
    {"name": "Getting Found (SEO)", "score": <0-100>, "why": "2 sentences citing title/meta/schema/H1/content findings"},
    {"name": "Converting Visitors", "score": <0-100>, "why": "2 sentences citing phone, form, booking, CTA, chat findings"},
-   {"name": "Local Visibility", "score": <0-100>, "why": "2 sentences citing Google rating, reviews vs typical ${p.category} in ${p.city}, schema, address"},
+   {"name": "Local Visibility", "score": <0-100>, "why": "2 to 3 sentences citing the LIVE Google Business Profile data: rating and review count and recency vs a typical ${p.category} in ${p.city}, and whether hours, website, photos, and description are filled in on the profile"},
    {"name": "Tracking & Data", "score": <0-100>, "why": "2 sentences on analytics, Meta pixel, Google Ads tag, and what not tracking costs them"},
-   {"name": "Social & Content", "score": <0-100>, "why": "2 to 3 sentences on which platforms are linked or missing, video presence, and what that means for a ${p.category}"}
+   {"name": "Social & Content", "score": <0-100>, "why": "2 to 3 sentences on which platforms they are and are not on, video presence, and the specific opportunity to optimize their profiles (bios, consistent branding, link in bio, posting cadence) for a ${p.category}. Do not mention follower counts."}
  ],
  "findings": [ {"title": "punchy specific title", "detail": "2 to 3 sentences tied to lost leads or revenue, referencing the actual scan finding", "impact": "High|Medium|Low"} ],
  "quickWins": ["3 to 4 short fixes they could do fast, each one line, specific to what failed"],
@@ -925,7 +969,8 @@ app.get('/api/audit-pdf-preview', async (_, res) => {
     summary: 'The reputation is already there. The gap is a slow, invisible website that is not capturing or measuring the demand you have earned. That is exactly the kind of thing we fix.',
     estimate: 'Closing these gaps could realistically recover 8 to 15 additional booked appointments a month at your review volume.',
   };
-  sample.checklist = buildChecklist(sampleScan, samplePs);
+  const sampleGbp = { found: true, rating: 4.9, reviews: 820, latestReviewDays: 12, hasHours: true, websiteOnGbp: true, phoneOnGbp: true, photos: 10, hasDescription: false, primaryCategory: 'spa', status: 'OPERATIONAL' };
+  sample.checklist = buildChecklist(sampleScan, samplePs, sampleGbp);
   sample.pagespeed = samplePs;
   const pdf = await buildAuditPDF('The Beauty Barn', sample, `${CALENDLY}?utm_content=preview`);
   res.setHeader('Content-Type', 'application/pdf');
@@ -1029,14 +1074,17 @@ app.post('/api/audit', async (req, res) => {
   const site = website || (p && p.website) || '';
   try {
     const scan = await scanWebsite(site);
-    const ps = await runPageSpeed(scan.finalUrl || scan.url);
-    const report = await generateAuditReport(p || {}, scan, ps, { goal });
+    const [ps, gbp] = await Promise.all([
+      runPageSpeed(scan.finalUrl || scan.url),
+      scanGBP(p?.business, p?.city),
+    ]);
+    const report = await generateAuditReport(p || {}, scan, ps, gbp, { goal });
     const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
     let pdf = null;
     try { pdf = await buildAuditPDF(p?.business || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
     if (p) {
       p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
-      p.audit_scan = { pagespeed: ps, socials: scan.socials, reachable: scan.reachable };
+      p.audit_scan = { pagespeed: ps, gbp, socials: scan.socials, reachable: scan.reachable };
       p.status = 'audited'; p.audited_at = new Date().toISOString(); p.updated_at = p.audited_at;
       save(prospects);
     }
