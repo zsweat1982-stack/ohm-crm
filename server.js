@@ -466,15 +466,22 @@ function buildAuditPDF(business, report, bookingUrl) {
     y += 4;
     sectionLabel('What is costing you leads');
     (report.findings || []).forEach((f, i) => {
-      const detailH = doc.font('Helvetica').fontSize(10).heightOfString(f.detail || '', { width: CW - 34 });
-      nl(detailH + 40);
+      const bodyX = M + 30, bodyW = CW - 30;         // text column, left of the number circle
+      const titleW = f.impact ? bodyW - 74 : bodyW;  // reserve room for the pill on the title line
+      const titleH = doc.font('Helvetica-Bold').fontSize(12.5).heightOfString(f.title, { width: titleW });
+      const detailH = doc.font('Helvetica').fontSize(10).heightOfString(f.detail || '', { width: bodyW });
+      nl(Math.max(titleH, 16) + detailH + 22);
       const impactC = f.impact === 'High' ? RED : f.impact === 'Medium' ? AMBER : MUT;
       doc.circle(M + 9, y + 8, 9).fill(NAVY);
       doc.fillColor('#fff').font('Helvetica-Bold').fontSize(9).text(String(i + 1), M, y + 4, { width: 18, align: 'center' });
-      doc.fillColor(INK).font('Helvetica-Bold').fontSize(12.5).text(f.title, M + 30, y, { width: CW - 34 - 60 });
-      if (f.impact) { doc.roundedRect(W - M - 62, y - 1, 62, 16, 8).fill(impactC); doc.fillColor('#fff').font('Helvetica-Bold').fontSize(7).text(f.impact.toUpperCase() + ' IMPACT', W - M - 62, y + 3.5, { width: 62, align: 'center', characterSpacing: 0.3, lineBreak: false }); }
-      doc.fillColor(BODY).font('Helvetica').fontSize(10).text(f.detail, M + 30, doc.y + 3, { width: CW - 34, lineGap: 1 });
-      y = doc.y + 15;
+      // impact pill, top right
+      if (f.impact) { doc.roundedRect(W - M - 68, y - 1, 68, 15, 7).fill(impactC); doc.fillColor('#fff').font('Helvetica-Bold').fontSize(7).text(f.impact.toUpperCase() + ' IMPACT', W - M - 68, y + 3, { width: 68, align: 'center', lineBreak: false }); }
+      // title (kept clear of the pill)
+      doc.fillColor(INK).font('Helvetica-Bold').fontSize(12.5).text(f.title, bodyX, y, { width: titleW });
+      // detail always starts below both the title and the pill
+      const detailY = Math.max(doc.y, y + 16) + 5;
+      doc.fillColor(BODY).font('Helvetica').fontSize(10).text(f.detail, bodyX, detailY, { width: bodyW, lineGap: 1 });
+      y = doc.y + 16;
     });
 
     // ---- quick wins ----
