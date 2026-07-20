@@ -455,8 +455,8 @@ input::placeholder{color:#6b6b6b}
 <section class="sec book" id="book">
   <div class="inner">
     <div class="eyebrow reveal" style="text-align:center">Book your free call</div>
-    <h2 class="reveal">Let's find the leads your business is missing.</h2>
-    <p class="reveal">Grab a free 30 minute call. We'll walk through your audit and exactly what we'd do. No pitch, no pressure.</p>
+    <h2 class="reveal">Let's see if we're the right fit.</h2>
+    <p class="reveal">Grab a free 30 minute discovery call. We'll get to know your business and be straight about whether what we do lines up with what you need. No pitch, no pressure.</p>
     <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
   </div>
 </section>
