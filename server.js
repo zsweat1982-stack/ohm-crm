@@ -248,7 +248,7 @@ function buildAuditPDF(business, report, bookingUrl) {
     y += uh + 22;
     // CTA
     doc.fillColor('#12203a').font('Helvetica-Bold').fontSize(13).text('Want us to fix these and grow your business?', M, y);
-    doc.fillColor(MUT).font('Helvetica').fontSize(11).text('Book a free 15 minute call: ', M, doc.y + 4, { continued: true }).fillColor(RED).text(bookingUrl);
+    doc.fillColor(MUT).font('Helvetica').fontSize(11).text('Book a free 30 minute call: ', M, doc.y + 4, { continued: true }).fillColor(RED).text(bookingUrl);
     // footer
     doc.fillColor(MUT).font('Helvetica').fontSize(9).text('Open Heart Media  ·  Georgia  ·  zac@openheartmediaco.com', M, 730, { width: W - M * 2, align: 'center' });
     doc.end();
@@ -456,7 +456,7 @@ input::placeholder{color:#6b6b6b}
   <div class="inner">
     <div class="eyebrow reveal" style="text-align:center">Book your free call</div>
     <h2 class="reveal">Let's find the leads your business is missing.</h2>
-    <p class="reveal">Grab a free 15 minute call. We'll walk through your audit and exactly what we'd do. No pitch, no pressure.</p>
+    <p class="reveal">Grab a free 30 minute call. We'll walk through your audit and exactly what we'd do. No pitch, no pressure.</p>
     <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
   </div>
 </section>
@@ -764,7 +764,7 @@ async function notifyAudit(p, email, report, pdf) {
 async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
   if (!process.env.SENDGRID_API_KEY || !to) return;
   const overall = Math.round((Number(report.websiteScore) + Number(report.visibilityScore) * 10 + Number(report.socialScore) * 10) / 3);
-  const text = `Hi,\n\nHere is your free growth audit for ${business || 'your business'}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${report.findings?.[0]?.title || 'a few fixable gaps'}.\n\nWant us to fix these and grow your business? Grab a free 15 minute call here:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
+  const text = `Hi,\n\nHere is your free growth audit for ${business || 'your business'}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${report.findings?.[0]?.title || 'a few fixable gaps'}.\n\nWant us to fix these and grow your business? Grab a free 30 minute call here:\n${bookingUrl}\n\nZac\nOpen Heart Media`;
   try {
     await sgMail.send({ to, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
       subject: `your growth audit for ${business || 'your business'}`, text,
