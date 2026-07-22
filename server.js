@@ -535,6 +535,10 @@ Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype wo
   let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/); if (m) txt = m[0];
   const report = JSON.parse(txt);
+  // Enforce the no-em-dash rule: strip em/en dashes and "--" substitutes the model sometimes emits.
+  const deDash = s => typeof s === 'string' ? s.replace(/\s*—\s*/g, ', ').replace(/\s*–\s*/g, ', ').replace(/\s+--\s+/g, ', ').replace(/--/g, ', ') : s;
+  const scrub = o => Array.isArray(o) ? o.map(scrub) : (o && typeof o === 'object' ? (Object.keys(o).forEach(k => o[k] = scrub(o[k])), o) : deDash(o));
+  scrub(report);
   report.checklist = checklist;
   report.pagespeed = ps || null;
   return report;
@@ -578,11 +582,16 @@ function buildAuditPDF(business, report, bookingUrl) {
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(19).text(report.headline || 'Where your business is quietly losing customers', M, y, { width: CW, lineGap: 1 });
     y = doc.y + 14;
     const overall = overallScore(report);
-    doc.roundedRect(M, y, CW, 92, 12).fill(NAVY);
+    const verdict = report.overallVerdict || (overall >= 70 ? 'Solid foundation with real room to grow.' : overall >= 45 ? 'A working presence that is leaving real money on the table.' : 'Big, fixable gaps are costing you leads right now.');
+    // Box grows to fit the verdict text so long summaries never overflow the box.
+    const vTop = 46, vW = CW - 196;
+    const vH = doc.font('Helvetica').fontSize(10.5).heightOfString(verdict, { width: vW });
+    const boxH = Math.max(92, vTop + vH + 18);
+    doc.roundedRect(M, y, CW, boxH, 12).fill(NAVY);
     doc.fillColor(scoreColor(overall)).font('Helvetica-Bold').fontSize(50).text(String(overall), M + 26, y + 20, { continued: true }).fillColor('#9fb0cf').fontSize(18).text(' /100');
     doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13).text('Overall growth score', M + 170, y + 24);
-    doc.fillColor('#c1cde3').font('Helvetica').fontSize(10.5).text(report.overallVerdict || (overall >= 70 ? 'Solid foundation with real room to grow.' : overall >= 45 ? 'A working presence that is leaving real money on the table.' : 'Big, fixable gaps are costing you leads right now.'), M + 170, y + 46, { width: CW - 190 });
-    y += 112;
+    doc.fillColor('#c1cde3').font('Helvetica').fontSize(10.5).text(verdict, M + 170, y + vTop, { width: vW });
+    y += boxH + 20;
 
     // ---- category breakdown ----
     sectionLabel('Score breakdown by area');
