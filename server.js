@@ -832,6 +832,9 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 .calwrap{margin-top:30px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#fff;max-width:100%}
 .calwrap .calendly-inline-widget{width:100%}
 .foot{padding:40px 32px;text-align:center;color:var(--soft);font-size:13px;border-top:1px solid var(--line)}
+.foot a{color:#fff;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.25);padding-bottom:1px;transition:border-color .2s}
+.foot a:hover{border-color:var(--red)}
+.foot .flearn{color:var(--red);border-bottom-color:rgba(223,49,49,.4)}
 .hide{display:none}
 @media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.formwrap{padding:24px}.book h2{font-size:clamp(20px,5.7vw,30px);max-width:none;white-space:nowrap}.book p{font-size:15.5px;max-width:40ch}.book .inner{padding:0}.calwrap{min-width:0}.calwrap .calendly-inline-widget{min-width:0 !important}}
 @media(max-width:360px){.book h2{white-space:normal;font-size:22px}.frow{flex-direction:column;gap:0}}
@@ -922,7 +925,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
   </div>
 </section>
 
-<div class="foot">Open Heart Media · Georgia · zac@openheartmediaco.com</div>
+<div class="foot">Open Heart Media · Georgia · <a href="https://openheartmediaco.com" target="_blank" rel="noopener">openheartmediaco.com</a> · <a class="flearn" href="https://openheartmediaco.com" target="_blank" rel="noopener">Learn more about us →</a></div>
 
 <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
 <script>
