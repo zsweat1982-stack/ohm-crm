@@ -71,7 +71,27 @@ function seedFromCsv() {
 let prospects = load() || seedFromCsv();
 
 // ---------- Claude draft ----------
+// Lightweight AI-visibility probe: does an AI assistant actually recognize this business? Training-knowledge only, no guessing.
+async function aiVisibilityProbe(business, city, category) {
+  if (!process.env.ANTHROPIC_API_KEY || !business) return null;
+  try {
+    const probe = `You are testing whether AI assistants recognize a specific local business. Answer ONLY from your own training knowledge. Do NOT guess, infer, or invent. If you do not genuinely and specifically recognize this exact business, set known to false.
+Business: "${business}"${city ? ', in ' + city + ', GA' : ''}${category ? ' - a ' + category : ''}.
+Return ONLY JSON: {"known": true|false, "confidence": "high|medium|low", "wouldRecommend": true|false, "competitorsKnown": true|false, "whatAiKnows": "one honest sentence"}`;
+    const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 300, messages: [{ role: 'user', content: probe }] });
+    let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null;
+  } catch { return null; }
+}
+
 async function draftEmail(p) {
+  // Run the live AI-visibility probe so the opener can lead with a real, personalized AIO observation.
+  const ai = await aiVisibilityProbe(p.business, p.city, p.category);
+  const aiInvisible = !!(ai && ai.known === false);
+  const aiLead = aiInvisible ? `
+AI VISIBILITY (LIVE, TRUE): We just asked an AI assistant to recommend a ${p.category} in ${p.city}, GA, and ${p.business} did NOT come up.${ai.competitorsKnown ? ' The AI surfaced other options instead.' : ''}
+LEAD THE EMAIL WITH THIS. Line 1 body: a plain, specific, slightly surprising observation, for example "I asked ChatGPT for the best ${p.category} in ${p.city} this week, and ${p.business} didn't come up." State it as a fact, calm and factual, not alarmist. Do NOT invent competitor names, exact numbers, or details you were not given. Then the OUTCOME gap in one line: more people now ask AI assistants (ChatGPT, Google's AI Overviews) for a ${p.category}, so being invisible there quietly sends ready-to-buy customers to whoever the AI does recommend. This is a genuinely high-priority, current shift, frame it that way without hype.` : `
+LEAD with a SPECIFIC, genuine positive observation about THEM (reference their real rating/reviews or their standing as a ${p.category} in ${p.city}). Must feel impossible to have sent to anyone else. Then the OUTCOME-based gap: a business this good is almost certainly leaving leads and revenue on the table, because the people searching for a ${p.category} in ${p.city} are not all finding them or booking. Frame it as money and customers they are missing, not a feature they lack.`;
   const prompt = `You are writing as Michelle, at Open Heart Media (OHM). OHM helps local businesses GET MORE LEADS AND GROW REVENUE. That is what you sell: the outcome (more customers, more booked jobs, more revenue), NOT the mechanism. Video, content, and websites are just how OHM gets there, so mention them only lightly if at all. Lead with the money.
 
 Write ONE short cold email to this local business to get a reply saying yes to a free personalized growth audit (where we show exactly where they are losing leads and revenue, and how to capture more). The audit leads to a discovery call.
@@ -83,16 +103,17 @@ BUSINESS:
 - Google rating: ${p.rating || 'n/a'} from ${p.reviews || 'n/a'} reviews
 - Website: ${p.website || 'n/a'}
 
+OPENING ANGLE:${aiLead}
+
 RULES (follow exactly):
 - Under 100 words. Sound like a real local person, not marketing. Use contractions.
-- Line 1 body: a SPECIFIC, genuine positive observation about THEM (reference their real rating/reviews or their standing as a ${p.category} in ${p.city}). Must feel impossible to have sent to anyone else.
-- Then the OUTCOME-based gap: a business this good is almost certainly leaving leads and revenue on the table, because the people searching for a ${p.category} in ${p.city} are not all finding them or booking. Frame it as money and customers they are missing, not a feature they lack. Do not lecture about video or social.
-- Then point them to a short breakdown you put together showing where those lost leads and dollars are. One quick line, then put the exact token [LINK] on its own line where the link will go.
+- Do not lecture about video or social.
+- After the hook, point them to a short breakdown you put together showing where those lost leads and dollars are (their full free audit). One quick line, then put the exact token [LINK] on its own line where the link will go.
 - After the link, one soft line like "worth a look?" Then sign.
 - Sign: Michelle, Open Heart Media
-- NO em dashes. No dashes as punctuation. No exclamation marks. No "hope this finds you well". No buzzwords like "leverage", "synergy", "unlock", "scale".
+- NO em dashes. No dashes as punctuation. No exclamation marks. No "hope this finds you well". No buzzwords like "leverage", "synergy", "unlock", "scale". Never invent facts, names, or numbers.
 
-Also write a lowercase, personal, outcome-flavored subject line under 45 chars (hint at more customers/leads/revenue, no hype, no exclamation). Examples of the vibe: "more patients in ${p.city}", "leads you're probably missing", "quick idea to grow ${p.business}".
+Also write a lowercase, personal subject line under 45 chars, no hype, no exclamation. ${aiInvisible ? `Since this leads with AI visibility, the subject should hint at it, for example "ai can't find ${p.business.toLowerCase()} yet", "${p.city.toLowerCase()} ${p.category.toLowerCase()}s and chatgpt", "when people ask ai for a ${p.category.toLowerCase()}".` : `Hint at more customers/leads/revenue. Examples: "more patients in ${p.city}", "leads you're probably missing".`}
 
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
@@ -390,17 +411,7 @@ async function scanAIO(business, city, category, scan) {
   };
   // Live visibility probe: reflects what AI assistants actually know from training. An honest signal
   // of AI-search presence for a local business (usually "not known yet" = the real opportunity).
-  let visibility = null;
-  if (process.env.ANTHROPIC_API_KEY && business) {
-    try {
-      const probe = `You are auditing whether AI assistants recognize a specific local business. Answer ONLY from your own training knowledge. Do NOT guess, infer, or invent facts. If you do not genuinely and specifically recognize this exact business, set known to false.
-Business: "${business}"${city ? ', in ' + city + ', GA' : ''}${category ? ' — a ' + category : ''}.
-Return ONLY JSON: {"known": true|false, "confidence": "high|medium|low", "wouldRecommend": true|false, "whatAiKnows": "one honest sentence on what (if anything) you actually know about them, or that you have no information", "competitorsKnown": true|false}`;
-      const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: probe }] });
-      let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-      const m = t.match(/\{[\s\S]*\}/); if (m) visibility = JSON.parse(m[0]);
-    } catch {}
-  }
+  const visibility = await aiVisibilityProbe(business, city, category);
   let score = 0;
   score += ready.aiCrawlersAllowed ? 22 : 0;
   score += ready.schema ? 20 : 0;
