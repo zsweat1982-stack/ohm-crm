@@ -1432,12 +1432,32 @@ app.post('/api/send-approved', async (req, res) => {
 // ---------- 3 / 7 / 10 day follow-up sequence ----------
 async function draftFollowup(p, step) {
   const link = `${LANDING_URL}?ref=${p.id}`;
-  const angles = {
-    1: 'Circle back gently, one or two short lines. Ask if they got a chance to run their free audit. Warm, low pressure.',
-    2: 'Open with one quick proof point (we recently drove about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business). Then invite them to grab their free audit.',
-    3: 'Last friendly touch, one or two lines. Say you will leave it here, and the free audit is open anytime if they want it.',
-  };
-  const prompt = `Write a very short follow-up email (2 to 3 sentences) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${angles[step]} Reference their business naturally. Put the exact token [LINK] on its own line for the audit link. Sign "Michelle, Open Heart Media". No em dashes, no exclamation marks, no hype. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
+  const audited = !!(p.audited_at || p.status === 'audited') && !!p.audit_report;
+  let angles, context = '', length = '2 to 3', linkPurpose = 'the free audit link';
+  if (audited) {
+    // They ALREADY ran the audit but have not booked. Reference their real results + add education / free value.
+    const rep = p.audit_report || {};
+    const topFinding = (rep.findings || [])[0];
+    const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
+    context = `IMPORTANT: they have ALREADY run their free audit, so do NOT ask if they ran it. Reference what it showed.`
+      + (topFinding ? ` The biggest gap their audit flagged was "${topFinding.title}": ${topFinding.detail || ''}` : '')
+      + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '');
+    length = '3 to 4';
+    linkPurpose = 'the discovery call link (they can also revisit their audit there)';
+    angles = {
+      1: 'They saw their audit but have not booked. Acknowledge they have their results in hand. Then give ONE specific, genuinely useful tip they can act on this week tied to their biggest flagged gap above (real free value, something concrete they could actually do, not vague advice). Close by offering a short call to walk through the rest.',
+      2: 'Lead with one quick proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their situation, then add one more concrete piece of education tied to their weakest area. Invite them to a short call to map it out.',
+      3: 'Last friendly touch. Leave one final genuinely helpful thought tied to what their audit showed, say you will leave it here, and note the offer to talk it through is open anytime.',
+    };
+  } else {
+    // They have not run the audit yet: nudge them to it.
+    angles = {
+      1: 'Circle back gently, one or two short lines. Ask if they got a chance to run their free audit. Warm, low pressure.',
+      2: 'Open with one quick proof point (we recently drove about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business). Then invite them to grab their free audit.',
+      3: 'Last friendly touch, one or two lines. Say you will leave it here, and the free audit is open anytime if they want it.',
+    };
+  }
+  const prompt = `Write a short follow-up email (${length} sentences) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Reference their business naturally. Any tip you give must be specific and genuinely useful free value, never salesy or generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". No em dashes, no exclamation marks, no hype. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
