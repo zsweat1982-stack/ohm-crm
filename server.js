@@ -918,7 +918,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
     <div class="eyebrow reveal" style="text-align:center">Book Your Free Discovery Call</div>
     <h2 class="reveal">Let's see if we're the right fit.</h2>
     <p class="reveal">Schedule a complimentary 30-minute discovery call to discuss your business, your goals, and your current marketing efforts. We'll provide honest feedback on whether our services align with your needs. No sales pressure, just a straightforward conversation.</p>
-    <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
+    <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&hide_event_type_details=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
   </div>
 </section>
 
