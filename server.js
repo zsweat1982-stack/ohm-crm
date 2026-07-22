@@ -1439,14 +1439,19 @@ async function draftFollowup(p, step) {
     const rep = p.audit_report || {};
     const topFinding = (rep.findings || [])[0];
     const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
+    const aio = p.audit_scan?.aio;
+    const aiUnknown = !!(aio && aio.visibility && aio.visibility.known === false);
     context = `IMPORTANT: they have ALREADY run their free audit, so do NOT ask if they ran it. Reference what it showed.`
       + (topFinding ? ` The biggest gap their audit flagged was "${topFinding.title}": ${topFinding.detail || ''}` : '')
-      + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '');
+      + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '')
+      + (aiUnknown ? ` A LIVE AI-visibility test in their audit found that AI assistants (ChatGPT, Google AI Overviews, Perplexity) do NOT recognize ${p.business} yet when asked to recommend a ${p.category} in ${p.city}. This is a real, fast-growing, high-priority channel: buyers increasingly ask AI assistants for local recommendations, and a business the AI has never heard of is completely invisible there while competitors who show up win those referrals.` : '');
     length = '3 to 4 SHORT sentences, tight and skimmable, no long paragraphs or run-on sentences';
     linkPurpose = 'the discovery call link (they can also revisit their audit there)';
     angles = {
       1: 'Lead with the single most painful finding from their audit, stated plainly as lost customers or revenue (not jargon). Then give ONE concrete free fix in one sentence. End with a one-line invite to a short call to fix the rest.',
-      2: 'One-line proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their biggest gap in one line, then one sharp one-line CTA to a short call.',
+      2: aiUnknown
+        ? `Lead with the AI-search shift as the high-priority, trending pain: more buyers now ask AI assistants (ChatGPT, Google AI Overviews) for a ${p.category}, and their audit's LIVE test found that AI does not recognize ${p.business} yet, so they are invisible in that channel while competitors get recommended. One line on what that costs them. One sharp one-line CTA to a short call.`
+        : 'One-line proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their biggest gap in one line, then one sharp one-line CTA to a short call.',
       3: 'Very short. Restate their biggest pain in one line, leave one final quick tip, and a warm door-open close.',
     };
   } else {
