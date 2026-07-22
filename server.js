@@ -925,7 +925,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
   </div>
 </section>
 
-<div class="foot">Open Heart Media · Georgia · <a href="https://openheartmediaco.com" target="_blank" rel="noopener">openheartmediaco.com</a> · <a class="flearn" href="https://openheartmediaco.com" target="_blank" rel="noopener">Learn more about us →</a></div>
+<div class="foot">Open Heart Media · Learn more about us · <a href="https://openheartmediaco.com" target="_blank" rel="noopener">openheartmediaco.com</a></div>
 
 <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
 <script>
