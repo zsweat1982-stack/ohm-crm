@@ -1442,12 +1442,12 @@ async function draftFollowup(p, step) {
     context = `IMPORTANT: they have ALREADY run their free audit, so do NOT ask if they ran it. Reference what it showed.`
       + (topFinding ? ` The biggest gap their audit flagged was "${topFinding.title}": ${topFinding.detail || ''}` : '')
       + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '');
-    length = '3 to 4';
+    length = '3 to 4 SHORT sentences, tight and skimmable, no long paragraphs or run-on sentences';
     linkPurpose = 'the discovery call link (they can also revisit their audit there)';
     angles = {
-      1: 'They saw their audit but have not booked. Acknowledge they have their results in hand. Then give ONE specific, genuinely useful tip they can act on this week tied to their biggest flagged gap above (real free value, something concrete they could actually do, not vague advice). Close by offering a short call to walk through the rest.',
-      2: 'Lead with one quick proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their situation, then add one more concrete piece of education tied to their weakest area. Invite them to a short call to map it out.',
-      3: 'Last friendly touch. Leave one final genuinely helpful thought tied to what their audit showed, say you will leave it here, and note the offer to talk it through is open anytime.',
+      1: 'Lead with the single most painful finding from their audit, stated plainly as lost customers or revenue (not jargon). Then give ONE concrete free fix in one sentence. End with a one-line invite to a short call to fix the rest.',
+      2: 'One-line proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their biggest gap in one line, then one sharp one-line CTA to a short call.',
+      3: 'Very short. Restate their biggest pain in one line, leave one final quick tip, and a warm door-open close.',
     };
   } else {
     // They have not run the audit yet: nudge them to it.
@@ -1457,7 +1457,7 @@ async function draftFollowup(p, step) {
       3: 'Last friendly touch, one or two lines. Say you will leave it here, and the free audit is open anytime if they want it.',
     };
   }
-  const prompt = `Write a short follow-up email (${length} sentences) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Reference their business naturally. Any tip you give must be specific and genuinely useful free value, never salesy or generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". No em dashes, no exclamation marks, no hype. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
+  const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Write like a sharp direct-response copywriter: lead with the pain, short punchy sentences, every line earns its place, skimmable, no filler, no long run-ons. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". No em dashes, no exclamation marks, no hype words. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
