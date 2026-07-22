@@ -114,7 +114,86 @@ Return ONLY JSON: {"subject": "...", "body": "..."}`;
 }
 const LANDING_URL = process.env.LANDING_URL || `http://localhost:${process.env.PORT || 4100}/go`;
 
-// ---------- SCANNING AUDIT ENGINE (deep website + social + marketing scan) ----------
+// ---------- SCANNING AUDIT ENGINE (multi-page website + social + marketing + AI-search scan) ----------
+const AUDIT_UA = 'Mozilla/5.0 (compatible; OHMAuditBot/1.0; +https://openheartmediaco.com)';
+
+function stripText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&(nbsp|amp|quot|#39|apos|mdash|ndash);/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+async function fetchPage(url, timeout = 12000) {
+  try {
+    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeout), headers: { 'User-Agent': AUDIT_UA } });
+    const html = (await res.text()).slice(0, 900000);
+    return { ok: res.ok, status: res.status, finalUrl: res.url, html };
+  } catch (e) { return { ok: false, error: e.message, finalUrl: url, html: '' }; }
+}
+
+// Tighter social detection: ignore share/pixel/plugin/intent links, keep real profile links only.
+function extractSocials(html) {
+  const out = {};
+  const bad = /(sharer|share\.php|\/tr\b|\/tr\?|plugins|dialog|intent|\/share|\/events\/|widgets|badge|oembed|\/plugins\/)/i;
+  const reserved = /^\/(share|sharer|intent|home|login|signup|privacy|tos|hashtag|explore|tr|plugins|dialog|help|policies|policy|about\/)/i;
+  const patterns = {
+    facebook: /https?:\/\/(?:www\.)?facebook\.com\/[A-Za-z0-9.\-]{2,}(?:\/[A-Za-z0-9.\-]+)?/ig,
+    instagram: /https?:\/\/(?:www\.)?instagram\.com\/[A-Za-z0-9_.]{2,}/ig,
+    tiktok: /https?:\/\/(?:www\.)?tiktok\.com\/@[A-Za-z0-9_.]{2,}/ig,
+    youtube: /https?:\/\/(?:www\.)?youtube\.com\/(?:@|c\/|channel\/|user\/)[A-Za-z0-9_\-]{2,}/ig,
+    linkedin: /https?:\/\/(?:www\.)?linkedin\.com\/(?:company|in)\/[A-Za-z0-9_\-]{2,}/ig,
+    x: /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[A-Za-z0-9_]{2,}/ig,
+  };
+  for (const [k, re] of Object.entries(patterns)) {
+    const matches = html.match(re) || [];
+    const good = matches.map(m => m.split('?')[0]).find(m => {
+      if (bad.test(m)) return false;
+      const p = m.replace(/^https?:\/\/[^/]+/i, '');
+      return !reserved.test(p);
+    });
+    if (good) out[k] = good;
+  }
+  return out;
+}
+
+// Per-page conversion/trust signals, tightened to cut false positives. OR-merged across pages.
+function pageSignals(html) {
+  const text = stripText(html);
+  const forms = html.match(/<form[\s\S]*?<\/form>/gi) || [];
+  const hasForm = forms.some(f =>
+    (/(type=["'](email|tel)["']|<textarea|name=["'][^"']*(email|e-mail|phone|message|comment|fullname|contact)[^"']*["'])/i.test(f))
+    && !/(role=["']search["']|type=["']search["']|id=["'][^"']*search|name=["'](search|q|query|s)["']|action=["'][^"']*search)/i.test(f));
+  const hasBooking = /(book (now|online|an?\s+appointment)|schedule (an?\s+|your\s+)?(appointment|consultation|visit|call|service)|calendly\.com|acuityscheduling|squareup\.com\/appointments|setmore|book(sy|ing)\.|vagaro|mindbodyonline|housecallpro|request (an?\s+|your\s+)?(appointment|quote|estimate))/i.test(html);
+  const hasNewsletter = (/(subscribe|sign\s?up|join)[^<>]{0,45}(newsletter|email list|mailing list|our email|updates)/i.test(text) || /(join our (email|mailing) list|get (our )?newsletter)/i.test(text)) && /<input[^>]+type=["']email["']/i.test(html);
+  const hasLiveChat = /(intercom|drift\.com|tawk\.to|zendesk|tidio|crisp\.chat|hubspot[^"']*conversations|livechatinc|customerchat|messenger[^"']*chat|gorgias|podium|chatwoot|olark|liveperson)/i.test(html);
+  const hasCta = /(get (a |your )?(free )?(quote|estimate|consultation|demo|assessment|inspection|pricing)|request (a |your )?(free )?(quote|estimate|consultation|callback|appointment)|book (a |your |now|online|an appointment)|schedule (a |your |an? |now|online)|call now|claim your|get started|start (your|a) )/i.test(html);
+  const hasPhone = /href=["']tel:\+?[0-9]/i.test(html);
+  const hasEmailLink = /href=["']mailto:[^"']+@/i.test(html);
+  const napAddress = /\b\d{1,6}\s+([A-Za-z0-9.'\-]+\s){1,4}(street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|boulevard|drive|dr\.?|lane|ln\.?|way|court|ct\.?|suite|ste\.?|hwy|highway|pkwy|parkway|place|pl\.?|circle|cir\.?|trail|terrace)\b/i.test(text) && /\b(GA|Georgia)\b/.test(text)
+    || /\b[A-Za-z.\s]{2,25},\s*GA\s+3\d{4}\b/.test(text);
+  const schemaLocalBusiness = /("@type"\s*:\s*"?(LocalBusiness|Dentist|MedicalBusiness|MedicalClinic|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|GeneralContractor|Contractor|MovingCompany|ProfessionalService|Store|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|AutoRepair|RealEstateAgent|Physician|Dentistry)"?|itemtype=["'][^"']*schema\.org\/(LocalBusiness|[A-Za-z]*Business))/i.test(html);
+  const faqSchema = /("@type"\s*:\s*"?(FAQPage|Question)"?)/i.test(html);
+  const sameAs = /"sameAs"\s*:/i.test(html);
+  return { text, hasForm, hasBooking, hasNewsletter, hasLiveChat, hasCta, hasPhone, hasEmailLink, napAddress, schemaLocalBusiness, faqSchema, sameAs };
+}
+
+// Which named AI crawlers are explicitly blocked in robots.txt (ignores wildcard-only rules to avoid false alarms).
+function aiCrawlerBlocks(robotsTxt) {
+  const bots = ['GPTBot','ClaudeBot','Claude-Web','anthropic-ai','PerplexityBot','Google-Extended','CCBot','Applebot-Extended','Bytespider'];
+  const blocked = [];
+  const groups = robotsTxt.split(/\n(?=\s*user-agent:)/i);
+  for (const g of groups) {
+    const uas = [...g.matchAll(/user-agent:\s*([^\n\r]+)/ig)].map(m => m[1].trim());
+    const disallowAll = /(^|\n)\s*disallow:\s*\/\s*($|\n)/i.test(g) && !/(^|\n)\s*allow:\s*\/\s*($|\n)/i.test(g);
+    if (!disallowAll) continue;
+    for (const bot of bots) if (uas.some(u => u.toLowerCase() === bot.toLowerCase())) blocked.push(bot);
+  }
+  return [...new Set(blocked)];
+}
+
 async function scanWebsite(rawUrl) {
   let url = (rawUrl || '').trim();
   if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
@@ -122,7 +201,7 @@ async function scanWebsite(rawUrl) {
     url, reachable: false, https: url.startsWith('https'), redirectsToHttps: false, finalUrl: null,
     // content / SEO
     title: null, titleLen: 0, description: null, descriptionLen: 0, h1Count: 0, wordCount: 0,
-    mobileViewport: false, favicon: false, ogTitle: false, ogImage: false, schemaLocalBusiness: false, canonical: false,
+    mobileViewport: false, favicon: false, ogTitle: false, ogImage: false, schemaLocalBusiness: false, faqSchema: false, sameAs: false, canonical: false,
     // conversion
     hasPhone: false, hasEmailLink: false, hasForm: false, hasBooking: false, hasNewsletter: false,
     hasLiveChat: false, hasCta: false, napAddress: false,
@@ -132,64 +211,98 @@ async function scanWebsite(rawUrl) {
     imgCount: 0, imgMissingAlt: 0, hasVideo: false, mixedContent: false, copyrightYear: null,
     // social
     socials: {},
+    // crawl coverage + AI search readiness
+    pagesScanned: [], host: null, robotsFound: false, aiCrawlersAllowed: null, aiCrawlersBlocked: [], llmsTxt: false,
   };
   if (!url) return out;
-  try {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(13000), headers: { 'User-Agent': 'Mozilla/5.0 (OHM Audit Bot)' } });
-    out.reachable = res.ok;
-    out.finalUrl = res.url;
-    out.redirectsToHttps = res.url.startsWith('https');
-    out.https = res.url.startsWith('https');
-    const html = (await res.text()).slice(0, 800000);
-    const head = html.slice(0, 200000);
 
-    // ----- content / SEO -----
-    out.title = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || null;
-    out.titleLen = out.title ? out.title.length : 0;
-    out.description = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)
-      || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i) || [])[1] || null;
-    out.descriptionLen = out.description ? out.description.length : 0;
-    out.mobileViewport = /<meta[^>]+name=["']viewport["']/i.test(head);
-    out.favicon = /<link[^>]+rel=["'][^"']*icon[^"']*["']/i.test(head);
-    out.ogTitle = /<meta[^>]+property=["']og:title["']/i.test(head);
-    out.ogImage = /<meta[^>]+property=["']og:image["']/i.test(head);
-    out.canonical = /<link[^>]+rel=["']canonical["']/i.test(head);
-    out.schemaLocalBusiness = /("@type"\s*:\s*"(LocalBusiness|Dentist|MedicalBusiness|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|ProfessionalService|Store|HealthAndBeautyBusiness)"|itemtype=["'][^"']*schema.org\/LocalBusiness)/i.test(html);
-    out.h1Count = (html.match(/<h1[\s>]/gi) || []).length;
-    const textOnly = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    out.wordCount = textOnly ? textOnly.split(' ').length : 0;
+  const home = await fetchPage(url, 13000);
+  if (!home.html) { out.error = home.error || 'unreachable'; return out; }
+  out.reachable = home.ok;
+  out.finalUrl = home.finalUrl;
+  out.https = (home.finalUrl || url).startsWith('https');
+  out.redirectsToHttps = out.https;
+  let origin = null;
+  try { const u = new URL(out.finalUrl || url); origin = u.origin; out.host = u.host.replace(/^www\./, ''); } catch {}
+  const html = home.html;
+  const head = html.slice(0, 220000);
 
-    // ----- conversion -----
-    out.hasPhone = /href=["']tel:/i.test(html);
-    out.hasEmailLink = /href=["']mailto:/i.test(html);
-    out.hasForm = /<form/i.test(html);
-    out.hasBooking = /(book now|schedule|appointment|calendly|acuity|squareup\.com\/appointments|book online|reserve|request (a )?quote|get (a )?quote)/i.test(html);
-    out.hasNewsletter = /(newsletter|subscribe|join (our )?(email|list|mailing)|sign up for)/i.test(html) || /<input[^>]+type=["']email["']/i.test(html);
-    out.hasLiveChat = /(intercom|drift\.com|tawk\.to|zendesk|tidio|crisp\.chat|hubspot.*conversations|livechatinc|facebook.*customerchat|messenger.*chat|gorgias|podium)/i.test(html);
-    out.hasCta = /(get (a |your )?(free )?(quote|estimate|consultation|audit|demo)|call now|contact us|book (a |your )?|schedule|request )/i.test(html);
-    out.napAddress = /\b\d{1,6}\s+[A-Za-z0-9.\s]{3,40}\b(street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|drive|dr\.?|lane|ln\.?|way|court|ct\.?|suite|ste\.?|hwy|highway|pkwy|parkway)\b/i.test(textOnly) || /\bGA\s+3\d{4}\b/.test(textOnly);
+  // ----- homepage-only SEO signals -----
+  out.title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.replace(/<[^>]+>/g, '').trim() || null;
+  out.titleLen = out.title ? out.title.length : 0;
+  out.description = (html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]*name=["']description["']/i) || [])[1] || null;
+  out.descriptionLen = out.description ? out.description.length : 0;
+  out.mobileViewport = /<meta[^>]+name=["']viewport["']/i.test(head);
+  out.favicon = /<link[^>]+rel=["'][^"']*icon/i.test(head);
+  out.ogTitle = /<meta[^>]+property=["']og:title["']/i.test(head);
+  out.ogImage = /<meta[^>]+property=["']og:image["']/i.test(head);
+  out.canonical = /<link[^>]+rel=["']canonical["']/i.test(head);
+  out.h1Count = (html.match(/<h1[\s>]/gi) || []).length;
 
-    // ----- tracking / data -----
-    if (/googletagmanager\.com\/gtm|GTM-[A-Z0-9]+/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Tag Manager'; }
-    else if (/gtag\(|googletagmanager\.com\/gtag|G-[A-Z0-9]{6,}/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Analytics 4'; }
-    else if (/google-analytics\.com\/analytics|ga\('create'|UA-\d{4,}/i.test(html)) { out.analytics = true; out.analyticsType = 'Universal Analytics (legacy)'; }
-    out.fbPixel = /connect\.facebook\.net\/[^"']*fbevents|fbq\(/i.test(html);
-    out.googleAdsTag = /AW-\d{6,}|googleadservices\.com|google_conversion/i.test(html);
+  // ----- tracking / data (homepage) -----
+  if (/googletagmanager\.com\/gtm|GTM-[A-Z0-9]{4,}/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Tag Manager'; }
+  else if (/gtag\s*\(|googletagmanager\.com\/gtag|["']G-[A-Z0-9]{6,}["']/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Analytics 4'; }
+  else if (/google-analytics\.com\/analytics|ga\(\s*['"]create|UA-\d{4,}-\d/i.test(html)) { out.analytics = true; out.analyticsType = 'Universal Analytics (legacy)'; }
+  out.fbPixel = /connect\.facebook\.net\/[^"']*fbevents|fbq\(\s*['"]init/i.test(html);
+  out.googleAdsTag = /AW-\d{6,}|googleadservices\.com\/pagead\/conversion|google_conversion_id/i.test(html);
 
-    // ----- media / trust -----
-    const imgs = html.match(/<img[^>]*>/gi) || [];
-    out.imgCount = imgs.length;
-    out.imgMissingAlt = imgs.filter(t => !/alt=["'][^"']+["']/i.test(t)).length;
-    out.hasVideo = /(<video|youtube\.com\/embed|player\.vimeo\.com|wistia|<iframe[^>]+youtube)/i.test(html);
-    out.mixedContent = out.https && /(src|href)=["']http:\/\/(?!localhost)/i.test(html);
-    out.copyrightYear = (html.match(/(?:©|&copy;|copyright)\s*(20\d{2})/i) || [])[1] || null;
+  // ----- media / trust (homepage) -----
+  const imgs = html.match(/<img[^>]*>/gi) || [];
+  out.imgCount = imgs.length;
+  out.imgMissingAlt = imgs.filter(t => !/alt=["'][^"']+["']/i.test(t)).length;
+  out.hasVideo = /(<video[\s>]|youtube\.com\/embed|player\.vimeo\.com|wistia|\.mp4["']|<iframe[^>]+(youtube|vimeo))/i.test(html);
+  out.mixedContent = out.https && /(src|href)=["']http:\/\/(?!localhost|127\.)/i.test(html);
+  out.copyrightYear = (html.match(/(?:©|&copy;|copyright)\s*(?:\d{4}\s*[-–]\s*)?(20\d{2})/i) || [])[1] || null;
 
-    // ----- social -----
-    const socialRe = { facebook: /facebook\.com\/[A-Za-z0-9._%-]+/i, instagram: /instagram\.com\/[A-Za-z0-9._%-]+/i,
-      tiktok: /tiktok\.com\/@?[A-Za-z0-9._%-]+/i, youtube: /youtube\.com\/[A-Za-z0-9@._%/-]+/i,
-      linkedin: /linkedin\.com\/(company|in)\/[A-Za-z0-9._%-]+/i, x: /(twitter\.com|x\.com)\/[A-Za-z0-9._%-]+/i };
-    for (const [k, re] of Object.entries(socialRe)) { const m = html.match(re); if (m) out.socials[k] = m[0]; }
-  } catch (e) { out.error = e.message; }
+  // ----- merge conversion + trust signals across homepage AND key inner pages -----
+  const merge = (h) => {
+    const s = pageSignals(h);
+    out.hasForm ||= s.hasForm; out.hasBooking ||= s.hasBooking; out.hasNewsletter ||= s.hasNewsletter;
+    out.hasLiveChat ||= s.hasLiveChat; out.hasCta ||= s.hasCta; out.hasPhone ||= s.hasPhone;
+    out.hasEmailLink ||= s.hasEmailLink; out.napAddress ||= s.napAddress;
+    out.schemaLocalBusiness ||= s.schemaLocalBusiness; out.faqSchema ||= s.faqSchema; out.sameAs ||= s.sameAs;
+    Object.assign(out.socials, extractSocials(h));
+    return s;
+  };
+  const homeSig = merge(html);
+  out.wordCount = homeSig.text ? homeSig.text.split(' ').length : 0;
+  out.pagesScanned.push('/');
+
+  if (origin && out.host) {
+    // discover up to 4 key internal pages (contact / about / services / booking) on the same host
+    const links = [...html.matchAll(/<a[^>]+href=["']([^"'#\s]+)["']/gi)].map(m => m[1]);
+    const want = /(contact|about|service|book|appointment|quote|schedule|team|location|review)/i;
+    const seen = new Set([out.finalUrl]);
+    const targets = [];
+    for (const href of links) {
+      if (targets.length >= 4) break;
+      let abs; try { abs = new URL(href, out.finalUrl).href.split('#')[0]; } catch { continue; }
+      try { if (new URL(abs).host.replace(/^www\./, '') !== out.host) continue; } catch { continue; }
+      if (seen.has(abs) || !want.test(abs) || /\.(pdf|jpg|png|zip|mp4)$/i.test(abs)) continue;
+      seen.add(abs); targets.push(abs);
+    }
+    const pages = await Promise.all(targets.map(u => fetchPage(u, 9000)));
+    for (let i = 0; i < pages.length; i++) {
+      if (pages[i].ok && pages[i].html) {
+        const s2 = merge(pages[i].html);
+        out.wordCount += s2.text ? s2.text.split(' ').length : 0;
+        out.fbPixel ||= /connect\.facebook\.net\/[^"']*fbevents|fbq\(\s*['"]init/i.test(pages[i].html);
+        out.pagesScanned.push(targets[i].replace(origin, '') || '/');
+      }
+    }
+
+    // ----- AI-search readiness: robots.txt AI-crawler policy + llms.txt -----
+    try {
+      const rob = await fetchPage(origin + '/robots.txt', 7000);
+      if (rob.ok && /user-agent/i.test(rob.html)) {
+        out.robotsFound = true;
+        out.aiCrawlersBlocked = aiCrawlerBlocks(rob.html);
+        out.aiCrawlersAllowed = out.aiCrawlersBlocked.length === 0;
+      } else { out.aiCrawlersAllowed = true; }
+    } catch { out.aiCrawlersAllowed = null; }
+    try { const l = await fetchPage(origin + '/llms.txt', 5000); out.llmsTxt = l.ok && l.html.trim().length > 20; } catch {}
+  }
   return out;
 }
 
@@ -205,6 +318,7 @@ async function runPageSpeed(url) {
     const a = d.lighthouseResult?.audits || {};
     const s = x => x?.score != null ? Math.round(x.score * 100) : null;
     const num = k => a[k]?.numericValue != null ? a[k].numericValue : null;
+    const passed = k => a[k]?.score != null ? a[k].score >= 0.9 : null;
     // Core Web Vitals + key timings (numericValue in ms, except CLS unitless)
     return {
       performance: s(c.performance), seo: s(c.seo), accessibility: s(c.accessibility), bestPractices: s(c['best-practices']),
@@ -213,12 +327,18 @@ async function runPageSpeed(url) {
       lcpLabel: a['largest-contentful-paint']?.displayValue || null,
       clsLabel: a['cumulative-layout-shift']?.displayValue || null,
       tbtLabel: a['total-blocking-time']?.displayValue || null,
+      // Lighthouse renders the page in real Chrome, so these fix false negatives on JS-rendered sites.
+      renderedTitle: passed('document-title'),
+      renderedMetaDesc: passed('meta-description'),
+      renderedViewport: passed('viewport'),
+      isCrawlable: passed('is-crawlable'),
+      httpStatusOk: passed('http-status-code'),
     };
   } catch { return null; }
 }
 
 // ---------- Google Business Profile scan (Places API) ----------
-async function scanGBP(business, city) {
+async function scanGBP(business, city, siteHost) {
   const key = process.env.PLACES_KEY || process.env.GOOGLE_API_KEY || process.env.PAGESPEED_KEY;
   if (!key || !business) return null;
   try {
@@ -227,10 +347,18 @@ async function scanGBP(business, city) {
     const fd = await find.json();
     const pid = fd.candidates?.[0]?.place_id;
     if (!pid) return { found: false };
-    const fields = 'name,rating,user_ratings_total,opening_hours,website,formatted_phone_number,business_status,types,url,photos,reviews,editorial_summary';
+    const fields = 'name,rating,user_ratings_total,opening_hours,website,formatted_phone_number,formatted_address,business_status,types,url,photos,reviews,editorial_summary';
     const det = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${pid}&fields=${fields}&key=${key}`, { signal: AbortSignal.timeout(10000) });
     const dd = await det.json();
     const r = dd.result || {};
+    // Verify the match: does the profile's linked website match the site we scanned, or the name align?
+    let verified = null, matchHost = null;
+    if (r.website) { try { matchHost = new URL(r.website).host.replace(/^www\./, ''); } catch {} }
+    if (siteHost && matchHost) verified = matchHost === siteHost;
+    else {
+      const norm = x => (x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (r.name && business) { const a = norm(r.name), b = norm(business); verified = a.includes(b) || b.includes(a); }
+    }
     let latestReviewDays = null;
     if (Array.isArray(r.reviews) && r.reviews.length) {
       const newest = Math.max(...r.reviews.map(rv => rv.time || 0));
@@ -242,15 +370,70 @@ async function scanGBP(business, city) {
       hasHours: !!r.opening_hours, websiteOnGbp: !!r.website, phoneOnGbp: !!r.formatted_phone_number,
       photos: Array.isArray(r.photos) ? r.photos.length : 0, categories: cats, primaryCategory: cats[0] || null,
       status: r.business_status || null, hasDescription: !!r.editorial_summary?.overview, latestReviewDays,
+      verified, matchHost,
     };
   } catch (e) { return null; }
 }
 
+// ---------- AI Search Presence (AIO) audit ----------
+// Combines deterministic AI-readiness signals from the crawl with a live check of what AI models actually know.
+async function scanAIO(business, city, category, scan) {
+  const ready = {
+    aiCrawlersAllowed: scan.aiCrawlersAllowed !== false,
+    aiCrawlersBlocked: scan.aiCrawlersBlocked || [],
+    schema: !!scan.schemaLocalBusiness,
+    faqSchema: !!scan.faqSchema,
+    sameAs: !!scan.sameAs,
+    contentDepth: (scan.wordCount || 0) >= 600,
+    napClear: !!scan.napAddress,
+    llmsTxt: !!scan.llmsTxt,
+  };
+  // Live visibility probe: reflects what AI assistants actually know from training. An honest signal
+  // of AI-search presence for a local business (usually "not known yet" = the real opportunity).
+  let visibility = null;
+  if (process.env.ANTHROPIC_API_KEY && business) {
+    try {
+      const probe = `You are auditing whether AI assistants recognize a specific local business. Answer ONLY from your own training knowledge. Do NOT guess, infer, or invent facts. If you do not genuinely and specifically recognize this exact business, set known to false.
+Business: "${business}"${city ? ', in ' + city + ', GA' : ''}${category ? ' — a ' + category : ''}.
+Return ONLY JSON: {"known": true|false, "confidence": "high|medium|low", "wouldRecommend": true|false, "whatAiKnows": "one honest sentence on what (if anything) you actually know about them, or that you have no information", "competitorsKnown": true|false}`;
+      const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: probe }] });
+      let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      const m = t.match(/\{[\s\S]*\}/); if (m) visibility = JSON.parse(m[0]);
+    } catch {}
+  }
+  let score = 0;
+  score += ready.aiCrawlersAllowed ? 22 : 0;
+  score += ready.schema ? 20 : 0;
+  score += ready.sameAs ? 10 : 0;
+  score += ready.faqSchema ? 10 : 0;
+  score += ready.contentDepth ? 10 : 0;
+  score += ready.napClear ? 8 : 0;
+  score += ready.llmsTxt ? 5 : 0;
+  if (visibility) { score += visibility.known ? 10 : 0; score += visibility.wouldRecommend ? 5 : 0; }
+  return { ready, visibility, score: Math.min(100, score) };
+}
+
 // Build a full pass/fail checklist from the scan so the audit shows everything we looked at.
-function buildChecklist(scan, ps, gbp) {
+function buildChecklist(scan, ps, gbp, aio) {
   const socials = Object.keys(scan.socials || {});
+  // Rendered-DOM fallbacks: if the raw HTML missed it but Lighthouse (real Chrome) saw it, trust Lighthouse.
+  const hasTitle = !!scan.title || ps?.renderedTitle === true;
+  const hasMetaDesc = !!scan.description || ps?.renderedMetaDesc === true;
+  const hasViewport = scan.mobileViewport || ps?.renderedViewport === true;
+  const aioGroup = aio ? { group: 'AI Search Presence (AIO)', items: [
+    { label: 'AI crawlers allowed (GPTBot, ClaudeBot, PerplexityBot)', ok: aio.ready.aiCrawlersAllowed, note: aio.ready.aiCrawlersBlocked.length ? 'blocking ' + aio.ready.aiCrawlersBlocked.join(', ') : 'open' },
+    { label: 'Structured data so AI can read your business', ok: aio.ready.schema },
+    { label: 'Entity links (sameAs) connecting your profiles', ok: aio.ready.sameAs },
+    { label: 'FAQ / Q&A content AI can quote', ok: aio.ready.faqSchema },
+    { label: 'Enough page depth for AI to summarize you', ok: aio.ready.contentDepth, note: (scan.wordCount || 0) + ' words' },
+    { label: 'llms.txt guidance file for AI models', ok: aio.ready.llmsTxt },
+    ...(aio.visibility ? [
+      { label: 'AI assistants recognize your business', ok: !!aio.visibility.known, note: aio.visibility.known ? (aio.visibility.confidence || '') + ' confidence' : 'not recognized' },
+      { label: 'AI would recommend you in your category', ok: !!aio.visibility.wouldRecommend },
+    ] : []),
+  ]} : null;
   const gbpGroup = gbp && gbp.found ? { group: 'Google Business Profile', items: [
-    { label: 'Business profile found on Google', ok: true },
+    { label: 'Business profile found on Google', ok: true, note: gbp.verified === false ? 'match unverified' : '' },
     { label: 'Strong star rating (4.5+)', ok: gbp.rating != null ? gbp.rating >= 4.5 : null, note: gbp.rating != null ? gbp.rating + '/5' : '' },
     { label: 'Healthy review count (50+)', ok: gbp.reviews != null ? gbp.reviews >= 50 : null, note: gbp.reviews != null ? gbp.reviews + ' reviews' : '' },
     { label: 'Getting recent reviews (last 60 days)', ok: gbp.latestReviewDays != null ? gbp.latestReviewDays <= 60 : null, note: gbp.latestReviewDays != null ? gbp.latestReviewDays + ' days ago' : '' },
@@ -265,21 +448,22 @@ function buildChecklist(scan, ps, gbp) {
   return [
     { group: 'Foundation & Speed', items: [
       { label: 'Secure HTTPS connection', ok: scan.https },
-      { label: 'Mobile friendly (responsive viewport)', ok: scan.mobileViewport },
+      { label: 'Mobile friendly (responsive viewport)', ok: hasViewport },
       { label: 'Mobile page speed', ok: ps?.performance != null ? ps.performance >= 50 : null, note: ps?.performance != null ? ps.performance + '/100' : 'n/a' },
       { label: 'Largest Contentful Paint under 2.5s', ok: ps?.lcp != null ? ps.lcp <= 2500 : null, note: ps?.lcpLabel || '' },
       { label: 'Layout stable while loading (CLS)', ok: ps?.cls != null ? ps.cls <= 0.1 : null, note: ps?.clsLabel || '' },
       { label: 'No insecure mixed content', ok: !scan.mixedContent },
     ]},
     { group: 'Getting Found (SEO)', items: [
-      { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : false, note: scan.title ? scan.titleLen + ' chars' : 'missing' },
-      { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : false, note: scan.description ? scan.descriptionLen + ' chars' : 'missing' },
+      { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : (hasTitle ? true : false), note: scan.title ? scan.titleLen + ' chars' : (hasTitle ? 'present (JS-rendered)' : 'missing') },
+      { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : (hasMetaDesc ? true : false), note: scan.description ? scan.descriptionLen + ' chars' : (hasMetaDesc ? 'present (JS-rendered)' : 'missing') },
       { label: 'Single clear H1 headline', ok: scan.h1Count === 1, note: scan.h1Count + ' found' },
       { label: 'Local business schema markup', ok: scan.schemaLocalBusiness },
       { label: 'Canonical tag set', ok: scan.canonical },
       { label: 'Enough content on the page', ok: scan.wordCount >= 300, note: scan.wordCount + ' words' },
     ]},
     ...(gbpGroup ? [gbpGroup] : []),
+    ...(aioGroup ? [aioGroup] : []),
     { group: 'Turning Visitors Into Leads', items: [
       { label: 'Click to call phone number', ok: scan.hasPhone },
       { label: 'Lead capture form', ok: scan.hasForm },
@@ -306,12 +490,13 @@ function buildChecklist(scan, ps, gbp) {
   ];
 }
 
-async function generateAuditReport(p, scan, ps, gbp, answers) {
-  const checklist = buildChecklist(scan, ps, gbp);
+async function generateAuditReport(p, scan, ps, gbp, answers, aio) {
+  const checklist = buildChecklist(scan, ps, gbp, aio);
   const flat = checklist.flatMap(g => g.items.map(i => `${i.ok === true ? 'PASS' : i.ok === false ? 'FAIL' : 'n/a'} - ${g.group}: ${i.label}${i.note ? ' (' + i.note + ')' : ''}`)).join('\n');
   const prompt = `You are a senior growth strategist at Open Heart Media (OHM). Produce a thorough, elite growth audit for a local business based ONLY on the real scan data below. It must read like a paid consultant did it: specific, researched, and honest. Tie findings to lost leads and revenue. This report is what earns the discovery call, so it must be genuinely valuable and impressively detailed, while keeping the exact HOW of fixing things at a strategic level (name the gap and the opportunity, do not write the full implementation playbook).
 
 BUSINESS: ${p.business || 'this business'}, a ${p.category || 'local business'} in ${p.city || 'their area'}, GA. Google rating ${p.rating || 'n/a'} from ${p.reviews || 'n/a'} reviews.
+PERSON WHO REQUESTED THIS AUDIT: ${answers.firstName || 'the owner'}. Address them by their first name ONCE, warmly and naturally, in the summary (for example open the summary with "${answers.firstName || 'there'}, ..."). Do not overuse the name or use it in the findings.
 WHAT THEY WANT MORE OF: ${answers.goal || 'more customers'}  (weave this in naturally where relevant. NEVER write the phrases "stated goal", "stated business goal", or "your stated goal". Just refer to what they want in plain words.)
 
 FULL TECHNICAL + MARKETING SCAN (real, just run):
@@ -319,11 +504,13 @@ GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, 
 SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileViewport: scan.mobileViewport, title: scan.title, titleLen: scan.titleLen, metaDescription: scan.description ? 'present (' + scan.descriptionLen + ' chars)' : 'MISSING', h1Count: scan.h1Count, wordCount: scan.wordCount, schemaLocalBusiness: scan.schemaLocalBusiness, canonical: scan.canonical, hasPhone: scan.hasPhone, hasForm: scan.hasForm, hasBooking: scan.hasBooking, hasCta: scan.hasCta, hasLiveChat: scan.hasLiveChat, hasNewsletter: scan.hasNewsletter, napAddress: scan.napAddress, analytics: scan.analyticsType || false, facebookPixel: scan.fbPixel, googleAdsTag: scan.googleAdsTag, hasVideo: scan.hasVideo, images: scan.imgCount, imagesMissingAlt: scan.imgMissingAlt, ogShareTags: scan.ogTitle && scan.ogImage, mixedContent: scan.mixedContent })}
 GOOGLE BUSINESS PROFILE (live from Google Places): ${gbp && gbp.found ? JSON.stringify({ rating: gbp.rating, reviews: gbp.reviews, latestReviewDaysAgo: gbp.latestReviewDays, hoursListed: gbp.hasHours, websiteLinked: gbp.websiteOnGbp, phoneListed: gbp.phoneOnGbp, photos: gbp.photos, descriptionFilled: gbp.hasDescription, primaryCategory: gbp.primaryCategory, status: gbp.status }) : (gbp && gbp.found === false ? 'NO GOOGLE BUSINESS PROFILE FOUND (major local visibility gap)' : 'not checked')}
 SOCIAL PROFILES LINKED FROM SITE: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
+PAGES ACTUALLY SCANNED (not just homepage): ${(scan.pagesScanned || ['/']).join(', ')}  (conversion, contact, and trust signals were merged across all of these pages, so if a signal is FAIL it is genuinely missing site-wide, not just off the homepage)
+AI SEARCH PRESENCE (AIO): ${aio ? JSON.stringify({ score: aio.score, aiCrawlersAllowed: aio.ready.aiCrawlersAllowed, aiCrawlersBlocked: aio.ready.aiCrawlersBlocked, structuredData: aio.ready.schema, faqSchema: aio.ready.faqSchema, entityLinks_sameAs: aio.ready.sameAs, llmsTxt: aio.ready.llmsTxt, contentDepthOk: aio.ready.contentDepth, aiKnowsThisBusiness: aio.visibility ? aio.visibility.known : 'not tested', aiWouldRecommend: aio.visibility ? aio.visibility.wouldRecommend : 'not tested', whatAiKnows: aio.visibility ? aio.visibility.whatAiKnows : null, aiKnowsCompetitors: aio.visibility ? aio.visibility.competitorsKnown : null }) : 'not checked'}
 
 PASS/FAIL CHECKLIST (already computed, use it to ground your scores):
 ${flat}
 
-Score each of the six categories 0-100 HONESTLY from the data (a site failing many checks should score low, do not inflate). Base "Local Visibility" mostly on the LIVE Google Business Profile data above (rating, review count and recency versus a typical ${p.category} in ${p.city}, whether hours/website/photos/description are filled, and whether a profile exists at all) plus on-site schema and address. Base "Tracking & Data" on analytics, pixel, and ads tag. For "Social & Content", focus on PRESENCE and OPTIMIZATION, not follower counts (we do not have those): which platforms they are and are not on, whether they have video, and the opportunity to optimize their profiles (complete bios, consistent branding and handles, a clear link in bio, regular posting, and short video content for a ${p.category}). Every "why" must cite specific real findings.
+Score each of the seven categories 0-100 HONESTLY from the data (a site failing many checks should score low, do not inflate). Base "Local Visibility" mostly on the LIVE Google Business Profile data above (rating, review count and recency versus a typical ${p.category} in ${p.city}, whether hours/website/photos/description are filled, and whether a profile exists at all) plus on-site schema and address. Base "Tracking & Data" on analytics, pixel, and ads tag. For "Social & Content", focus on PRESENCE and OPTIMIZATION, not follower counts (we do not have those): which platforms they are and are not on, whether they have video, and the opportunity to optimize their profiles (complete bios, consistent branding and handles, a clear link in bio, regular posting, and short video content for a ${p.category}). For "AI Search Presence (AIO)", base the score on the AIO data above: whether AI crawlers are blocked (a hard cap on the score if they are), whether structured data and sameAs entity links exist, content depth, and the LIVE probe of whether AI models actually recognize this business. If AI does not know them yet, that is a real and urgent gap, not a minor one. The site title, meta description, and mobile viewport were cross-checked against Google's real rendered Chrome result, so treat those signals as accurate even for JavaScript-heavy sites. Every "why" must cite specific real findings.
 
 Return ONLY JSON:
 {
@@ -335,7 +522,8 @@ Return ONLY JSON:
    {"name": "Converting Visitors", "score": <0-100>, "why": "2 sentences citing phone, form, booking, CTA, chat findings"},
    {"name": "Local Visibility", "score": <0-100>, "why": "2 to 3 sentences citing the LIVE Google Business Profile data: rating and review count and recency vs a typical ${p.category} in ${p.city}, and whether hours, website, photos, and description are filled in on the profile"},
    {"name": "Tracking & Data", "score": <0-100>, "why": "2 sentences on analytics, Meta pixel, Google Ads tag, and what not tracking costs them"},
-   {"name": "Social & Content", "score": <0-100>, "why": "2 to 3 sentences on which platforms they are and are not on, video presence, and the specific opportunity to optimize their profiles (bios, consistent branding, link in bio, posting cadence) for a ${p.category}. Do not mention follower counts."}
+   {"name": "Social & Content", "score": <0-100>, "why": "2 to 3 sentences on which platforms they are and are not on, video presence, and the specific opportunity to optimize their profiles (bios, consistent branding, link in bio, posting cadence) for a ${p.category}. Do not mention follower counts."},
+   {"name": "AI Search Presence (AIO)", "score": <0-100>, "why": "2 to 3 sentences on whether AI assistants (ChatGPT, Google AI Overviews, Perplexity) can find and recommend them: cite whether AI crawlers are allowed, whether structured data and entity links exist for AI to read, and the LIVE result of whether AI models actually recognize this business by name yet. Frame not-being-known as the single biggest emerging visibility gap: buyers increasingly ask AI for recommendations, and if the AI has never heard of them, they are invisible in that channel while competitors may not be."}
  ],
  "findings": [ {"title": "punchy specific title", "detail": "2 to 3 sentences tied to lost leads or revenue, referencing the actual scan finding", "impact": "High|Medium|Low"} ],
  "quickWins": ["3 to 4 short fixes they could do fast, each one line, specific to what failed"],
@@ -584,6 +772,8 @@ label{display:block;font-size:12px;font-weight:600;letter-spacing:.4px;text-tran
 input,select{width:100%;padding:14px 15px;border:1px solid #33466b;border-radius:11px;font:inherit;font-size:15px;background:#122039;color:#fff;transition:border-color .2s,box-shadow .2s}
 input:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(94,151,255,.2)}
 input::placeholder{color:#6b6b6b}
+.frow{display:flex;gap:12px}.frow>div{flex:1;min-width:0}.frow label{margin-top:16px}
+input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--red);color:#fff;font-weight:700;font-size:16px;padding:16px 30px;border-radius:12px;border:0;cursor:pointer;width:100%;margin-top:22px;transition:transform .15s,filter .2s;font-family:inherit}
 .btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.btn:active{transform:scale(.99)}.btn:disabled{opacity:.6;cursor:default;transform:none}
 .err{color:#ff8a8a;font-size:13px;margin-top:10px;min-height:16px}
@@ -637,12 +827,14 @@ input::placeholder{color:#6b6b6b}
 .vframe video,.vframe iframe{width:100%;height:100%;object-fit:cover;display:block}
 /* booking */
 .book{background:var(--ink2);text-align:center}
-.book h2{font-size:clamp(30px,4.4vw,46px);font-weight:900;letter-spacing:-.02em;max-width:18ch;margin:0 auto}
+.book h2{font-size:clamp(30px,4.4vw,46px);font-weight:900;letter-spacing:-.02em;max-width:none;margin:0 auto;white-space:nowrap}
 .book p{color:#cfcfcf;font-size:18px;margin:18px auto 8px;max-width:52ch}
-.calwrap{margin-top:30px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#fff}
+.calwrap{margin-top:30px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#fff;max-width:100%}
+.calwrap .calendly-inline-widget{width:100%}
 .foot{padding:40px 32px;text-align:center;color:var(--soft);font-size:13px;border-top:1px solid var(--line)}
 .hide{display:none}
-@media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.formwrap{padding:24px}}
+@media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.formwrap{padding:24px}.book h2{font-size:clamp(20px,5.7vw,30px);max-width:none;white-space:nowrap}.book p{font-size:15.5px;max-width:40ch}.book .inner{padding:0}.calwrap{min-width:0}.calwrap .calendly-inline-widget{min-width:0 !important}}
+@media(max-width:360px){.book h2{white-space:normal;font-size:22px}.frow{flex-direction:column;gap:0}}
 </style></head><body>
 <div class="nav"><img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/><a class="navcta" href="#book">Book a call</a></div>
 
@@ -655,6 +847,10 @@ input::placeholder{color:#6b6b6b}
     <div class="formwrap reveal" id="auditbox">
       <h2>Get your free instant audit</h2>
       <p class="fp">About 20 seconds. We scan your site live and show your scores.</p>
+      <div class="frow">
+        <div><label for="f_first">First name</label><input id="f_first" placeholder="Jane"/></div>
+        <div><label for="f_last">Last name</label><input id="f_last" placeholder="Doe"/></div>
+      </div>
       <label for="f_site">Your website</label>
       <input id="f_site" placeholder="yourbusiness.com" value="${esc(prefillSite)}"/>
       <label for="f_goal">What matters most right now</label>
@@ -719,9 +915,9 @@ input::placeholder{color:#6b6b6b}
 
 <section class="sec book" id="book">
   <div class="inner">
-    <div class="eyebrow reveal" style="text-align:center">Book your free call</div>
+    <div class="eyebrow reveal" style="text-align:center">Book Your Free Discovery Call</div>
     <h2 class="reveal">Let's see if we're the right fit.</h2>
-    <p class="reveal">Grab a free 30 minute discovery call. We'll get to know your business and be straight about whether what we do lines up with what you need. No pitch, no pressure.</p>
+    <p class="reveal">Schedule a complimentary 30-minute discovery call to discuss your business, your goals, and your current marketing efforts. We'll provide honest feedback on whether our services align with your needs. No sales pressure, just a straightforward conversation.</p>
     <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
   </div>
 </section>
@@ -744,13 +940,19 @@ input::placeholder{color:#6b6b6b}
   if(vid){ vid.loop=true; vid.muted=true; vid.setAttribute('loop',''); vid.play().catch(function(){}); vid.addEventListener('ended',function(){ try{vid.currentTime=0; vid.play();}catch(e){} }); }
   document.querySelector('.navcta').addEventListener('click',function(){track('click');});
   document.getElementById('run').addEventListener('click', function(){
+    var first=document.getElementById('f_first').value.trim();
+    var last=document.getElementById('f_last').value.trim();
     var email=document.getElementById('f_email').value.trim();
     var sitev=document.getElementById('f_site').value.trim();
     var goal=document.getElementById('f_goal').value;
     var err=document.getElementById('err');
-    if(email.indexOf('@')<0){ err.textContent='Please enter a valid email.'; return; }
+    var fields=[['f_first',first],['f_last',last],['f_site',sitev],['f_email',email]];
+    fields.forEach(function(f){document.getElementById(f[0]).classList.remove('invalid');});
+    var missing=fields.filter(function(f){return !f[1];});
+    if(missing.length){ missing.forEach(function(f){document.getElementById(f[0]).classList.add('invalid');}); err.textContent='Please fill in all fields.'; return; }
+    if(email.indexOf('@')<1){ document.getElementById('f_email').classList.add('invalid'); err.textContent='Please enter a valid email.'; return; }
     err.textContent=''; var btn=this; btn.disabled=true; btn.textContent='Scanning your business...';
-    fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,email:email,website:sitev,goal:goal})})
+    fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,firstName:first,lastName:last,email:email,website:sitev,goal:goal})})
      .then(function(r){return r.json();})
      .then(function(d){
        if(d.error){ err.textContent=d.error; btn.disabled=false; btn.textContent='Scan my business'; return; }
@@ -1098,7 +1300,11 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
 // no prospect record is touched. If AUDIT_TEST_EMAIL is set, a single copy goes only there.
 app.post('/api/audit', async (req, res) => {
   const { ref, email, goal, website, test } = req.body || {};
+  const firstName = (req.body?.firstName || '').trim();
+  const lastName = (req.body?.lastName || '').trim();
+  if (!firstName || !lastName) return res.status(400).json({ error: 'first and last name required' });
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'valid email required' });
+  if (!website || !website.trim()) return res.status(400).json({ error: 'website required' });
   const isTest = test === true || test === 'true';
   const p = !isTest && ref && prospects.find(x => x.id === ref);
   const lookup = isTest && ref && prospects.find(x => x.id === ref); // for test GBP/name only, no writes
@@ -1106,12 +1312,16 @@ app.post('/api/audit', async (req, res) => {
   const bizName = (p && p.business) || (lookup && lookup.business) || null;
   const bizCity = (p && p.city) || (lookup && lookup.city) || null;
   try {
+    const bizCategory = (p && p.category) || (lookup && lookup.category) || null;
     const scan = await scanWebsite(site);
-    const [ps, gbp] = await Promise.all([
+    const [ps, gbp, aio] = await Promise.all([
       runPageSpeed(scan.finalUrl || scan.url),
-      scanGBP(bizName, bizCity),
+      scanGBP(bizName, bizCity, scan.host),
+      scanAIO(bizName, bizCity, bizCategory, scan),
     ]);
-    const report = await generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal });
+    const report = await generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio);
+    report.recipientFirst = firstName;
+    report.recipientName = `${firstName} ${lastName}`.trim();
     const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
     let pdf = null;
     try { pdf = await buildAuditPDF(bizName || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
@@ -1125,7 +1335,8 @@ app.post('/api/audit', async (req, res) => {
 
     if (p) {
       p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
-      p.audit_scan = { pagespeed: ps, gbp, socials: scan.socials, reachable: scan.reachable };
+      p.contact_first = firstName; p.contact_last = lastName; p.contact_name = `${firstName} ${lastName}`.trim();
+      p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
       p.status = 'audited'; p.audited_at = new Date().toISOString(); p.updated_at = p.audited_at;
       save(prospects);
     }
