@@ -1442,6 +1442,9 @@ async function draftFollowup(p, step) {
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
   const o = JSON.parse(t);
+  // Enforce the no-em-dash rule on both subject and body.
+  const deDash = s => typeof s === 'string' ? s.replace(/\s*[—–]\s*/g, ', ').replace(/\s+--\s+/g, ', ').replace(/--/g, ', ') : s;
+  o.subject = deDash(o.subject); o.body = deDash(o.body);
   if (o.body) o.body = o.body.includes('[LINK]') ? o.body.replace('[LINK]', link) : o.body + '\n\n' + link;
   return o;
 }
