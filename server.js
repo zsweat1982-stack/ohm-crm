@@ -150,7 +150,11 @@ function stripText(html) {
 async function fetchPage(url, timeout = 12000) {
   try {
     const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeout), headers: { 'User-Agent': AUDIT_UA } });
-    const html = (await res.text()).slice(0, 900000);
+    // 900KB was too small: heavy page builders (Wix, Squarespace, etc.) routinely front-load huge
+    // amounts of inline script/CSS/JSON before the real body content, so real signals like the H1
+    // and images were getting silently truncated away on larger sites. 6MB comfortably covers that
+    // while still bounding memory on a pathological response.
+    const html = (await res.text()).slice(0, 6000000);
     return { ok: res.ok, status: res.status, finalUrl: res.url, html };
   } catch (e) { return { ok: false, error: e.message, finalUrl: url, html: '' }; }
 }
@@ -237,8 +241,22 @@ async function scanWebsite(rawUrl) {
   };
   if (!url) return out;
 
-  const home = await fetchPage(url, 13000);
+  let home = await fetchPage(url, 13000);
   if (!home.html) { out.error = home.error || 'unreachable'; return out; }
+  // Sanity check: real content with zero images AND zero H1 tags is an unusual combination that
+  // usually means the fetch caught the site mid-deploy, rate-limited, or otherwise degraded rather
+  // than a genuinely empty page. Retry once before trusting a result like that as ground truth.
+  const looksIncomplete = h => {
+    const imgs = (h.match(/<img[\s>]/gi) || []).length;
+    const h1s = (h.match(/<h1[\s>]/gi) || []).length;
+    const textLen = h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
+    return imgs === 0 && h1s === 0 && textLen > 1500;
+  };
+  if (looksIncomplete(home.html)) {
+    await new Promise(r => setTimeout(r, 1500));
+    const retry = await fetchPage(url, 13000);
+    if (retry.html && !looksIncomplete(retry.html)) home = retry;
+  }
   out.reachable = home.ok;
   out.finalUrl = home.finalUrl;
   out.https = (home.finalUrl || url).startsWith('https');
@@ -293,11 +311,11 @@ async function scanWebsite(rawUrl) {
   if (origin && out.host) {
     // discover up to 4 key internal pages (contact / about / services / booking) on the same host
     const links = [...html.matchAll(/<a[^>]+href=["']([^"'#\s]+)["']/gi)].map(m => m[1]);
-    const want = /(contact|about|service|book|appointment|quote|schedule|team|location|review)/i;
+    const want = /(contact|about|service|book|appointment|quote|schedule|team|location|review|faq|pricing|gallery|portfolio|menu)/i;
     const seen = new Set([out.finalUrl]);
     const targets = [];
     for (const href of links) {
-      if (targets.length >= 4) break;
+      if (targets.length >= 8) break;
       let abs; try { abs = new URL(href, out.finalUrl).href.split('#')[0]; } catch { continue; }
       try { if (new URL(abs).host.replace(/^www\./, '') !== out.host) continue; } catch { continue; }
       if (seen.has(abs) || !want.test(abs) || /\.(pdf|jpg|png|zip|mp4)$/i.test(abs)) continue;
@@ -332,7 +350,7 @@ async function runPageSpeed(url) {
   try {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
     const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices${key}`;
-    const r = await fetch(api, { signal: AbortSignal.timeout(28000) });
+    const r = await fetch(api, { signal: AbortSignal.timeout(12000) });
     if (!r.ok) return null;
     const d = await r.json();
     const c = d.lighthouseResult?.categories || {};
@@ -1334,22 +1352,29 @@ app.post('/api/audit', async (req, res) => {
   const site = website || (p && p.website) || (lookup && lookup.website) || '';
   const bizName = (p && p.business) || (lookup && lookup.business) || null;
   const bizCity = (p && p.city) || (lookup && lookup.city) || null;
+  let stage = 'init';
+  const t0 = Date.now();
   try {
     const bizCategory = (p && p.category) || (lookup && lookup.category) || null;
+    stage = 'scanWebsite';
     const scan = await scanWebsite(site);
+    stage = 'pagespeed/gbp/aio';
     const [ps, gbp, aio] = await Promise.all([
       runPageSpeed(scan.finalUrl || scan.url),
       scanGBP(bizName, bizCity, scan.host),
       scanAIO(bizName, bizCity, bizCategory, scan),
     ]);
+    stage = 'generateAuditReport';
     const report = await generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio);
     report.recipientFirst = firstName;
     report.recipientName = `${firstName} ${lastName}`.trim();
     const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
+    stage = 'buildAuditPDF';
     let pdf = null;
     try { pdf = await buildAuditPDF(bizName || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
 
     if (isTest) {
+      stage = 'test email';
       // Only email a copy to the internal test address (Zac), never the team or the prospect.
       const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
       if (pdf && process.env.SENDGRID_API_KEY) { try { await sendAuditToProspect(testTo, bizName, report, pdf, bookingUrl); } catch (e) {} }
@@ -1365,10 +1390,16 @@ app.post('/api/audit', async (req, res) => {
     }
     events.push({ type: 'audit', ref: ref || null, ts: new Date().toISOString(), email, business: p?.business || null });
     saveMetrics();
+    stage = 'notifyAudit';
     await notifyAudit(p, email, report, pdf);
+    stage = 'sendAuditToProspect';
     if (pdf) await sendAuditToProspect(email, p?.business, report, pdf, bookingUrl);
+    console.log('[audit] completed in', Date.now() - t0, 'ms for', bizName || site);
     res.json({ report, business: p?.business || null });
-  } catch (e) { console.error('[audit]', e.message); res.status(500).json({ error: 'scan failed, please try again' }); }
+  } catch (e) {
+    console.error('[audit] failed at stage:', stage, `(${Date.now() - t0}ms in)`, '-', e.message, '\n', e.stack);
+    res.status(500).json({ error: 'scan failed, please try again' });
+  }
 });
 
 // Metrics aggregate for the dashboard
