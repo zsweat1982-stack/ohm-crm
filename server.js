@@ -345,16 +345,17 @@ async function scanWebsite(rawUrl) {
   return out;
 }
 
+// Google's PageSpeed API is highly inconsistent in latency: if it doesn't already have a cached
+// Lighthouse result for a URL, it runs a live Chrome audit that can take 20-60s or time out
+// entirely; once run once, a follow-up call for the same URL often hits cache and returns in
+// under a second. Confirmed directly: one call to the same URL timed out at 25s, the very next
+// call completed in 602ms. A single timeout value can't fix that, so runPageSpeed retries once
+// on a timeout/failure before giving up, since the second attempt has a real shot at hitting cache.
 async function runPageSpeed(url) {
   if (!url) return null;
-  try {
+  const attempt = async () => {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
     const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices${key}`;
-    // 12s was too aggressive: Google PageSpeed genuinely takes 15-30s on slower sites, which is
-    // common for the small local-business sites this tool scans, so real leads were losing real
-    // PageSpeed data for a timeout that wasn't the actual cause of the reported failure (that was
-    // an exhausted Anthropic credit balance, since fixed). 20s is still a real improvement over the
-    // original 28s without needlessly sacrificing accurate data.
     const r = await fetch(api, { signal: AbortSignal.timeout(20000) });
     if (!r.ok) return null;
     const d = await r.json();
@@ -378,7 +379,9 @@ async function runPageSpeed(url) {
       isCrawlable: passed('is-crawlable'),
       httpStatusOk: passed('http-status-code'),
     };
-  } catch { return null; }
+  };
+  try { return await attempt(); }
+  catch { try { return await attempt(); } catch { return null; } }
 }
 
 // ---------- Google Business Profile scan (Places API) ----------
