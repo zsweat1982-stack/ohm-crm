@@ -350,7 +350,12 @@ async function runPageSpeed(url) {
   try {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
     const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices${key}`;
-    const r = await fetch(api, { signal: AbortSignal.timeout(12000) });
+    // 12s was too aggressive: Google PageSpeed genuinely takes 15-30s on slower sites, which is
+    // common for the small local-business sites this tool scans, so real leads were losing real
+    // PageSpeed data for a timeout that wasn't the actual cause of the reported failure (that was
+    // an exhausted Anthropic credit balance, since fixed). 20s is still a real improvement over the
+    // original 28s without needlessly sacrificing accurate data.
+    const r = await fetch(api, { signal: AbortSignal.timeout(20000) });
     if (!r.ok) return null;
     const d = await r.json();
     const c = d.lighthouseResult?.categories || {};
