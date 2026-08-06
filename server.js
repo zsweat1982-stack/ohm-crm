@@ -1001,10 +1001,31 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
     if(missing.length){ missing.forEach(function(f){document.getElementById(f[0]).classList.add('invalid');}); err.textContent='Please fill in all fields.'; return; }
     if(email.indexOf('@')<1){ document.getElementById('f_email').classList.add('invalid'); err.textContent='Please enter a valid email.'; return; }
     err.textContent=''; var btn=this; btn.disabled=true; btn.textContent='Scanning your business...';
+    var t0=Date.now();
+    function fail(msg){ err.textContent=msg||'Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Scan my business'; }
+    // The scan takes 60 to 120 seconds. Kick off a job, then poll so no browser or proxy timeout
+    // can make a healthy scan look like a failure.
     fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,firstName:first,lastName:last,email:email,website:sitev,goal:goal})})
      .then(function(r){return r.json();})
-     .then(function(d){
-       if(d.error){ err.textContent=d.error; btn.disabled=false; btn.textContent='Scan my business'; return; }
+     .then(function(j){
+       if(j.error) return fail(j.error);
+       if(!j.jobId) return fail();
+       (function poll(){
+         if(Date.now()-t0>420000) return fail('This is taking longer than usual. We have your details and will send your report by email shortly.');
+         fetch('/api/audit/status/'+j.jobId)
+          .then(function(r){return r.json();})
+          .then(function(s){
+            if(s.state==='running'){ if(s.stage) btn.textContent=s.stage+'...'; return setTimeout(poll,2500); }
+            if(s.state==='error') return fail(s.error);
+            if(s.state==='unknown') return fail(s.error);
+            render(s);
+          })
+          .catch(function(){ setTimeout(poll,4000); }); // transient blip, keep polling
+       })();
+     })
+     .catch(function(){ fail(); });
+
+    function render(d){
        var a=d.report;
        var biz=d.business||'your business';
        var cats=a.categories||[];
@@ -1039,8 +1060,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
        document.getElementById('auditbox').style.display='none';
        document.getElementById('rbook').addEventListener('click',function(){track('click');});
        res.scrollIntoView({behavior:'smooth'});
-     })
-     .catch(function(){ err.textContent='Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Scan my business'; });
+    }
   });
 </script>
 </body></html>`;
@@ -1347,6 +1367,157 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
 // Run the live scan + audit when a prospect fills out the form.
 // TEST MODE: pass {"test": true}. Nothing is emailed to the prospect, no team blast,
 // no prospect record is touched. If AUDIT_TEST_EMAIL is set, a single copy goes only there.
+// ---------- Audit job queue ----------
+// The full audit pipeline (multi page crawl + PageSpeed + Places + two Claude calls + PDF) runs
+// 60 to 120 seconds. Running that inside the prospect's HTTP request meant any browser, proxy or
+// CDN timeout surfaced as a generic "scan failed" even when the scan was fine. The request now
+// returns a job id immediately and the page polls for the result, so a slow scan can never look
+// like a broken one.
+const auditJobs = new Map();
+const JOB_TTL_MS = 45 * 60 * 1000;
+const jobSweeper = setInterval(() => {
+  const now = Date.now();
+  for (const [id, j] of auditJobs) if (now - j.updatedAt > JOB_TTL_MS) auditJobs.delete(id);
+}, 5 * 60 * 1000);
+if (jobSweeper.unref) jobSweeper.unref();
+
+// Hard ceiling on any single stage so one hung dependency cannot stall the whole pipeline.
+function withTimeout(promise, ms, labelStr) {
+  let t;
+  return Promise.race([
+    Promise.resolve(promise).finally(() => clearTimeout(t)),
+    new Promise((_, rej) => { t = setTimeout(() => rej(new Error(`${labelStr} exceeded ${ms}ms`)), ms); }),
+  ]);
+}
+// Optional enrichment: log and continue with a fallback instead of failing the audit.
+async function softStage(promise, ms, labelStr, fallback = null) {
+  try { return await withTimeout(promise, ms, labelStr); }
+  catch (e) { console.warn('[audit] degraded, continuing without', labelStr, '-', e.message); return fallback; }
+}
+
+// If Claude is unavailable or returns unparseable JSON we still owe the prospect a report. This
+// derives one straight from the deterministic pass/fail checklist we already computed.
+function fallbackReport(p, scan, ps, gbp, aio, answers) {
+  const checklist = buildChecklist(scan, ps, gbp, aio);
+  const scoreOf = names => {
+    const items = checklist.filter(g => names.includes(g.group)).flatMap(g => g.items).filter(i => i.ok !== null && i.ok !== undefined);
+    if (!items.length) return 50;
+    return Math.round((items.filter(i => i.ok === true).length / items.length) * 100);
+  };
+  const perf = ps && typeof ps.performance === 'number' ? ps.performance : null;
+  const categories = [
+    { name: 'Website & Speed', score: perf !== null ? perf : scoreOf(['Foundation & Speed']), why: 'Scored from the live technical scan of the site.' },
+    { name: 'Getting Found (SEO)', score: scoreOf(['Getting Found (SEO)']), why: 'Scored from on page SEO signals found during the crawl.' },
+    { name: 'Converting Visitors', score: scoreOf(['Turning Visitors Into Leads']), why: 'Scored from the contact, form, booking and call to action signals found across the pages scanned.' },
+    { name: 'Local Visibility', score: scoreOf(['Google Business Profile']), why: 'Scored from the live Google Business Profile lookup.' },
+    { name: 'Tracking & Data', score: scoreOf(['Tracking & Ad Readiness']), why: 'Scored from the analytics and advertising tags detected on the site.' },
+    { name: 'Social & Content', score: scoreOf(['Content, Media & Social']), why: 'Scored from the social profiles linked from the site and the media found on it.' },
+    { name: 'AI Search Presence (AIO)', score: aio && typeof aio.score === 'number' ? aio.score : scoreOf(['AI Search Presence (AIO)']), why: 'Scored from AI crawler access, structured data and a live check of whether AI assistants recognize this business.' },
+  ];
+  const failed = checklist.flatMap(g => g.items.filter(i => i.ok === false).map(i => ({ group: g.group, label: i.label })));
+  const findings = failed.slice(0, 6).map(f => ({
+    title: f.label,
+    detail: `Our scan flagged this under ${f.group}. Left as is, it quietly costs you enquiries that never reach you.`,
+    impact: 'Medium',
+  }));
+  return {
+    headline: `Where ${p.business || 'your business'} is losing customers online`,
+    overallVerdict: 'Your scan completed and found real, fixable gaps.',
+    categories,
+    findings: findings.length ? findings : [{ title: 'Solid foundation', detail: 'The scan did not surface major technical failures. The opportunity is in visibility and content.', impact: 'Low' }],
+    quickWins: failed.slice(0, 4).map(f => `Fix: ${f.label}`),
+    summary: `${answers.firstName || 'Thanks'}, here is what our scan found across your website, your Google presence and your visibility in AI search. The items below are the ones costing you the most.`,
+    estimate: 'Closing these gaps typically recovers enquiries that are currently reaching competitors instead.',
+    checklist,
+    pagespeed: ps || null,
+    degraded: true,
+  };
+}
+
+async function runAuditJob(jobId, opts) {
+  const job = auditJobs.get(jobId);
+  const setStage = s => { if (job) { job.stage = s; job.updatedAt = Date.now(); } };
+  const { ref, email, goal, firstName, lastName, isTest, site, p, lookup, bizName, bizCity, bizCategory } = opts;
+  const t0 = Date.now();
+  try {
+    setStage('Scanning your website');
+    const scan = await withTimeout(scanWebsite(site), 75000, 'website scan');
+    if (!scan.reachable && !scan.title) throw new Error(`could not reach ${site}`);
+
+    setStage('Checking speed, Google and AI visibility');
+    // allSettled, not all: an outage at Google or Anthropic must degrade the report, never kill it.
+    const [ps, gbp, aio] = await Promise.all([
+      softStage(runPageSpeed(scan.finalUrl || scan.url), 45000, 'PageSpeed'),
+      softStage(scanGBP(bizName, bizCity, scan.host), 25000, 'Google Business Profile'),
+      softStage(scanAIO(bizName, bizCity, bizCategory, scan), 45000, 'AI visibility'),
+    ]);
+
+    setStage('Writing your report');
+    let report;
+    try {
+      report = await withTimeout(generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio), 90000, 'report generation');
+    } catch (e) {
+      console.warn('[audit] report generation failed once, retrying -', e.message);
+      try {
+        report = await withTimeout(generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio), 90000, 'report generation retry');
+      } catch (e2) {
+        console.error('[audit] report generation failed twice, using deterministic fallback -', e2.message);
+        report = fallbackReport(p || lookup || { business: bizName }, scan, ps, gbp, aio, { firstName });
+      }
+    }
+    report.recipientFirst = firstName;
+    report.recipientName = `${firstName} ${lastName}`.trim();
+
+    setStage('Building your PDF');
+    const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
+    let pdf = null;
+    try { pdf = await withTimeout(buildAuditPDF(bizName || 'your business', report, bookingUrl), 30000, 'PDF build'); }
+    catch (e) { console.error('[audit] pdf failed, continuing without attachment -', e.message); }
+
+    // The prospect already has their result at this point. Email delivery must never fail the job.
+    if (isTest) {
+      const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
+      if (pdf && process.env.SENDGRID_API_KEY) await softStage(sendAuditToProspect(testTo, bizName, report, pdf, bookingUrl), 30000, 'test email');
+      job.result = { test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: bizName };
+    } else {
+      if (p) {
+        p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
+        p.contact_first = firstName; p.contact_last = lastName; p.contact_name = `${firstName} ${lastName}`.trim();
+        p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
+        p.status = 'audited'; p.audited_at = new Date().toISOString(); p.updated_at = p.audited_at;
+        try { save(prospects); } catch (e) { console.error('[audit] save failed -', e.message); }
+      }
+      events.push({ type: 'audit', ref: ref || null, ts: new Date().toISOString(), email, business: p?.business || null });
+      try { saveMetrics(); } catch {}
+      await softStage(notifyAudit(p, email, report, pdf), 30000, 'team notification');
+      if (pdf) await softStage(sendAuditToProspect(email, p?.business, report, pdf, bookingUrl), 30000, 'prospect email');
+      job.result = { report, business: p?.business || null };
+    }
+    job.state = 'done';
+    job.stage = 'Done';
+    job.updatedAt = Date.now();
+    console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', bizName || site, report.degraded ? '(degraded report)' : '');
+  } catch (e) {
+    console.error('[audit] job', jobId, 'failed at stage:', job?.stage, `(${Date.now() - t0}ms in)`, '-', e.message, '\n', e.stack);
+    if (job) {
+      job.state = 'error';
+      job.error = /could not reach/i.test(e.message)
+        ? `We could not load ${site}. Please check the address and try again.`
+        : 'The scan hit a snag on our side. Your details are saved and we are looking at it.';
+      job.updatedAt = Date.now();
+    }
+  }
+}
+
+// Poll target for the landing page. Public (matches the /api/audit prefix in PUBLIC_PATHS).
+app.get('/api/audit/status/:id', (req, res) => {
+  const job = auditJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ state: 'unknown', error: 'That scan expired. Please run it again.' });
+  if (job.state === 'done') return res.json({ state: 'done', ...job.result });
+  if (job.state === 'error') return res.json({ state: 'error', error: job.error });
+  return res.json({ state: 'running', stage: job.stage, elapsedMs: Date.now() - job.startedAt });
+});
+
 app.post('/api/audit', async (req, res) => {
   const { ref, email, goal, website, test } = req.body || {};
   const firstName = (req.body?.firstName || '').trim();
@@ -1360,54 +1531,13 @@ app.post('/api/audit', async (req, res) => {
   const site = website || (p && p.website) || (lookup && lookup.website) || '';
   const bizName = (p && p.business) || (lookup && lookup.business) || null;
   const bizCity = (p && p.city) || (lookup && lookup.city) || null;
-  let stage = 'init';
-  const t0 = Date.now();
-  try {
-    const bizCategory = (p && p.category) || (lookup && lookup.category) || null;
-    stage = 'scanWebsite';
-    const scan = await scanWebsite(site);
-    stage = 'pagespeed/gbp/aio';
-    const [ps, gbp, aio] = await Promise.all([
-      runPageSpeed(scan.finalUrl || scan.url),
-      scanGBP(bizName, bizCity, scan.host),
-      scanAIO(bizName, bizCity, bizCategory, scan),
-    ]);
-    stage = 'generateAuditReport';
-    const report = await generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio);
-    report.recipientFirst = firstName;
-    report.recipientName = `${firstName} ${lastName}`.trim();
-    const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
-    stage = 'buildAuditPDF';
-    let pdf = null;
-    try { pdf = await buildAuditPDF(bizName || 'your business', report, bookingUrl); } catch (e) { console.error('[pdf]', e.message); }
+  const bizCategory = (p && p.category) || (lookup && lookup.category) || null;
 
-    if (isTest) {
-      stage = 'test email';
-      // Only email a copy to the internal test address (Zac), never the team or the prospect.
-      const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
-      if (pdf && process.env.SENDGRID_API_KEY) { try { await sendAuditToProspect(testTo, bizName, report, pdf, bookingUrl); } catch (e) {} }
-      return res.json({ test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: bizName });
-    }
-
-    if (p) {
-      p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
-      p.contact_first = firstName; p.contact_last = lastName; p.contact_name = `${firstName} ${lastName}`.trim();
-      p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
-      p.status = 'audited'; p.audited_at = new Date().toISOString(); p.updated_at = p.audited_at;
-      save(prospects);
-    }
-    events.push({ type: 'audit', ref: ref || null, ts: new Date().toISOString(), email, business: p?.business || null });
-    saveMetrics();
-    stage = 'notifyAudit';
-    await notifyAudit(p, email, report, pdf);
-    stage = 'sendAuditToProspect';
-    if (pdf) await sendAuditToProspect(email, p?.business, report, pdf, bookingUrl);
-    console.log('[audit] completed in', Date.now() - t0, 'ms for', bizName || site);
-    res.json({ report, business: p?.business || null });
-  } catch (e) {
-    console.error('[audit] failed at stage:', stage, `(${Date.now() - t0}ms in)`, '-', e.message, '\n', e.stack);
-    res.status(500).json({ error: 'scan failed, please try again' });
-  }
+  const jobId = crypto.randomBytes(12).toString('hex');
+  auditJobs.set(jobId, { state: 'running', stage: 'Starting your scan', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
+  // Kick the pipeline off out of band and answer immediately. Errors are captured onto the job.
+  setImmediate(() => { runAuditJob(jobId, { ref, email, goal, firstName, lastName, isTest, site, p, lookup, bizName, bizCity, bizCategory }); });
+  res.status(202).json({ jobId, state: 'running' });
 });
 
 // Metrics aggregate for the dashboard
