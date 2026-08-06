@@ -1381,6 +1381,68 @@ const jobSweeper = setInterval(() => {
 }, 5 * 60 * 1000);
 if (jobSweeper.unref) jobSweeper.unref();
 
+// ---------- Concurrency control ----------
+// Each audit makes Claude + Google calls and holds a full page crawl in memory. Letting an
+// unbounded number run at once on one small instance is how you get rate limits and OOM kills
+// during a send burst, so scans queue past a small cap instead of all starting at once.
+const MAX_CONCURRENT_AUDITS = Number(process.env.MAX_CONCURRENT_AUDITS || 3);
+let activeAudits = 0;
+const auditQueue = [];
+function pumpAuditQueue() {
+  while (activeAudits < MAX_CONCURRENT_AUDITS && auditQueue.length) {
+    const next = auditQueue.shift();
+    const job = auditJobs.get(next.jobId);
+    if (!job || job.state !== 'queued') continue;
+    activeAudits++;
+    job.state = 'running'; job.stage = 'Starting your scan'; job.updatedAt = Date.now();
+    runAuditJob(next.jobId, next.opts).finally(() => { activeAudits--; pumpAuditQueue(); });
+  }
+}
+function enqueueAudit(jobId, opts) {
+  auditJobs.set(jobId, { state: 'queued', stage: 'Waiting to start', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
+  auditQueue.push({ jobId, opts });
+  pumpAuditQueue();
+}
+
+// ---------- Per IP rate limit ----------
+// /api/audit is public and expensive. This stops a bot or a stuck retry loop from burning the
+// Claude budget, without getting in the way of a real prospect running one or two scans.
+const AUDIT_RATE_MAX = Number(process.env.AUDIT_RATE_MAX || 5);
+const AUDIT_RATE_WINDOW_MS = 60 * 60 * 1000;
+const auditHits = new Map();
+function rateLimited(ip) {
+  const now = Date.now();
+  const hits = (auditHits.get(ip) || []).filter(t => now - t < AUDIT_RATE_WINDOW_MS);
+  if (hits.length >= AUDIT_RATE_MAX) { auditHits.set(ip, hits); return true; }
+  hits.push(now); auditHits.set(ip, hits);
+  if (auditHits.size > 5000) for (const [k, v] of auditHits) if (!v.some(t => now - t < AUDIT_RATE_WINDOW_MS)) auditHits.delete(k);
+  return false;
+}
+
+// ---------- Audit outcome log (reliability visibility) ----------
+// Without this the only way to know the audit is failing is for someone to complain, which is
+// exactly how the last outage was found. Rolling log survives restarts.
+const AUDIT_LOG = path.join(DATA_DIR, 'audit_log.json');
+function loadAuditLog() { try { return JSON.parse(fs.readFileSync(AUDIT_LOG, 'utf8')); } catch { return []; } }
+let auditLog = loadAuditLog();
+function recordAuditOutcome(entry) {
+  auditLog.push({ ts: new Date().toISOString(), ...entry });
+  if (auditLog.length > 500) auditLog = auditLog.slice(-500);
+  try { fs.writeFileSync(AUDIT_LOG, JSON.stringify(auditLog, null, 2)); } catch (e) { console.error('[auditlog]', e.message); }
+}
+function auditHealth() {
+  const day = auditLog.filter(e => Date.now() - new Date(e.ts).getTime() < 24 * 60 * 60 * 1000 && !e.canary);
+  const ok = day.filter(e => e.ok).length;
+  const canaries = auditLog.filter(e => e.canary).slice(-10);
+  return {
+    last24h: { attempts: day.length, succeeded: ok, failed: day.length - ok, degraded: day.filter(e => e.degraded).length,
+               successRate: day.length ? Math.round((ok / day.length) * 100) : null },
+    inFlight: activeAudits, queued: auditQueue.length,
+    lastCanary: canaries.length ? canaries[canaries.length - 1] : null,
+    recentFailures: auditLog.filter(e => !e.ok).slice(-5),
+  };
+}
+
 // Hard ceiling on any single stage so one hung dependency cannot stall the whole pipeline.
 function withTimeout(promise, ms, labelStr) {
   let t;
@@ -1475,7 +1537,10 @@ async function runAuditJob(jobId, opts) {
     catch (e) { console.error('[audit] pdf failed, continuing without attachment -', e.message); }
 
     // The prospect already has their result at this point. Email delivery must never fail the job.
-    if (isTest) {
+    if (opts.silent) {
+      // Canary run: exercise the whole pipeline, email nobody, write nothing.
+      job.result = { canary: true, report, business: bizName };
+    } else if (isTest) {
       const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
       if (pdf && process.env.SENDGRID_API_KEY) await softStage(sendAuditToProspect(testTo, bizName, report, pdf, bookingUrl), 30000, 'test email');
       job.result = { test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: bizName };
@@ -1496,18 +1561,95 @@ async function runAuditJob(jobId, opts) {
     job.state = 'done';
     job.stage = 'Done';
     job.updatedAt = Date.now();
+    recordAuditOutcome({ ok: true, ms: Date.now() - t0, site, business: bizName, degraded: !!report.degraded, noPagespeed: !ps, canary: !!opts.silent });
     console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', bizName || site, report.degraded ? '(degraded report)' : '');
   } catch (e) {
     console.error('[audit] job', jobId, 'failed at stage:', job?.stage, `(${Date.now() - t0}ms in)`, '-', e.message, '\n', e.stack);
+    const unreachable = /could not reach/i.test(e.message);
+    recordAuditOutcome({ ok: false, ms: Date.now() - t0, site, business: bizName, stage: job?.stage || null, error: e.message, canary: !!opts.silent });
+    // A prospect who filled the form is a real lead even when the scan fails. Flag the record so
+    // the team can follow up by hand instead of the lead disappearing.
+    if (!opts.silent && !isTest && p) {
+      p.status = 'audit_failed';
+      p.audit_error = e.message;
+      p.audit_failed_at = new Date().toISOString();
+      p.updated_at = p.audit_failed_at;
+      try { save(prospects); } catch {}
+      if (!unreachable) await softStage(notifyAuditFailure(p, e, job?.stage), 20000, 'failure alert');
+    }
     if (job) {
       job.state = 'error';
-      job.error = /could not reach/i.test(e.message)
+      job.error = unreachable
         ? `We could not load ${site}. Please check the address and try again.`
-        : 'The scan hit a snag on our side. Your details are saved and we are looking at it.';
+        : 'The scan hit a snag on our side. Your details are saved and our team will follow up shortly.';
       job.updatedAt = Date.now();
     }
   }
 }
+
+// Tell the team the moment a real prospect's scan fails, so the lead can be worked manually.
+async function notifyAuditFailure(p, err, stage) {
+  if (!process.env.SENDGRID_API_KEY) return;
+  const to = (process.env.NOTIFY_EMAILS || 'zac@openheartmediaco.com').split(',').map(s => s.trim()).filter(Boolean);
+  await sgMail.send({
+    to,
+    from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+    subject: `Audit failed for ${p.business || p.website || 'a prospect'} - follow up needed`,
+    html: `<p>A prospect completed the audit form but the scan failed, so they did not receive a report.</p>
+<p><b>Business:</b> ${esc(p.business || 'n/a')}<br/>
+<b>Contact:</b> ${esc(p.contact_name || 'n/a')}<br/>
+<b>Email:</b> ${esc(p.audit_email || p.email || 'n/a')}<br/>
+<b>Website:</b> ${esc(p.website || 'n/a')}<br/>
+<b>Failed at:</b> ${esc(stage || 'unknown')}<br/>
+<b>Reason:</b> ${esc(err.message)}</p>
+<p>The lead is saved in the CRM with status <b>audit_failed</b>. Please follow up directly.</p>`,
+  });
+}
+
+// ---------- Canary: prove the audit still works, on a schedule ----------
+// The previous outage was found because a person happened to try it. This runs the real pipeline
+// against a known site every hour and alerts the team on the transition into and out of failure.
+const CANARY_SITE = process.env.CANARY_SITE || 'openheartmediaco.com';
+let canaryFailures = 0;
+async function runCanary() {
+  const jobId = 'canary-' + crypto.randomBytes(6).toString('hex');
+  auditJobs.set(jobId, { state: 'running', stage: 'canary', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
+  await runAuditJob(jobId, {
+    ref: null, email: null, goal: 'canary', firstName: 'Canary', lastName: 'Check',
+    isTest: true, silent: true, site: CANARY_SITE, p: null, lookup: null,
+    bizName: 'Open Heart Media', bizCity: null, bizCategory: 'marketing agency',
+  });
+  const job = auditJobs.get(jobId);
+  const ok = job && job.state === 'done';
+  auditJobs.delete(jobId);
+  if (ok) {
+    if (canaryFailures >= 2) {
+      console.log('[canary] recovered after', canaryFailures, 'failures');
+      await softStage(alertTeam('Audit is working again', `The prospect audit recovered and is completing normally against ${CANARY_SITE}.`), 20000, 'canary recovery alert');
+    }
+    canaryFailures = 0;
+  } else {
+    canaryFailures++;
+    console.error('[canary] FAILED', canaryFailures, 'in a row -', job?.error);
+    // Alert on the second consecutive failure so one blip from Google does not page the team.
+    if (canaryFailures === 2) {
+      await softStage(alertTeam('Prospect audit is failing', `The hourly check against ${CANARY_SITE} has failed ${canaryFailures} times in a row.<br/><br/>Reason: ${esc(job?.error || 'unknown')}<br/><br/>Cold email prospects landing on go.openheartmediaco.com may not be getting their report. Worth checking before sending more.`), 20000, 'canary alert');
+    }
+  }
+}
+async function alertTeam(subject, html) {
+  if (!process.env.SENDGRID_API_KEY) return;
+  const to = (process.env.NOTIFY_EMAILS || 'zac@openheartmediaco.com').split(',').map(s => s.trim()).filter(Boolean);
+  await sgMail.send({ to, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME }, subject: `[OHM] ${subject}`, html });
+}
+if (process.env.CANARY_ENABLED !== 'false') {
+  const canaryTimer = setInterval(() => { runCanary().catch(e => console.error('[canary]', e.message)); }, 60 * 60 * 1000);
+  if (canaryTimer.unref) canaryTimer.unref();
+  setTimeout(() => { runCanary().catch(e => console.error('[canary]', e.message)); }, 90 * 1000); // once shortly after boot
+}
+
+// Reliability endpoint for the team. Locked behind the same login as the dashboard.
+app.get('/api/health', (_, res) => res.json(auditHealth()));
 
 // Poll target for the landing page. Public (matches the /api/audit prefix in PUBLIC_PATHS).
 app.get('/api/audit/status/:id', (req, res) => {
@@ -1515,7 +1657,10 @@ app.get('/api/audit/status/:id', (req, res) => {
   if (!job) return res.status(404).json({ state: 'unknown', error: 'That scan expired. Please run it again.' });
   if (job.state === 'done') return res.json({ state: 'done', ...job.result });
   if (job.state === 'error') return res.json({ state: 'error', error: job.error });
-  return res.json({ state: 'running', stage: job.stage, elapsedMs: Date.now() - job.startedAt });
+  const stage = job.state === 'queued'
+    ? (auditQueue.findIndex(q => q.jobId === req.params.id) > 0 ? 'Waiting in line, starting shortly' : 'Starting your scan')
+    : job.stage;
+  return res.json({ state: 'running', stage, elapsedMs: Date.now() - job.startedAt });
 });
 
 app.post('/api/audit', async (req, res) => {
@@ -1533,11 +1678,42 @@ app.post('/api/audit', async (req, res) => {
   const bizCity = (p && p.city) || (lookup && lookup.city) || null;
   const bizCategory = (p && p.category) || (lookup && lookup.category) || null;
 
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  if (!isTest && rateLimited(ip)) {
+    return res.status(429).json({ error: 'You have run several scans already. Please give it an hour, or book a call and we will walk you through it.' });
+  }
+
+  // Capture the lead BEFORE scanning. Someone who typed their name, email and website into the
+  // form is worth money whether or not the scan succeeds. Previously the record was only written
+  // after a successful scan, so any failure lost the lead silently.
+  let leadRow = p || null;
+  if (!isTest) {
+    const nowIso = new Date().toISOString();
+    if (leadRow) {
+      leadRow.contact_first = firstName; leadRow.contact_last = lastName;
+      leadRow.contact_name = `${firstName} ${lastName}`.trim();
+      leadRow.audit_email = email; leadRow.audit_goal = goal || null;
+      if (!['audited', 'booked', 'won', 'replied'].includes(leadRow.status)) leadRow.status = 'audit_requested';
+      leadRow.audit_requested_at = nowIso; leadRow.updated_at = nowIso;
+    } else {
+      // Organic visitor with no ref: create a new lead so they are not lost.
+      leadRow = {
+        id: 'W' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+        business: '', category: '', city: '', phone: '', website: site,
+        rating: '', reviews: '', email, subject: '', body: '', notes: '',
+        handled_by: '', deal_value: '',
+        contact_first: firstName, contact_last: lastName, contact_name: `${firstName} ${lastName}`.trim(),
+        audit_email: email, audit_goal: goal || null,
+        status: 'audit_requested', source: 'self_serve', audit_requested_at: nowIso, updated_at: nowIso,
+      };
+      prospects.push(leadRow);
+    }
+    try { save(prospects); } catch (e) { console.error('[audit] lead capture save failed -', e.message); }
+  }
+
   const jobId = crypto.randomBytes(12).toString('hex');
-  auditJobs.set(jobId, { state: 'running', stage: 'Starting your scan', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
-  // Kick the pipeline off out of band and answer immediately. Errors are captured onto the job.
-  setImmediate(() => { runAuditJob(jobId, { ref, email, goal, firstName, lastName, isTest, site, p, lookup, bizName, bizCity, bizCategory }); });
-  res.status(202).json({ jobId, state: 'running' });
+  enqueueAudit(jobId, { ref, email, goal, firstName, lastName, isTest, site, p: leadRow && !isTest ? leadRow : p, lookup, bizName: bizName || (leadRow && leadRow.business) || null, bizCity, bizCategory });
+  res.status(202).json({ jobId, state: 'queued' });
 });
 
 // Metrics aggregate for the dashboard
