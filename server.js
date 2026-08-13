@@ -833,10 +833,61 @@ function loadMetrics() { try { return JSON.parse(fs.readFileSync(METRICS, 'utf8'
 function saveMetrics() { fs.writeFileSync(METRICS, JSON.stringify(events, null, 2)); }
 let events = loadMetrics();
 
+// What a cold prospect sees the moment they click the link in their email. Their report already
+// exists, so there is nothing to request, nothing to wait for and no form: showing one here would
+// ask them to apply for something we already made. The whole page is the finding, then the call.
+function renderPrescannedReport(p) {
+  const rep = p.audit_report || {};
+  const cats = rep.categories || [];
+  const overall = cats.length
+    ? Math.round(cats.reduce((s, c) => s + (Number(c.score) || 0), 0) / cats.length)
+    : 0;
+  const col = v => v >= 70 ? '#3fbf6a' : v >= 45 ? '#e0a340' : '#df3131';
+  const cls = v => v >= 70 ? 'sc-good' : v >= 45 ? 'sc-mid' : 'sc-bad';
+  const verdict = rep.overallVerdict
+    || (overall >= 70 ? 'Solid foundation, real room to grow'
+      : overall >= 45 ? 'Leaving real money on the table'
+        : 'Big, fixable gaps costing you leads');
+
+  const scards = cats.map(c => `<div class="scard ${cls(Number(c.score))}"><b>${Number(c.score)}<span class="of">/100</span></b><span>${esc(c.name)}</span><div class="meter"><i style="width:${Math.max(6, Math.round(Number(c.score)))}%"></i></div></div>`).join('');
+  const breakdown = cats.map(c => `<div class="find"><div class="n" style="background:${col(Number(c.score))}">${Number(c.score)}</div><div><h3>${esc(c.name)} <span style="color:#8fa0bd;font-weight:600;font-size:14px">${Number(c.score)}/100</span></h3><p>${esc(c.why || '')}</p></div></div>`).join('');
+  const findings = (rep.findings || []).map((f, i) => {
+    const ic = f.impact === 'High' ? '#df3131' : f.impact === 'Medium' ? '#e0a340' : '#8fa0bd';
+    return `<div class="find"><div class="n">${i + 1}</div><div><h3>${esc(f.title)}${f.impact ? ` <span style="font-size:11px;font-weight:700;color:#fff;background:${ic};padding:2px 7px;border-radius:20px;vertical-align:middle">${esc(String(f.impact).toUpperCase())}</span>` : ''}</h3><p>${esc(f.detail || '')}</p></div></div>`;
+  }).join('');
+  const quick = (rep.quickWins || []).map(q => `<li style="margin-bottom:8px;color:#c7d0e0">${esc(q)}</li>`).join('');
+  const top = (rep.findings || [])[0];
+
+  return `
+<section class="hero">
+  <div class="inner">
+    <div class="eyebrow reveal">Growth audit &middot; ${esc(p.business || 'your business')}</div>
+    <h1 class="reveal">${esc(rep.headline || 'Where you are quietly losing customers')}</h1>
+    ${top ? `<p class="sub reveal">${esc(top.detail || '')}</p>` : ''}
+    <a class="btn reveal" id="rbook_top" href="#book" style="max-width:320px;margin-top:10px;text-decoration:none;display:block;text-align:center">Book my free discovery call</a>
+    <p class="fp reveal" style="margin-top:10px">Thirty minutes. No pitch, no pressure.</p>
+  </div>
+</section>
+
+<section class="sec results">
+  <div class="inner">
+    <div class="grade reveal"><div class="gbig">${overall}<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>${esc(verdict)}</span></div></div>
+    <div class="scoregrid reveal">${scards}</div>
+    <div class="fhead reveal">Score breakdown</div>${breakdown}
+    <div class="fhead reveal" style="margin-top:26px">What is costing you customers</div>${findings}
+    ${quick ? `<div class="fhead reveal" style="margin-top:22px">Quick wins you can start now</div><ul style="margin:8px 0 0;padding-left:20px">${quick}</ul>` : ''}
+    ${rep.estimate ? `<div class="est reveal"><b>The upside: </b>${esc(rep.estimate)}</div>` : ''}
+    <a class="btn" id="rbook" href="#book" style="max-width:360px;margin:30px auto 0;text-decoration:none;display:block;text-align:center">Book my free discovery call</a>
+  </div>
+</section>`;
+}
+
 function renderLandingPage(ref) {
   const prospect = ref && prospects.find(x => x.id === ref);
   const bizName = prospect ? prospect.business : null;
   const prefillSite = prospect ? (prospect.website || '') : '';
+  // A lead we already scanned skips the whole request flow and lands straight on their findings.
+  const prescanned = !!(prospect && prospect.audit_report && (prospect.prescan_at || prospect.audited_at));
   const site = loadSite();
   const video = site.videoEmbed
     ? `<div class="vframe"><iframe src="${site.videoEmbed}" frameborder="0" allowfullscreen></iframe></div>`
@@ -968,7 +1019,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 </style></head><body>
 <div class="nav"><img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/><a class="navcta" href="#book">Book a call</a></div>
 
-<section class="hero">
+${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
   <div class="inner">
     <div class="eyebrow reveal">${bizName ? 'Free growth audit for ' + esc(bizName) : 'Free growth audit'}</div>
     <h1 class="reveal">You're a great business. You're just <em>leaving money</em> on the table.</h1>
@@ -993,7 +1044,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
   </div>
 </section>
 
-<section class="sec results hide" id="result"></section>
+<section class="sec results hide" id="result"></section>`}
 
 <section class="case" id="proof">
   <div class="inner">
@@ -1074,7 +1125,9 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
   var vid=document.querySelector('.vframe video');
   if(vid){ vid.loop=true; vid.muted=true; vid.setAttribute('loop',''); vid.play().catch(function(){}); vid.addEventListener('ended',function(){ try{vid.currentTime=0; vid.play();}catch(e){} }); }
   document.querySelector('.navcta').addEventListener('click',function(){track('click');});
-  document.getElementById('run').addEventListener('click', function(){
+  // The report variant of this page has no form, so these elements do not exist there.
+  var runBtn=document.getElementById('run');
+  if(runBtn) runBtn.addEventListener('click', function(){
     var first=document.getElementById('f_first').value.trim();
     var last=document.getElementById('f_last').value.trim();
     var email=document.getElementById('f_email').value.trim();
