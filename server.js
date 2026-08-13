@@ -581,7 +581,9 @@ async function generateAuditReport(p, scan, ps, gbp, answers, aio) {
   const prompt = `You are a senior growth strategist at Open Heart Media (OHM). Produce a thorough, elite growth audit for a local business based ONLY on the real scan data below. It must read like a paid consultant did it: specific, researched, and honest. Tie findings to lost leads and revenue. This report is what earns the discovery call, so it must be genuinely valuable and impressively detailed, while keeping the exact HOW of fixing things at a strategic level (name the gap and the opportunity, do not write the full implementation playbook).
 
 BUSINESS: ${p.business || 'this business'}, a ${p.category || 'local business'} in ${p.city || 'their area'}, GA. Google rating ${p.rating || 'n/a'} from ${p.reviews || 'n/a'} reviews.
-PERSON WHO REQUESTED THIS AUDIT: ${answers.firstName || 'the owner'}. Address them by their first name ONCE, warmly and naturally, in the summary (for example open the summary with "${answers.firstName || 'there'}, ..."). Do not overuse the name or use it in the findings.
+${answers.firstName
+  ? `PERSON WHO REQUESTED THIS AUDIT: ${answers.firstName}. Address them by their first name ONCE, warmly and naturally, in the summary (for example open the summary with "${answers.firstName}, ..."). Do not overuse the name or use it in the findings.`
+  : `NOBODY REQUESTED THIS AUDIT: it was built ahead of contact, so there is no name to use. Do NOT open with a greeting of any kind and do NOT write "Hey there", "Hi there" or "there". Open the summary on the business itself.`}
 WHAT THEY WANT MORE OF: ${answers.goal || 'more customers'}  (weave this in naturally where relevant. NEVER write the phrases "stated goal", "stated business goal", or "your stated goal". Just refer to what they want in plain words.)
 
 FULL TECHNICAL + MARKETING SCAN (real, just run):
@@ -1602,6 +1604,78 @@ function restoreJobs() {
   if (resumed) pumpAuditQueue();
 }
 
+// ---------- Bulk pre-scan ----------
+// Running the audit live while a prospect watches puts a 2 minute wait, and every dependency we do
+// not control, directly in front of the one person we are trying to impress. Building every report
+// before outreach removes that entirely: the email carries real findings, the link opens a report
+// that already exists, and a site that fails is a row to fix quietly rather than a broken page in
+// front of a buyer. It also gives the copy something specific to say per business.
+const prescanState = {
+  running: false, stop: false, total: 0, done: 0, ok: 0, failed: 0,
+  startedAt: null, finishedAt: null, current: null, lastError: null,
+};
+
+async function prescanOne(p) {
+  const jobId = 'pre-' + crypto.randomBytes(6).toString('hex');
+  auditJobs.set(jobId, { state: 'running', stage: 'prescan', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
+  try {
+    await runAuditJob(jobId, {
+      ref: p.id, email: null, goal: null, firstName: '', lastName: '',
+      isTest: false, prescan: true, site: p.website, p,
+      bizName: p.business, bizCity: p.city, bizCategory: p.category,
+    });
+    return auditJobs.get(jobId)?.state === 'done';
+  } finally {
+    auditJobs.delete(jobId);                       // never persisted, never polled by a prospect
+  }
+}
+
+function prescanTargets({ force = false } = {}) {
+  return prospects.filter(p =>
+    p.website && /^https?:\/\//i.test(p.website) &&
+    (force || (!p.prescan_at && !p.prescan_failed_at)));
+}
+
+async function runPrescan({ limit = 0, force = false } = {}) {
+  if (prescanState.running) return prescanState;
+  let queue = prescanTargets({ force });
+  if (limit > 0) queue = queue.slice(0, limit);
+  Object.assign(prescanState, {
+    running: true, stop: false, total: queue.length, done: 0, ok: 0, failed: 0,
+    startedAt: new Date().toISOString(), finishedAt: null, current: null, lastError: null,
+  });
+  console.log('[prescan] starting on', queue.length, 'sites');
+
+  const workers = Math.max(1, MAX_CONCURRENT_AUDITS);
+  let cursor = 0;
+  const worker = async () => {
+    while (!prescanState.stop) {
+      const p = queue[cursor++];
+      if (!p) return;
+      prescanState.current = p.business || p.website;
+      try {
+        const ok = await prescanOne(p);
+        ok ? prescanState.ok++ : prescanState.failed++;
+      } catch (e) {
+        prescanState.failed++;
+        prescanState.lastError = `${p.business || p.website}: ${e.message}`;
+        console.error('[prescan]', p.id, e.message);
+      }
+      prescanState.done++;
+      if (prescanState.done % 25 === 0) {
+        console.log(`[prescan] ${prescanState.done}/${prescanState.total} (${prescanState.ok} ok, ${prescanState.failed} failed)`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: workers }, worker));
+
+  prescanState.running = false;
+  prescanState.current = null;
+  prescanState.finishedAt = new Date().toISOString();
+  console.log(`[prescan] finished: ${prescanState.ok} ok, ${prescanState.failed} failed of ${prescanState.total}`);
+  return prescanState;
+}
+
 // ---------- Per IP rate limit ----------
 // /api/audit is public and expensive. This stops a bot or a stuck retry loop from burning the
 // Claude budget, without getting in the way of a real prospect running one or two scans.
@@ -1773,6 +1847,20 @@ async function runAuditJob(jobId, opts) {
     if (opts.silent) {
       // Canary run: exercise the whole pipeline, email nobody, write nothing.
       job.result = { canary: true, report, business: resolvedBiz };
+    } else if (opts.prescan) {
+      // Built ahead of outreach, so there is nobody waiting and nobody to email. Deliberately does
+      // NOT set status or audited_at: those mean the prospect asked for an audit and received it,
+      // and the follow-up copy branches on them to decide whether to say "did you get a chance to
+      // run it". A pre-scanned lead has not seen anything yet and is still cold.
+      if (p) {
+        p.audit_report = report;
+        p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
+        p.prescan_at = new Date().toISOString();
+        p.prescan_error = null;
+        p.updated_at = p.prescan_at;
+        try { save(prospects); } catch (e) { console.error('[prescan] save failed -', e.message); }
+      }
+      job.result = { prescan: true, report, business: resolvedBiz };
     } else if (isTest) {
       const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
       if (pdf && process.env.SENDGRID_API_KEY) await softStage(sendAuditToProspect(testTo, resolvedBiz, report, pdf, bookingUrl), 30000, 'test email');
@@ -1804,7 +1892,14 @@ async function runAuditJob(jobId, opts) {
     recordAuditOutcome({ ok: false, ms: Date.now() - t0, site, business: bizName, stage: job?.stage || null, error: e.message, timings, canary: !!opts.silent });
     // A prospect who filled the form is a real lead even when the scan fails. Flag the record so
     // the team can follow up by hand instead of the lead disappearing.
-    if (!opts.silent && !isTest && p) {
+    if (opts.prescan && p) {
+      // Nobody is waiting on this one, so a failure is a data problem to review in bulk later, not
+      // an incident. Recorded on the lead and left out of the outreach list rather than alerted on.
+      p.prescan_error = e.message;
+      p.prescan_failed_at = new Date().toISOString();
+      p.updated_at = p.prescan_failed_at;
+      try { save(prospects); } catch {}
+    } else if (!opts.silent && !isTest && p) {
       p.status = 'audit_failed';
       p.audit_error = e.message;
       p.audit_failed_at = new Date().toISOString();
@@ -2127,6 +2222,28 @@ function followupsSentToday() {
   const today = new Date().toISOString().slice(0, 10);
   return prospects.filter(p => (p.last_followup_at || '').slice(0, 10) === today).length;
 }
+// Returns immediately: a full run is hours of work, far past any HTTP timeout.
+app.post('/api/prescan', (req, res) => {
+  if (prescanState.running) return res.status(409).json({ error: 'a pre-scan is already running', state: prescanState });
+  const limit = Number(req.body?.limit) || 0;
+  const force = req.body?.force === true;
+  const pending = prescanTargets({ force }).length;
+  runPrescan({ limit, force }).catch(e => console.error('[prescan] run failed -', e.message));
+  res.json({ started: true, queued: limit > 0 ? Math.min(limit, pending) : pending });
+});
+app.post('/api/prescan/stop', (_, res) => { prescanState.stop = true; res.json({ stopping: true }); });
+app.get('/api/prescan/status', (_, res) => {
+  const withReport = prospects.filter(p => p.prescan_at && p.audit_report).length;
+  const failed = prospects.filter(p => p.prescan_failed_at && !p.prescan_at).length;
+  res.json({
+    ...prescanState,
+    remaining: prescanTargets().length,
+    reportsReady: withReport,
+    permanentlyFailed: failed,
+    totalProspects: prospects.length,
+  });
+});
+
 app.post('/api/run-followups', async (_, res) => { res.json({ sent: await runFollowups() }); });
 
 // A bare setInterval only fires while this process happens to be alive. The host restarts on
