@@ -369,19 +369,26 @@ async function scanWebsite(rawUrl) {
 // under a second. Confirmed directly: one call to the same URL timed out at 25s, the very next
 // call completed in 602ms. A single timeout value can't fix that, so runPageSpeed retries once
 // on a timeout/failure before giving up, since the second attempt has a real shot at hitting cache.
-const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS) || 70000;
+// Measured across live prospect sites, Lighthouse answers anywhere between 17s and 62s for the
+// same set, so this is a long tail rather than a fixed cost. 70s clipped that tail and lost the
+// speed data on about a third of runs. PageSpeed runs in parallel with everything else, so a
+// higher ceiling costs the slow minority some wall clock and costs the fast majority nothing.
+const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS) || 95000;
 
 async function runPageSpeed(url) {
   if (!url) return null;
   const attempt = async () => {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
     const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices${key}`;
-    // Google's Lighthouse runs a real Chrome against the site, and measured against live prospect
-    // sites it takes about 50s to answer. The old 20s abort therefore fired before the API could
-    // ever respond: 17 of 24 logged audits came back with no speed data at all, which is the whole
-    // Core Web Vitals section of the report missing. Budget for the latency the API actually has.
     const r = await fetch(api, { signal: AbortSignal.timeout(PAGESPEED_TIMEOUT_MS) });
-    if (!r.ok) return null;
+    // A non-OK response used to return null indistinguishably from a parse miss, so a quota or
+    // outage looked identical to a site with no data and neither was ever logged. Surface it.
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      const err = new Error(`PageSpeed HTTP ${r.status} ${body.slice(0, 160)}`);
+      err.status = r.status;
+      throw err;
+    }
     const d = await r.json();
     const c = d.lighthouseResult?.categories || {};
     const a = d.lighthouseResult?.audits || {};
@@ -404,8 +411,25 @@ async function runPageSpeed(url) {
       httpStatusOk: passed('http-status-code'),
     };
   };
-  try { return await attempt(); }
-  catch { try { return await attempt(); } catch { return null; } }
+  // Retrying a timeout is pointless: the first attempt already consumed the stage budget, so the
+  // retry is guaranteed to be killed before it lands. Only genuinely transient server-side answers
+  // are worth a second call, and only quickly.
+  const retryable = e => e?.status === 429 || (e?.status >= 500 && e?.status <= 599);
+  try {
+    return await attempt();
+  } catch (e) {
+    if (!retryable(e)) {
+      console.warn('[audit] PageSpeed unavailable for', url, '-', e.message);
+      return null;
+    }
+    try {
+      await new Promise(r => setTimeout(r, 1500));
+      return await attempt();
+    } catch (e2) {
+      console.warn('[audit] PageSpeed failed twice for', url, '-', e2.message);
+      return null;
+    }
+  }
 }
 
 // ---------- Google Business Profile scan (Places API) ----------
@@ -1508,14 +1532,74 @@ function pumpAuditQueue() {
     const job = auditJobs.get(next.jobId);
     if (!job || job.state !== 'queued') continue;
     activeAudits++;
-    job.state = 'running'; job.stage = 'Starting your scan'; job.updatedAt = Date.now();
+    job.state = 'running'; job.stage = 'Starting your scan'; job.updatedAt = Date.now(); persistJobs();
     runAuditJob(next.jobId, next.opts).finally(() => { activeAudits--; pumpAuditQueue(); });
   }
 }
 function enqueueAudit(jobId, opts) {
-  auditJobs.set(jobId, { state: 'queued', stage: 'Waiting to start', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
+  auditJobs.set(jobId, {
+    state: 'queued', stage: 'Waiting to start', startedAt: Date.now(), updatedAt: Date.now(),
+    result: null, error: null,
+    // Kept so the job can be rebuilt after a restart. The prospect record is deliberately not
+    // stored: it is re-resolved from `ref` so a resumed job cannot write back a stale copy.
+    resume: opts.silent ? null : {
+      ref: opts.ref || null, email: opts.email, goal: opts.goal || null,
+      firstName: opts.firstName, lastName: opts.lastName, isTest: !!opts.isTest,
+      site: opts.site, bizName: opts.bizName, bizCity: opts.bizCity, bizCategory: opts.bizCategory,
+    },
+  });
   auditQueue.push({ jobId, opts });
+  persistJobs();
   pumpAuditQueue();
+}
+
+// ---------- Job durability across restarts ----------
+// The job map is in memory, so a deploy or a crash mid-scan used to leave the prospect polling a
+// job id that no longer existed. They saw "that scan expired" after already handing over their
+// details, which is the worst possible moment to look broken. Jobs are mirrored to disk and
+// anything unfinished is re-queued on boot.
+const JOBS_FILE = path.join(DATA_DIR, 'audit_jobs.json');
+let jobsDirty = false;
+function persistJobs() { jobsDirty = true; }
+function flushJobs() {
+  if (!jobsDirty) return;
+  jobsDirty = false;
+  const out = [];
+  for (const [id, j] of auditJobs) {
+    if (!j.resume) continue;                       // canaries are throwaway
+    out.push([id, j]);
+  }
+  try { fs.writeFileSync(JOBS_FILE, JSON.stringify(out)); }
+  catch (e) { console.error('[audit] could not persist jobs -', e.message); }
+}
+const jobFlusher = setInterval(flushJobs, 2000);
+if (jobFlusher.unref) jobFlusher.unref();
+
+function restoreJobs() {
+  let saved;
+  try { saved = JSON.parse(fs.readFileSync(JOBS_FILE, 'utf8')); } catch { return; }
+  if (!Array.isArray(saved)) return;
+  let resumed = 0, kept = 0;
+  for (const [id, j] of saved) {
+    if (!j || !j.resume) continue;
+    if (Date.now() - (j.updatedAt || 0) > JOB_TTL_MS) continue;
+    if (j.state === 'done' || j.state === 'error') {
+      auditJobs.set(id, j);                        // finished: keep the result pollable
+      kept++;
+      continue;
+    }
+    // Was queued or running when the process went away, so the work never completed. The email is
+    // the last step of the job, which means an interrupted run has not contacted anyone yet and
+    // re-running it cannot duplicate a send.
+    const r = j.resume;
+    const p = !r.isTest && r.ref ? prospects.find(x => x.id === r.ref) : null;
+    const lookup = r.isTest && r.ref ? prospects.find(x => x.id === r.ref) : null;
+    auditJobs.set(id, { ...j, state: 'queued', stage: 'Resuming your scan', updatedAt: Date.now() });
+    auditQueue.push({ jobId: id, opts: { ...r, p, lookup } });
+    resumed++;
+  }
+  if (resumed || kept) console.log('[audit] restored', kept, 'finished and re-queued', resumed, 'interrupted scans');
+  if (resumed) pumpAuditQueue();
 }
 
 // ---------- Per IP rate limit ----------
@@ -1621,7 +1705,7 @@ const MAX_JOB_MS = Number(process.env.MAX_AUDIT_JOB_MS || 6 * 60 * 1000);
 
 async function runAuditJob(jobId, opts) {
   const job = auditJobs.get(jobId);
-  const setStage = s => { if (job) { job.stage = s; job.updatedAt = Date.now(); } };
+  const setStage = s => { if (job) { job.stage = s; job.updatedAt = Date.now(); persistJobs(); } };
   const { ref, email, goal, firstName, lastName, isTest, site, p, lookup, bizName, bizCity, bizCategory } = opts;
   const t0 = Date.now();
   const deadline = t0 + MAX_JOB_MS;
@@ -1637,7 +1721,7 @@ async function runAuditJob(jobId, opts) {
     // written report, which takes it off the critical path almost entirely. Kicked off before the
     // first await so it is genuinely running during the scan, with the rejection handler attached
     // immediately so a failure can never surface as an unhandled rejection.
-    const psPromise = softStage(runPageSpeed(site), budget(PAGESPEED_TIMEOUT_MS + 5000), 'PageSpeed');
+    const psPromise = softStage(runPageSpeed(site), budget(PAGESPEED_TIMEOUT_MS + 15000), 'PageSpeed');
 
     setStage('Scanning your website');
     const scan = await timed('scan', () => withTimeout(scanWebsite(site), budget(75000), 'website scan'));
@@ -1710,6 +1794,7 @@ async function runAuditJob(jobId, opts) {
     job.state = 'done';
     job.stage = 'Done';
     job.updatedAt = Date.now();
+    persistJobs(); flushJobs();
     recordAuditOutcome({ ok: true, ms: Date.now() - t0, site, business: resolvedBiz, degraded: !!report.degraded, noPagespeed: !ps, timings, canary: !!opts.silent });
     // Per stage timings make a slow job diagnosable after the fact instead of a mystery.
     console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', resolvedBiz || site, report.degraded ? '(degraded report)' : '', JSON.stringify(timings));
@@ -1729,6 +1814,7 @@ async function runAuditJob(jobId, opts) {
     }
     if (job) {
       job.state = 'error';
+      persistJobs();
       job.error = unreachable
         ? `We could not load ${site}. Please check the address and try again.`
         : 'The scan hit a snag on our side. Your details are saved and our team will follow up shortly.';
@@ -2066,4 +2152,10 @@ setTimeout(() => followupTick('boot catch-up'), 90 * 1000);
 app.post('/api/reseed', (_, res) => { prospects = seedFromCsv(); res.json({ count: prospects.length }); });
 
 const PORT = process.env.PORT || 4100;
+// Flush on the way down so a graceful redeploy loses nothing at all.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { try { flushJobs(); } catch {} process.exit(0); });
+}
+
+restoreJobs();
 app.listen(PORT, () => console.log(`OHM Outreach dashboard on http://localhost:${PORT}`));
