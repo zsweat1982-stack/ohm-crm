@@ -86,55 +86,142 @@ Return ONLY JSON: {"known": true|false, "confidence": "high|medium|low", "wouldR
   } catch { return null; }
 }
 
+// Each prospect's own worst-scoring category picks the angle. That is what stops a thousand
+// emails sharing one shape: businesses fail differently, so the batch diverges on real data
+// rather than on a rotation we invented. Spam filters cluster identical patterns, and so do
+// humans who compare notes.
+const ANGLES = {
+  'Website & Speed':      { key: 'speed',    subj: ['how long your site takes to load', 'your site on a phone', 'slow on mobile'] },
+  'Converting Visitors':  { key: 'convert',  subj: ['no way to book you online', 'nowhere to click on your site'] },
+  'Tracking & Data':      { key: 'tracking', subj: ['no tracking on your site', 'where your leads come from'] },
+  'AI Search Presence (AIO)': { key: 'ai',   subj: ['chatgpt has not heard of you', 'when people ask ai for a {cat}'] },
+  'AI Search':            { key: 'ai',       subj: ['chatgpt has not heard of you', 'when people ask ai for a {cat}'] },
+  'Local Visibility':     { key: 'local',    subj: ['{n} reviews and still hard to find'] },
+  'Getting Found (SEO)':  { key: 'seo',      subj: ['not on page one for {cat} in {city}', 'what google cannot read on your site'] },
+  'Social & Content':     { key: 'social',   subj: ['nothing for people to look at'] },
+};
+
+function pickAngle(p) {
+  const cats = (p.audit_report && p.audit_report.categories) || [];
+  if (!cats.length) return null;
+  const ranked = cats.slice()
+    .sort((a, b) => (Number(a.score) || 0) - (Number(b.score) || 0))
+    .filter(c => ANGLES[c.name]);
+  if (!ranked.length) return null;
+  // Tracking is the weakest area on most small business sites, so always taking the single worst
+  // made most of the batch say the same thing. Alternate between the two weakest on a stable hash
+  // of the lead id: still driven by their real scores, but the batch stops looking like one email.
+  const h = crypto.createHash('sha1').update(String(p.id)).digest()[0];
+  const pick = ranked.length > 1 && (h & 1) ? ranked[1] : ranked[0];
+  return { ...ANGLES[pick.name], name: pick.name, score: Number(pick.score), why: pick.why || '' };
+}
+
 async function draftEmail(p) {
-  // Run the live AI-visibility probe so the opener can lead with a real, personalized AIO observation.
-  const ai = await aiVisibilityProbe(p.business, p.city, p.category);
-  const aiInvisible = !!(ai && ai.known === false);
-  const aiLead = aiInvisible ? `
-AI VISIBILITY (LIVE, TRUE): We just asked an AI assistant to recommend a ${p.category} in ${p.city}, GA, and ${p.business} did NOT come up.${ai.competitorsKnown ? ' The AI surfaced other options instead.' : ''}
-LEAD THE EMAIL WITH THIS. Line 1 body: a plain, specific, slightly surprising observation, for example "I asked ChatGPT for the best ${p.category} in ${p.city} this week, and ${p.business} didn't come up." State it as a fact, calm and factual, not alarmist. Do NOT invent competitor names, exact numbers, or details you were not given. Then the OUTCOME gap in one line: more people now ask AI assistants (ChatGPT, Google's AI Overviews) for a ${p.category}, so being invisible there quietly sends ready-to-buy customers to whoever the AI does recommend. This is a genuinely high-priority, current shift, frame it that way without hype.` : `
-LEAD with a SPECIFIC, genuine positive observation about THEM (reference their real rating/reviews or their standing as a ${p.category} in ${p.city}). Must feel impossible to have sent to anyone else. Then the OUTCOME-based gap: a business this good is almost certainly leaving leads and revenue on the table, because the people searching for a ${p.category} in ${p.city} are not all finding them or booking. Frame it as money and customers they are missing, not a feature they lack.`;
-  const prompt = `You are writing as Michelle, at Open Heart Media (OHM). OHM helps local businesses GET MORE LEADS AND GROW REVENUE. That is what you sell: the outcome (more customers, more booked jobs, more revenue), NOT the mechanism. Video, content, and websites are just how OHM gets there, so mention them only lightly if at all. Lead with the money.
+  const rep = p.audit_report;
 
-Write ONE short cold email to this local business to get a reply saying yes to a free personalized growth audit (where we show exactly where they are losing leads and revenue, and how to capture more). The audit leads to a discovery call.
+  // No stored report means this lead was never pre-scanned. Rather than invent an observation we
+  // have not actually made, fall back to the live AI probe, which is a real check.
+  if (!rep || !(rep.findings || []).length) return draftEmailUnscanned(p);
 
-BUSINESS:
-- Name: ${p.business}
-- Type: ${p.category}
-- City: ${p.city}, GA
-- Google rating: ${p.rating || 'n/a'} from ${p.reviews || 'n/a'} reviews
-- Website: ${p.website || 'n/a'}
+  const angle = pickAngle(p);
+  const top = rep.findings[0];
+  const ps = p.audit_scan && p.audit_scan.pagespeed;
+  const facts = [
+    p.rating && p.reviews ? `Google rating ${p.rating} from ${p.reviews} reviews` : null,
+    ps && ps.lcpLabel ? `mobile largest contentful paint ${ps.lcpLabel}` : null,
+    ps && ps.performance != null ? `mobile PageSpeed performance score ${ps.performance} out of 100` : null,
+    angle ? `their weakest area is ${angle.name} at ${angle.score} out of 100` : null,
+  ].filter(Boolean);
 
-OPENING ANGLE:${aiLead}
+  const subjHints = (angle ? angle.subj : ['what is costing you customers'])
+    .map(t => t.replace('{cat}', (p.category || 'business').toLowerCase())
+               .replace('{city}', (p.city || '').toLowerCase())
+               .replace('{n}', String(p.reviews || '')))
+    .join('" or "');
 
-RULES (follow exactly):
-- Under 100 words. Sound like a real local person, not marketing. Use contractions.
-- Do not lecture about video or social.
-- After the hook, point them to a short breakdown you put together showing where those lost leads and dollars are (their full free audit). One quick line, then put the exact token [LINK] on its own line where the link will go.
-- After the link, one soft line like "worth a look?" Then sign.
-- Sign: Michelle, Open Heart Media
-- NO em dashes. No dashes as punctuation. No exclamation marks. No "hope this finds you well". No buzzwords like "leverage", "synergy", "unlock", "scale". Never invent facts, names, or numbers.
+  const prompt = `You are Michelle at Open Heart Media in Canton, Georgia. You are writing one cold email to a local business owner.
 
-Also write a lowercase, personal subject line under 45 chars, no hype, no exclamation. ${aiInvisible ? `Since this leads with AI visibility, the subject should hint at it, for example "ai can't find ${p.business.toLowerCase()} yet", "${p.city.toLowerCase()} ${p.category.toLowerCase()}s and chatgpt", "when people ask ai for a ${p.category.toLowerCase()}".` : `Hint at more customers/leads/revenue. Examples: "more patients in ${p.city}", "leads you're probably missing".`}
+CRITICAL CONTEXT: we have ALREADY scanned this business. The report is built and waiting at the link. You are NOT offering to run anything, NOT asking permission, NOT inviting them to request an audit. You are telling them one thing you already found. Never use the words "free audit", and never ask them to run, request or start a scan.
+
+BUSINESS: ${p.business}, a ${p.category} in ${p.city}, GA.
+
+WHAT THE SCAN ACTUALLY FOUND (use ONLY this, invent nothing):
+- Biggest problem: ${top.title}
+- Detail: ${top.detail || ''}
+${facts.length ? '- Real measurements: ' + facts.join('; ') : ''}
+${angle && angle.why ? '- Why that area scored badly: ' + angle.why : ''}
+
+WRITE:
+1. Subject line. Lowercase, UNDER 45 CHARACTERS, no exclamation marks, no question mark, no ALL CAPS, never the words "free" or "audit", never their name. Base it on the angle above. Shapes that fit: "${subjHints}". Adapt, do not copy verbatim.
+2. Body, UNDER 90 WORDS, four sentences at most:
+   - Sentence 1 is the finding, stated flat and factual, with ONE real number from above. It must NOT repeat the subject line, because the inbox shows both.
+   - Sentence 2 is what it costs them in customers or money, in plain words. Never jargon, never "LCP" or "conversion rate optimisation".
+   - Then the token [LINK] alone on its own line, introduced as something that already exists, for example "I wrote the whole thing up here".
+   - One short closing line, for example "Worth a look?".
+3. Sign exactly: Michelle, Open Heart Media
+
+BANNED: em dashes and any dash used as punctuation, exclamation marks, "hope this finds you well", "quick question", "I wanted to reach out", "leverage", "unlock", "scale", "solutions", "circle back", "synergy". Do not explain how to fix anything. Do not mention video, social or web design as services. Do not list a second problem.
 
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
   const r = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
-    messages: [{ role: 'user', content: prompt }],
+    model: 'claude-sonnet-4-6', max_tokens: 600, messages: [{ role: 'user', content: prompt }],
   });
+  return finishDraft(r, p);
+}
+
+// Fallback for a lead with no stored report: the live AI-visibility probe is a real observation,
+// so it is honest to lead with it.
+async function draftEmailUnscanned(p) {
+  const ai = await aiVisibilityProbe(p.business, p.city, p.category);
+  const invisible = !!(ai && ai.known === false);
+  const prompt = `You are Michelle at Open Heart Media in Canton, Georgia, writing one cold email to ${p.business}, a ${p.category} in ${p.city}, GA${p.rating && p.reviews ? `, rated ${p.rating} from ${p.reviews} Google reviews` : ''}.
+
+${invisible
+  ? `TRUE AND JUST CHECKED: we asked an AI assistant to recommend a ${p.category} in ${p.city} and ${p.business} did not come up. Lead with that, stated flatly. Then one line on what it costs: more buyers now ask AI assistants for a local ${p.category}, so whoever it does name gets the call.`
+  : `Lead with one specific, genuine observation about their standing as a ${p.category} in ${p.city}, using their real review numbers. Then one line: a business this good is losing customers who never find or book them.`}
+
+Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short closing line. Sign exactly: Michelle, Open Heart Media
+
+RULES: subject lowercase and UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never their name. Body UNDER 90 WORDS, four sentences at most, plain words, contractions. The first body line must not repeat the subject. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
+
+Return ONLY JSON: {"subject": "...", "body": "..."}`;
+
+  const r = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6', max_tokens: 600, messages: [{ role: 'user', content: prompt }],
+  });
+  return finishDraft(r, p);
+}
+
+function finishDraft(r, p) {
   let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  // Be robust: pull the first {...} block if Claude adds any preamble.
   const m = txt.match(/\{[\s\S]*\}/);
   if (m) txt = m[0];
   const out = JSON.parse(txt);
-  // Inject the tracked one-page link (ref = this prospect, so clicks attribute back).
+
+  // The model complies with the no-dash rule most of the time, which is not the same as always.
+  const deDash = t => typeof t === 'string'
+    ? t.replace(/\s*[—–]\s*/g, ', ').replace(/\s+--\s+/g, ', ').replace(/--/g, ', ')
+    : t;
+  out.subject = deDash(out.subject || '');
+  out.body = deDash(out.body || '');
+
+  // Subject discipline, enforced rather than requested: lowercase, no trailing punctuation, and
+  // trimmed at a word boundary if it ran long.
+  out.subject = out.subject.toLowerCase().replace(/[!.]+$/, '').trim();
+  if (out.subject.length > 45) {
+    out.subject = out.subject.slice(0, 45).replace(/\s+\S*$/, '').trim();
+  }
+
   const link = `${LANDING_URL}?ref=${p.id}`;
-  if (out.body && out.body.includes('[LINK]')) out.body = out.body.replace('[LINK]', link);
-  else if (out.body) out.body = out.body.replace(/\n*Zac,/, `\n\n${link}\n\nZac,`);
+  if (out.body.includes('[LINK]')) out.body = out.body.replace('[LINK]', link);
+  else out.body = out.body.replace(/\n*Michelle,/, `\n\n${link}\n\nMichelle,`);
+  if (!out.body.includes(link)) out.body += `\n\n${link}`;
+  // Asked for in the prompt and dropped every single time, so it is enforced rather than requested.
+  if (!/Michelle/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\n\nMichelle\nOpen Heart Media';
   return out;
 }
+
 const LANDING_URL = process.env.LANDING_URL || `http://localhost:${process.env.PORT || 4100}/go`;
 
 // ---------- SCANNING AUDIT ENGINE (multi-page website + social + marketing + AI-search scan) ----------
