@@ -894,7 +894,9 @@ function renderLandingPage(ref) {
     : `<div class="vframe"><video src="/media/ohm-promo.mp4" autoplay muted loop playsinline controls preload="metadata"></video></div>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Free growth audit · Open Heart Media</title>
+<title>${prescanned ? esc(bizName || 'Your') + ' growth audit · Open Heart Media' : 'Free growth audit · Open Heart Media'}</title>
+${prescanned ? `<meta name="robots" content="noindex,nofollow,noarchive"/>
+<meta name="referrer" content="no-referrer"/>` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
@@ -1284,7 +1286,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
 // '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
 // creating an account or logging in to anything.
-const PUBLIC_PATHS = ['/go', '/unsubscribe', '/healthz', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+const PUBLIC_PATHS = ['/go', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -1444,6 +1446,22 @@ app.get('/unsubscribe', (req, res) => {
 
 app.get('/go', (req, res) => {
   res.send(renderLandingPage(req.query.ref));
+});
+
+// Every prospect report is a public URL carrying a frank, named assessment of somebody else's
+// business. Indexed, those become search results about a local company, published by us, that the
+// owner never asked for. The page itself is noindex; this is the belt to that pair of braces, and
+// it also keeps the team CRM out of the index.
+app.get('/robots.txt', (_, res) => {
+  res.type('text/plain').send([
+    'User-agent: *',
+    'Disallow: /go?ref=',
+    'Disallow: /api/',
+    'Disallow: /login',
+    'Disallow: /unsubscribe',
+    'Allow: /go',
+    'Disallow: /',
+  ].join('\n') + '\n');
 });
 
 // Preview the branded PDF audit design (sample data mirroring a real scan)
@@ -2230,7 +2248,13 @@ app.post('/api/send-approved', async (req, res) => {
 // ---------- 3 / 7 / 10 day follow-up sequence ----------
 async function draftFollowup(p, step) {
   const link = `${LANDING_URL}?ref=${p.id}`;
-  const audited = !!(p.audited_at || p.status === 'audited') && !!p.audit_report;
+  // A pre-scanned lead has a report but no audited_at: we built it, they did not request it.
+  // What matters for the copy is whether they have SEEN it, which viewed_at records when they
+  // land on the report page. Branching on audited_at here asked people who had already read
+  // their scores whether they had got round to running one.
+  const hasReport = !!p.audit_report;
+  const seenIt = !!(p.viewed_at || p.clicked_at || p.audited_at || p.status === 'audited');
+  const audited = hasReport && seenIt;
   let angles, context = '', length = '2 to 3', linkPurpose = 'the free audit link';
   if (audited) {
     // They ALREADY ran the audit but have not booked. Reference their real results + add education / free value.
