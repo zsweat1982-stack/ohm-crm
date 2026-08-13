@@ -859,7 +859,7 @@ function renderPrescannedReport(p) {
   const top = (rep.findings || [])[0];
 
   return `
-<section class="hero">
+<section class="hero report">
   <div class="inner">
     <div class="eyebrow reveal">Growth audit &middot; ${esc(p.business || 'your business')}</div>
     <h1 class="reveal">${esc(rep.headline || 'Where you are quietly losing customers')}</h1>
@@ -915,6 +915,11 @@ body{font-family:Inter,-apple-system,sans-serif;color:#fff;background:var(--ink)
 .hero{padding:120px 32px 90px;background:radial-gradient(1200px 500px at 70% -10%,rgba(94,151,255,.14),transparent 60%),var(--ink)}
 .hero h1{font-size:clamp(38px,6.4vw,72px);font-weight:900;letter-spacing:-.02em;line-height:1.02;max-width:15ch}
 .hero h1 em{font-style:normal;color:var(--red)}
+/* The audit headline is a whole sentence about their business, so it needs a smaller size and
+   a much wider measure than the marketing hero it shares markup with. */
+.hero.report h1{font-size:clamp(27px,3.5vw,44px);line-height:1.14;max-width:24ch;letter-spacing:-.015em}
+.hero.report .sub{max-width:62ch}
+.hero.report{padding:76px 32px 56px}
 .hero p.sub{font-size:clamp(17px,2.2vw,21px);color:#cfcfcf;max-width:56ch;margin:26px 0 0;line-height:1.55}
 .trust{display:flex;gap:26px;flex-wrap:wrap;margin-top:40px;color:var(--soft);font-size:14px;font-weight:500}
 .trust b{color:#fff;font-weight:800;font-size:22px;display:block;font-variant-numeric:tabular-nums}
@@ -970,6 +975,8 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
   background:radial-gradient(closest-side,rgba(223,49,49,.14),transparent 70%);pointer-events:none}
 .case.cream::before{background:radial-gradient(closest-side,rgba(26,43,76,.10),transparent 70%)}
 .case .inner{position:relative}
+.secheading{font-size:clamp(24px,3.3vw,36px);font-weight:900;letter-spacing:-.02em;line-height:1.16;max-width:24ch;margin:10px 0 8px}
+.secsub{font-size:16px;color:var(--soft);max-width:52ch;margin:0 0 44px}
 .chero{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;margin-bottom:4px}
 .bignum{font-size:clamp(62px,12.5vw,132px);font-weight:900;letter-spacing:-.045em;line-height:.88;
   font-variant-numeric:tabular-nums;
@@ -1049,6 +1056,8 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
 <section class="case" id="proof">
   <div class="inner">
     <div class="eyebrow reveal">Proof, not promises</div>
+    <h2 class="reveal secheading">We don't pitch you on what we could do. Here is what we already did.</h2>
+    <p class="reveal secsub">Three real clients, real numbers, pulled straight from their accounts.</p>
     <div class="chero reveal"><span class="bignum">$2.34M</span><span class="cl">Home services · 20 months</span></div>
     <div class="ctitle reveal">From zero online presence to $2.34M in tracked revenue, on $26K of ad spend.</div>
     <div class="cstory">
