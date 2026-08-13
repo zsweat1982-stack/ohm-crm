@@ -793,7 +793,7 @@ function buildAuditPDF(business, report, bookingUrl) {
     // they were already drawn, so on a long summary the button landed on top of the page footer.
     // Measure the whole block first and break the page before drawing any of it.
     const ctaHead = 'Want us to help you close these gaps?';
-    const ctaBody = report.summary || 'Book a free 30 minute discovery call and we will walk through your biggest opportunities and see if we are the right fit.';
+    const ctaBody = report.summary || 'Thirty minutes to walk through what this scan turned up and what is actually costing you customers. Then we build your gameplan. No pitch, no pressure.';
     const headH = doc.font('Helvetica-Bold').fontSize(14).heightOfString(ctaHead, { width: CW });
     const bodyH = doc.font('Helvetica').fontSize(10.5).heightOfString(ctaBody, { width: CW, lineGap: 1 });
     nl(headH + 5 + bodyH + 12 + 40 + 12);   // + button height + breathing room above the footer
@@ -946,13 +946,13 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 
 <section class="hero">
   <div class="inner">
-    <div class="eyebrow reveal">${bizName ? 'Free growth audit for ' + esc(bizName) : 'Free instant growth audit'}</div>
+    <div class="eyebrow reveal">${bizName ? 'Free growth audit for ' + esc(bizName) : 'Free growth audit'}</div>
     <h1 class="reveal">You're a great business. You're just <em>leaving money</em> on the table.</h1>
-    <p class="sub reveal">We scan your website and online presence live, then show you the exact gaps quietly costing you leads and revenue. Free, instant, no call required to see it.</p>
+    <p class="sub reveal">We go through your website, your Google presence and whether AI assistants can even find you, then send you the exact gaps quietly costing you leads and revenue. Free, and no call required to get it.</p>
 
     <div class="formwrap reveal" id="auditbox">
-      <h2>Get your free instant audit</h2>
-      <p class="fp">About 20 seconds. We scan your site live and show your scores.</p>
+      <h2>Get your free growth audit</h2>
+      <p class="fp">We build it by hand and send it to your inbox. No call required.</p>
       <div class="frow">
         <div><label for="f_first">First name</label><input id="f_first" placeholder="Jane"/></div>
         <div><label for="f_last">Last name</label><input id="f_last" placeholder="Doe"/></div>
@@ -963,7 +963,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
       <select id="f_goal"><option value="more leads">More leads</option><option value="more phone calls">More phone calls</option><option value="more booked appointments">More booked appointments</option><option value="more sales">More sales</option><option value="more of everything">More of everything</option></select>
       <label for="f_email">Where should we send your audit</label>
       <input id="f_email" type="email" placeholder="you@yourbusiness.com"/>
-      <button class="btn" id="run">Scan my business</button>
+      <button class="btn" id="run">Send me my audit</button>
       <p class="err" id="err"></p>
     </div>
   </div>
@@ -1022,8 +1022,8 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 <section class="sec book" id="book">
   <div class="inner">
     <div class="eyebrow reveal" style="text-align:center">Book Your Free Discovery Call</div>
-    <h2 class="reveal">Let's see if we're the right fit.</h2>
-    <p class="reveal">Schedule a complimentary 30-minute discovery call to discuss your business, your goals, and your current marketing efforts. We'll provide honest feedback on whether our services align with your needs. No sales pressure, just a straightforward conversation.</p>
+    <h2 class="reveal">Find out why the phone isn't ringing.</h2>
+    <p class="reveal">The phone isn't ringing like it used to. You're spending on ads and can't tell what's working. Someone smaller than you keeps showing up where you should be. Thirty minutes to get to the bottom of it, then we build your gameplan. No pitch, no pressure.</p>
     <div class="calwrap reveal"><div class="calendly-inline-widget" data-url="${CALENDLY}?hide_gdpr_banner=1&hide_event_type_details=1&utm_content=${esc(ref || '')}" style="min-width:320px;height:700px"></div></div>
   </div>
 </section>
@@ -1033,6 +1033,11 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 <script src="https://assets.calendly.com/assets/external/widget.js" async></script>
 <script>
   var REF = ${JSON.stringify(ref || '')};
+  // There is a server side esc() with the same name, which is why this went unnoticed: every
+  // esc(...) inside this script is plain text in the browser, not interpolated, so the browser was
+  // calling a function that was never defined here. Any code path reaching it threw a
+  // ReferenceError and stopped dead.
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function track(t){ try{ navigator.sendBeacon('/api/track', new Blob([JSON.stringify({type:t,ref:REF})],{type:'application/json'})); }catch(e){} }
   track('view');
   var revs=document.querySelectorAll('.reveal');
@@ -1057,30 +1062,31 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
     var missing=fields.filter(function(f){return !f[1];});
     if(missing.length){ missing.forEach(function(f){document.getElementById(f[0]).classList.add('invalid');}); err.textContent='Please fill in all fields.'; return; }
     if(email.indexOf('@')<1){ document.getElementById('f_email').classList.add('invalid'); err.textContent='Please enter a valid email.'; return; }
-    err.textContent=''; var btn=this; btn.disabled=true; btn.textContent='Scanning your business...';
-    var t0=Date.now();
-    function fail(msg){ err.textContent=msg||'Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Scan my business'; }
-    // The scan takes 60 to 120 seconds. Kick off a job, then poll so no browser or proxy timeout
-    // can make a healthy scan look like a failure.
+    err.textContent=''; var btn=this; btn.disabled=true; btn.textContent='Sending...';
+    function fail(msg){ err.textContent=msg||'Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Send me my audit'; }
+    // The audit is built after this request returns, not while the visitor waits. Watching a
+    // progress bar for two minutes was the single biggest thing that could go wrong in front of a
+    // prospect: every dependency we do not control was on screen with them. Now the only thing
+    // that has to succeed here is saving their details, and the report follows by email.
     fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,firstName:first,lastName:last,email:email,website:sitev,goal:goal})})
      .then(function(r){return r.json();})
      .then(function(j){
        if(j.error) return fail(j.error);
-       if(!j.jobId) return fail();
-       (function poll(){
-         if(Date.now()-t0>420000) return fail('This is taking longer than usual. We have your details and will send your report by email shortly.');
-         fetch('/api/audit/status/'+j.jobId)
-          .then(function(r){return r.json();})
-          .then(function(s){
-            if(s.state==='running'){ if(s.stage) btn.textContent=s.stage+'...'; return setTimeout(poll,2500); }
-            if(s.state==='error') return fail(s.error);
-            if(s.state==='unknown') return fail(s.error);
-            render(s);
-          })
-          .catch(function(){ setTimeout(poll,4000); }); // transient blip, keep polling
-       })();
+       confirmed(first,email);
      })
      .catch(function(){ fail(); });
+
+    function confirmed(name,to){
+      var box=document.getElementById('auditbox');
+      box.innerHTML='<h2>Your audit is on its way</h2>'
+        +'<p class="fp" style="font-size:15px;line-height:1.6">Thanks '+esc(name)+'. We are putting your report together now and sending it to <b>'+esc(to)+'</b>. It usually lands within the hour.</p>'
+        +'<p class="fp" style="font-size:15px;line-height:1.6;margin-top:14px">It covers your website, how you show up on Google, and whether AI assistants can find you at all. Most owners are surprised by that last one.</p>'
+        +'<a class="btn" id="rbook" href="#book" style="margin-top:18px;text-decoration:none;display:block;text-align:center">Book my free discovery call</a>'
+        +'<p class="fp" style="margin-top:12px;text-align:center">Or skip ahead and we will walk you through it live.</p>';
+      var b=document.getElementById('rbook');
+      if(b) b.addEventListener('click',function(){track('click');});
+      box.scrollIntoView({behavior:'smooth'});
+    }
 
     function render(d){
        var a=d.report;
