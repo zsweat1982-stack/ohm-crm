@@ -1137,7 +1137,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
 // '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
 // creating an account or logging in to anything.
-const PUBLIC_PATHS = ['/go', '/unsubscribe', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+const PUBLIC_PATHS = ['/go', '/unsubscribe', '/healthz', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -1756,7 +1756,14 @@ if (process.env.CANARY_ENABLED !== 'false') {
 }
 
 // Reliability endpoint for the team. Locked behind the same login as the dashboard.
+// Full health stays behind the login: recentFailures carries prospect names and sites.
 app.get('/api/health', (_, res) => res.json(auditHealth()));
+// Liveness only, deliberately free of prospect data, so an external uptime monitor can reach it.
+app.get('/healthz', (_, res) => {
+  const h = auditHealth();
+  res.json({ ok: true, uptimeSec: Math.round(process.uptime()), inFlight: h.inFlight, queued: h.queued,
+             last24hSuccessRate: h.last24h.successRate });
+});
 
 // Poll target for the landing page. Public (matches the /api/audit prefix in PUBLIC_PATHS).
 app.get('/api/audit/status/:id', (req, res) => {
