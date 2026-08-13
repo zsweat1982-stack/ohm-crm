@@ -26,6 +26,8 @@ const CSV = path.join(__dirname, '..', 'PROSPECTS_cherokee_LOCAL.csv');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 if (process.env.SENDGRID_API_KEY) sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 const DAILY_CAP = Number(process.env.DAILY_SEND_CAP) || 40;
+// Transient failures deserve a retry, but not forever.
+const MAX_SEND_ATTEMPTS = Number(process.env.MAX_SEND_ATTEMPTS) || 4;
 
 // ---------- storage (simple JSON file) ----------
 function load() {
@@ -1070,6 +1072,57 @@ function sentToday() {
   return prospects.filter(p => p.status === 'sent' && (p.sent_at || '').slice(0, 10) === today).length;
 }
 
+// ---------- CAN-SPAM compliance ----------
+// Every commercial message we originate must carry a working opt-out and a physical postal
+// address. The model was asked to include these in the drafted copy and did so unreliably, so
+// they are appended in code instead: the copy path can never drop them.
+const COMPANY = process.env.COMPANY_NAME || 'Open Heart Media';
+const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS
+  || '225 Reformation Pkwy, Suite 200 Office #28, Canton, GA 30114';
+const PUBLIC_URL = (process.env.PUBLIC_URL || LANDING_URL.replace(/\/go\/?$/, '')).replace(/\/$/, '');
+
+// Signed so the link cannot be walked to unsubscribe someone else, and so a scraped link from one
+// prospect's email does nothing to another's record.
+function unsubToken(id) {
+  return crypto.createHmac('sha256', AUTH_SECRET).update('unsub:' + id).digest('hex').slice(0, 24);
+}
+function unsubUrl(id) {
+  return `${PUBLIC_URL}/unsubscribe?id=${encodeURIComponent(id)}&t=${unsubToken(id)}`;
+}
+function complianceFooter(p) {
+  return '\n\n\n'
+    + `You are receiving this because ${COMPANY} works with local businesses in your area.\n`
+    + `To stop hearing from us, click here: ${unsubUrl(p.id)}\n`
+    + `Or just reply STOP and we will not contact you again.\n\n`
+    + `${COMPANY} · ${COMPANY_ADDRESS}`;
+}
+
+// A permanent failure is a bad address, not a bad moment. Retrying it does nothing but damage
+// sender reputation, so these park the lead instead of leaving it in the queue.
+function isPermanentFailure(err) {
+  const code = err?.code || err?.response?.statusCode;
+  const msg = (err?.response?.body?.errors?.[0]?.message || err?.message || '').toLowerCase();
+  if (code === 400 || code === 413) return true;
+  return /invalid|does not (exist|contain)|malformed|not a valid|blocked|bounce|suppress|unsubscrib|spam report/.test(msg);
+}
+
+// The one place mail leaves this system. Suppression and the footer are enforced here so a new
+// send path cannot be added later that quietly skips either.
+async function sendMail(p, subject, body, { kind = 'outreach' } = {}) {
+  if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
+  if (!p.email || !p.email.includes('@')) throw Object.assign(new Error('no valid email'), { permanent: true });
+  const [r] = await sgMail.send({
+    to: p.email,
+    from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+    subject,
+    text: body + complianceFooter(p),
+    trackingSettings: { subscriptionTracking: { enable: false } },
+    customArgs: { prospect_id: String(p.id), kind },
+  });
+  return r;
+}
+
+
 // ---------- API ----------
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -1082,7 +1135,9 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // Prospect-facing routes + login stay open; everything else needs the cookie (when APP_PASSWORD set).
 // Prospect-facing routes stay open: the landing page, its live-scan audit submit, tracking
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
-const PUBLIC_PATHS = ['/go', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+// '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
+// creating an account or logging in to anything.
+const PUBLIC_PATHS = ['/go', '/unsubscribe', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -1212,6 +1267,34 @@ app.post('/api/generate-all', async (req, res) => {
 });
 
 // THE living landing page — one URL for everyone. ?ref=<prospectId> for attribution.
+// Public and unauthenticated by design: an opt-out that requires a login is not an opt-out.
+app.get('/unsubscribe', (req, res) => {
+  const { id, t } = req.query;
+  const p = prospects.find(x => String(x.id) === String(id));
+  let ok = false;
+  if (p && t) {
+    const want = Buffer.from(unsubToken(p.id));
+    const got = Buffer.from(String(t));
+    ok = got.length === want.length && crypto.timingSafeEqual(got, want);
+  }
+  if (ok && !p.unsubscribed_at) {
+    p.unsubscribed_at = new Date().toISOString();
+    p.status = 'rejected';           // already halts the follow-up sequence
+    p.updated_at = p.unsubscribed_at;
+    if (!Array.isArray(p.notes)) p.notes = [];
+    p.notes.push({ ts: p.unsubscribed_at, by: null, text: 'Unsubscribed via email link.' });
+    save(prospects);
+    console.log('[unsub]', p.id, p.business);
+  }
+  res.set('Content-Type', 'text/html').send(`<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Unsubscribed</title><body style="margin:0;font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7f9;color:#1a2b4c">
+<div style="max-width:520px;margin:14vh auto;padding:40px;background:#fff;border-radius:14px;text-align:center">
+<h1 style="margin:0 0 12px;font-size:26px">You're unsubscribed</h1>
+<p style="margin:0;color:#5a6478">${ok ? 'We will not contact you again. Sorry for the interruption.' : 'That link is no longer valid. Reply STOP to any of our emails and we will remove you.'}</p>
+<p style="margin:22px 0 0;font-size:13px;color:#8b93a1">${COMPANY} &middot; ${COMPANY_ADDRESS}</p>
+</div></body>`);
+});
+
 app.get('/go', (req, res) => {
   res.send(renderLandingPage(req.query.ref));
 });
@@ -1496,35 +1579,58 @@ function fallbackReport(p, scan, ps, gbp, aio, answers) {
   };
 }
 
+// Absolute ceiling on a single audit. Individual stage timeouts rely on setTimeout firing on
+// schedule, which is not guaranteed if the event loop is busy. A soak run against 20 real
+// prospect sites produced two jobs that ran 19 and 31 minutes despite every stage being
+// nominally capped, and neither reproduced in isolation or under concurrency. Rather than guess
+// at the cause, the remaining budget is now recomputed before every stage so total runtime is
+// bounded by construction: once the budget is gone we ship the deterministic report we can
+// already build instead of continuing to wait.
+const MAX_JOB_MS = Number(process.env.MAX_AUDIT_JOB_MS || 6 * 60 * 1000);
+
 async function runAuditJob(jobId, opts) {
   const job = auditJobs.get(jobId);
   const setStage = s => { if (job) { job.stage = s; job.updatedAt = Date.now(); } };
   const { ref, email, goal, firstName, lastName, isTest, site, p, lookup, bizName, bizCity, bizCategory } = opts;
   const t0 = Date.now();
+  const deadline = t0 + MAX_JOB_MS;
+  const left = () => deadline - Date.now();
+  // Every stage gets the smaller of its own budget and whatever is left of the job budget.
+  const budget = (want, min = 1) => Math.max(min, Math.min(want, left()));
+  const timings = {};
+  const timed = async (name, fn) => { const s = Date.now(); try { return await fn(); } finally { timings[name] = Date.now() - s; } };
   try {
     setStage('Scanning your website');
-    const scan = await withTimeout(scanWebsite(site), 75000, 'website scan');
+    const scan = await timed('scan', () => withTimeout(scanWebsite(site), budget(75000), 'website scan'));
     if (!scan.reachable && !scan.title) throw new Error(`could not reach ${site}`);
 
     setStage('Checking speed, Google and AI visibility');
     // allSettled, not all: an outage at Google or Anthropic must degrade the report, never kill it.
-    const [ps, gbp, aio] = await Promise.all([
-      softStage(runPageSpeed(scan.finalUrl || scan.url), 45000, 'PageSpeed'),
-      softStage(scanGBP(bizName, bizCity, scan.host), 25000, 'Google Business Profile'),
-      softStage(scanAIO(bizName, bizCity, bizCategory, scan), 45000, 'AI visibility'),
-    ]);
+    const [ps, gbp, aio] = await timed('enrich', () => Promise.all([
+      softStage(runPageSpeed(scan.finalUrl || scan.url), budget(45000), 'PageSpeed'),
+      softStage(scanGBP(bizName, bizCity, scan.host), budget(25000), 'Google Business Profile'),
+      softStage(scanAIO(bizName, bizCity, bizCategory, scan), budget(45000), 'AI visibility'),
+    ]));
 
     setStage('Writing your report');
     let report;
-    try {
-      report = await withTimeout(generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio), 90000, 'report generation');
-    } catch (e) {
-      console.warn('[audit] report generation failed once, retrying -', e.message);
+    const buildFallback = () => fallbackReport(p || lookup || { business: bizName }, scan, ps, gbp, aio, { firstName });
+    if (left() < 20000) {
+      // Not enough budget left to be worth asking the model. Ship what we already know.
+      console.warn('[audit] job', jobId, 'out of budget before report generation, using deterministic fallback');
+      report = buildFallback();
+    } else {
       try {
-        report = await withTimeout(generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio), 90000, 'report generation retry');
-      } catch (e2) {
-        console.error('[audit] report generation failed twice, using deterministic fallback -', e2.message);
-        report = fallbackReport(p || lookup || { business: bizName }, scan, ps, gbp, aio, { firstName });
+        report = await timed('report', () => withTimeout(generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio), budget(90000), 'report generation'));
+      } catch (e) {
+        console.warn('[audit] report generation failed once -', e.message, left() > 30000 ? '- retrying' : '- no budget to retry');
+        try {
+          if (left() < 30000) throw new Error('no budget for retry');
+          report = await timed('report_retry', () => withTimeout(generateAuditReport(p || lookup || {}, scan, ps, gbp, { goal, firstName }, aio), budget(90000), 'report generation retry'));
+        } catch (e2) {
+          console.error('[audit] report generation failed twice, using deterministic fallback -', e2.message);
+          report = buildFallback();
+        }
       }
     }
     report.recipientFirst = firstName;
@@ -1533,7 +1639,7 @@ async function runAuditJob(jobId, opts) {
     setStage('Building your PDF');
     const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
     let pdf = null;
-    try { pdf = await withTimeout(buildAuditPDF(bizName || 'your business', report, bookingUrl), 30000, 'PDF build'); }
+    try { pdf = await timed('pdf', () => withTimeout(buildAuditPDF(bizName || 'your business', report, bookingUrl), budget(30000), 'PDF build')); }
     catch (e) { console.error('[audit] pdf failed, continuing without attachment -', e.message); }
 
     // The prospect already has their result at this point. Email delivery must never fail the job.
@@ -1561,12 +1667,13 @@ async function runAuditJob(jobId, opts) {
     job.state = 'done';
     job.stage = 'Done';
     job.updatedAt = Date.now();
-    recordAuditOutcome({ ok: true, ms: Date.now() - t0, site, business: bizName, degraded: !!report.degraded, noPagespeed: !ps, canary: !!opts.silent });
-    console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', bizName || site, report.degraded ? '(degraded report)' : '');
+    recordAuditOutcome({ ok: true, ms: Date.now() - t0, site, business: bizName, degraded: !!report.degraded, noPagespeed: !ps, timings, canary: !!opts.silent });
+    // Per stage timings make a slow job diagnosable after the fact instead of a mystery.
+    console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', bizName || site, report.degraded ? '(degraded report)' : '', JSON.stringify(timings));
   } catch (e) {
     console.error('[audit] job', jobId, 'failed at stage:', job?.stage, `(${Date.now() - t0}ms in)`, '-', e.message, '\n', e.stack);
     const unreachable = /could not reach/i.test(e.message);
-    recordAuditOutcome({ ok: false, ms: Date.now() - t0, site, business: bizName, stage: job?.stage || null, error: e.message, canary: !!opts.silent });
+    recordAuditOutcome({ ok: false, ms: Date.now() - t0, site, business: bizName, stage: job?.stage || null, error: e.message, timings, canary: !!opts.silent });
     // A prospect who filled the form is a real lead even when the scan fails. Flag the record so
     // the team can follow up by hand instead of the lead disappearing.
     if (!opts.silent && !isTest && p) {
@@ -1766,23 +1873,35 @@ app.post('/api/prospects/:id/send', async (req, res) => {
 app.post('/api/send-approved', async (req, res) => {
   let budget = DAILY_CAP - sentToday();
   if (budget <= 0) return res.json({ sent: 0, reason: 'daily cap reached' });
-  const queue = prospects.filter(p => p.status === 'approved' && p.email && p.email.includes('@'));
-  let sent = 0; const errors = [];
+  const queue = prospects.filter(p =>
+    p.status === 'approved' && !p.unsubscribed_at && p.email && p.email.includes('@'));
+  let sent = 0; const errors = []; let parked = 0;
   for (const p of queue) {
     if (budget <= 0) break;
     try {
-      const [r] = await sgMail.send({
-        to: p.email,
-        from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
-        subject: p.subject, text: p.body,
-      });
+      const r = await sendMail(p, p.subject, p.body, { kind: 'cold' });
       p.status = 'sent'; p.sent_at = new Date().toISOString(); p.updated_at = p.sent_at;
       p.provider_id = r.headers['x-message-id'] || null;
+      p.send_attempts = 0;
       sent++; budget--; save(prospects);
       await new Promise(r => setTimeout(r, 800));
-    } catch (e) { errors.push({ id: p.id, error: e.response?.body?.errors?.[0]?.message || e.message }); }
+    } catch (e) {
+      const msg = e.response?.body?.errors?.[0]?.message || e.message;
+      // Leaving a failed lead at 'approved' meant it was retried on every run forever. Repeatedly
+      // hard-bouncing the same address is the fastest way to lose the sending domain, so a
+      // permanent failure parks the lead and transient ones get a bounded number of attempts.
+      p.send_attempts = (p.send_attempts || 0) + 1;
+      p.last_send_error = msg;
+      if (e.suppressed || e.permanent || isPermanentFailure(e) || p.send_attempts >= MAX_SEND_ATTEMPTS) {
+        p.status = 'unreachable';
+        p.updated_at = new Date().toISOString();
+        parked++;
+      }
+      save(prospects);
+      errors.push({ id: p.id, error: msg, parked: p.status === 'unreachable' });
+    }
   }
-  res.json({ sent, remainingBudget: budget, errors });
+  res.json({ sent, parked, remainingBudget: budget, errors });
 });
 
 // ---------- 3 / 7 / 10 day follow-up sequence ----------
@@ -1830,27 +1949,69 @@ async function draftFollowup(p, step) {
   return o;
 }
 const FOLLOWUP_DAYS = { 1: 3, 2: 7, 3: 10 };
+// Minimum spacing between two touches to the same lead, whatever the step maths says. Without it
+// a lead whose first email went out late can receive steps back to back on the same day.
+const MIN_FOLLOWUP_GAP_DAYS = 2;
+
 async function runFollowups() {
-  const now = Date.now(); let sent = 0;
+  const now = Date.now(); let sent = 0, parked = 0;
+  // Follow-ups draw on the same daily budget as cold sends: they land in the same inboxes from the
+  // same domain, and reputation does not care which queue a message came from.
+  let budget = DAILY_CAP - sentToday() - followupsSentToday();
   for (const p of prospects) {
+    if (budget <= 0) break;
     if (!p.sent_at || !p.email || !p.email.includes('@')) continue;
-    if (['booked', 'replied', 'rejected'].includes(p.status)) continue; // stop sequence once they act
+    if (p.unsubscribed_at) continue;
+    if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable'].includes(p.status)) continue;
     const step = (p.followup_step || 0) + 1;
     if (step > 3) continue;
     const days = (now - new Date(p.sent_at).getTime()) / 86400000;
     if (days < FOLLOWUP_DAYS[step]) continue;
+    if (p.last_followup_at && (now - new Date(p.last_followup_at).getTime()) / 86400000 < MIN_FOLLOWUP_GAP_DAYS) continue;
     try {
       const msg = await draftFollowup(p, step);
-      await sgMail.send({ to: p.email, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME }, subject: msg.subject, text: msg.body });
+      await sendMail(p, msg.subject, msg.body, { kind: 'followup' + step });
       p.followup_step = step; p.last_followup_at = new Date().toISOString(); p.updated_at = p.last_followup_at;
-      save(prospects); sent++;
+      p.followup_attempts = 0;
+      save(prospects); sent++; budget--;
       await new Promise(r => setTimeout(r, 800));
-    } catch (e) { console.error('[followup]', p.id, e.message); }
+    } catch (e) {
+      p.followup_attempts = (p.followup_attempts || 0) + 1;
+      if (e.suppressed || e.permanent || isPermanentFailure(e) || p.followup_attempts >= MAX_SEND_ATTEMPTS) {
+        p.status = 'unreachable'; p.updated_at = new Date().toISOString(); parked++;
+      }
+      save(prospects);
+      console.error('[followup]', p.id, e.message, p.status === 'unreachable' ? '(parked)' : '');
+    }
   }
+  if (sent || parked) console.log('[followups] sent', sent, 'parked', parked);
   return sent;
 }
+function followupsSentToday() {
+  const today = new Date().toISOString().slice(0, 10);
+  return prospects.filter(p => (p.last_followup_at || '').slice(0, 10) === today).length;
+}
 app.post('/api/run-followups', async (_, res) => { res.json({ sent: await runFollowups() }); });
-setInterval(() => { runFollowups().then(n => n && console.log('[followups] sent', n)); }, 6 * 60 * 60 * 1000);
+
+// A bare setInterval only fires while this process happens to be alive. The host restarts on
+// deploy and idles the instance out, so an interval alone silently skips days. This keeps the
+// interval as the fast path and adds a stamped catch-up that notices a missed day after any
+// restart and runs once, so the sequence survives the process not being.
+const FOLLOWUP_STAMP = path.join(DATA_DIR, 'followups_last_run.json');
+function lastFollowupRun() {
+  try { return new Date(JSON.parse(fs.readFileSync(FOLLOWUP_STAMP, 'utf8')).ts).getTime(); } catch { return 0; }
+}
+function stampFollowupRun() {
+  try { fs.writeFileSync(FOLLOWUP_STAMP, JSON.stringify({ ts: new Date().toISOString() })); } catch {}
+}
+async function followupTick(reason) {
+  if (Date.now() - lastFollowupRun() < 20 * 60 * 60 * 1000) return;   // already ran within the day
+  stampFollowupRun();
+  console.log('[followups] running,', reason);
+  try { await runFollowups(); } catch (e) { console.error('[followups] run failed -', e.message); }
+}
+setInterval(() => followupTick('interval'), 60 * 60 * 1000);
+setTimeout(() => followupTick('boot catch-up'), 90 * 1000);
 
 app.post('/api/reseed', (_, res) => { prospects = seedFromCsv(); res.json({ count: prospects.length }); });
 
