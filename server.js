@@ -763,9 +763,16 @@ function buildAuditPDF(business, report, bookingUrl) {
     doc.roundedRect(M, y, CW, uh, 10).fill(NAVY2);
     doc.fillColor(RED).font('Helvetica-Bold').fontSize(11.5).text('The upside: ', M + 20, y + 13, { continued: true, width: CW - 40 }).fillColor('#fff').font('Helvetica').text(est, { width: CW - 40 });
     y += uh + 20;
-    nl(90);
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(14).text('Want us to help you close these gaps?', M, y);
-    doc.fillColor(BODY).font('Helvetica').fontSize(10.5).text(report.summary || 'Book a free 30 minute discovery call and we will walk through your biggest opportunities and see if we are the right fit.', M, doc.y + 5, { width: CW, lineGap: 1 });
+    // The heading and summary are variable height, and the button was positioned from doc.y after
+    // they were already drawn, so on a long summary the button landed on top of the page footer.
+    // Measure the whole block first and break the page before drawing any of it.
+    const ctaHead = 'Want us to help you close these gaps?';
+    const ctaBody = report.summary || 'Book a free 30 minute discovery call and we will walk through your biggest opportunities and see if we are the right fit.';
+    const headH = doc.font('Helvetica-Bold').fontSize(14).heightOfString(ctaHead, { width: CW });
+    const bodyH = doc.font('Helvetica').fontSize(10.5).heightOfString(ctaBody, { width: CW, lineGap: 1 });
+    nl(headH + 5 + bodyH + 12 + 40 + 12);   // + button height + breathing room above the footer
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(14).text(ctaHead, M, y);
+    doc.fillColor(BODY).font('Helvetica').fontSize(10.5).text(ctaBody, M, doc.y + 5, { width: CW, lineGap: 1 });
     y = doc.y + 12;
     doc.roundedRect(M, y, 250, 40, 9).fill(RED);
     doc.fillColor('#fff').font('Helvetica-Bold').fontSize(12.5).text('Book your free discovery call', M, y + 14, { width: 250, align: 'center', link: bookingUrl, underline: false });
