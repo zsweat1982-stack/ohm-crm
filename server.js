@@ -2478,4 +2478,18 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 }
 
 restoreJobs();
+
+// The host restarts on every deploy and idles the instance out, and a pre-scan of the whole list
+// is many hours of work. Without this, any restart silently abandons the run half finished and
+// somebody has to notice and kick it off again. Targets are chosen by "has no report yet", so
+// resuming simply continues where it stopped rather than redoing anything.
+if (process.env.PRESCAN_AUTORESUME !== '0') {
+  setTimeout(() => {
+    const left = prescanTargets().length;
+    if (!left || prescanState.running) return;
+    console.log('[prescan] resuming after restart,', left, 'sites left');
+    runPrescan({}).catch(e => console.error('[prescan] resume failed -', e.message));
+  }, 120 * 1000);   // let the boot settle, and let the canary go first
+}
+
 app.listen(PORT, () => console.log(`OHM Outreach dashboard on http://localhost:${PORT}`));
