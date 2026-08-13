@@ -221,6 +221,22 @@ function aiCrawlerBlocks(robotsTxt) {
   return [...new Set(blocked)];
 }
 
+// Prospects who arrive from a cold email carry ?ref=<id> so we know who they are. Anyone who lands
+// organically, or who was forwarded the link, does not, and the form never asks for a company name.
+// Without this the report is addressed to "your business" and the Google Business lookup is skipped
+// entirely, which reads as a form letter at the exact moment we are trying to look thorough. The
+// page title is the best source we already have: strip the tagline that follows the usual
+// separators and keep the leading brand.
+function deriveBusinessName(scan) {
+  const t = (scan?.title || '').trim();
+  if (t) {
+    const head = t.split(/\s+[|·•–—-]\s+/)[0].trim();
+    if (head.length >= 2 && head.length <= 60 && !/^(home|welcome|index)$/i.test(head)) return head;
+  }
+  const host = (scan?.host || '').replace(/^www\./, '').split('.')[0];
+  return host ? host.charAt(0).toUpperCase() + host.slice(1) : null;
+}
+
 async function scanWebsite(rawUrl) {
   let url = (rawUrl || '').trim();
   if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
@@ -353,12 +369,18 @@ async function scanWebsite(rawUrl) {
 // under a second. Confirmed directly: one call to the same URL timed out at 25s, the very next
 // call completed in 602ms. A single timeout value can't fix that, so runPageSpeed retries once
 // on a timeout/failure before giving up, since the second attempt has a real shot at hitting cache.
+const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS) || 70000;
+
 async function runPageSpeed(url) {
   if (!url) return null;
   const attempt = async () => {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
     const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices${key}`;
-    const r = await fetch(api, { signal: AbortSignal.timeout(20000) });
+    // Google's Lighthouse runs a real Chrome against the site, and measured against live prospect
+    // sites it takes about 50s to answer. The old 20s abort therefore fired before the API could
+    // ever respond: 17 of 24 logged audits came back with no speed data at all, which is the whole
+    // Core Web Vitals section of the report missing. Budget for the latency the API actually has.
+    const r = await fetch(api, { signal: AbortSignal.timeout(PAGESPEED_TIMEOUT_MS) });
     if (!r.ok) return null;
     const d = await r.json();
     const c = d.lighthouseResult?.categories || {};
@@ -1422,7 +1444,9 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
   const biz = business || 'your business';
   const topGap = report.findings?.[0]?.title || 'a few fixable gaps';
   // Plain-text fallback (the raw URL lives here, out of sight of most readers)
-  const text = `Hi,\n\nHere is your free growth audit for ${biz}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${topGap}.\n\nWant us to help you close these gaps? Book a free 30 minute discovery call:\n${bookingUrl}\n\nMichelle\nOpen Heart Media`;
+  // The form collects a first name, so the delivery email should use it rather than opening "Hi,".
+  const greet = report.recipientFirst ? `Hi ${report.recipientFirst},` : 'Hi,';
+  const text = `${greet}\n\nHere is your free growth audit for ${biz}, attached as a PDF.\n\nYour overall growth score came in at ${overall} out of 100. The biggest thing costing you leads right now: ${topGap}.\n\nWant us to help you close these gaps? Book a free 30 minute discovery call:\n${bookingUrl}\n\nMichelle\nOpen Heart Media`;
   // Branded HTML with a clean button instead of a raw link
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f1a30;line-height:1.55">
   <div style="background:#1a2b4c;border-radius:12px 12px 0 0;padding:22px 26px;border-bottom:3px solid #df3131">
@@ -1430,7 +1454,7 @@ async function sendAuditToProspect(to, business, report, pdf, bookingUrl) {
     <div style="color:#8ea0c0;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-top:2px">Growth Audit</div>
   </div>
   <div style="border:1px solid #e4e9f2;border-top:0;border-radius:0 0 12px 12px;padding:26px">
-    <p style="margin:0 0 14px">Hi,</p>
+    <p style="margin:0 0 14px">${esc(greet)}</p>
     <p style="margin:0 0 14px">Here is your free growth audit for <b>${esc(biz)}</b>, attached as a PDF.</p>
     <p style="margin:0 0 6px">Your overall growth score:</p>
     <div style="font-size:34px;font-weight:800;color:#1a2b4c;margin:0 0 14px">${overall}<span style="font-size:16px;color:#8a97ad">/100</span></div>
@@ -1600,21 +1624,33 @@ async function runAuditJob(jobId, opts) {
   const timings = {};
   const timed = async (name, fn) => { const s = Date.now(); try { return await fn(); } finally { timings[name] = Date.now() - s; } };
   try {
+    // PageSpeed is the long pole at roughly 50s, and it does not need anything the scan produces:
+    // Lighthouse follows redirects itself, so the submitted URL is enough. Starting it here instead
+    // of after the scan overlaps it with the scan, the Google Business lookup, the AI probe and the
+    // written report, which takes it off the critical path almost entirely. Kicked off before the
+    // first await so it is genuinely running during the scan, with the rejection handler attached
+    // immediately so a failure can never surface as an unhandled rejection.
+    const psPromise = softStage(runPageSpeed(site), budget(PAGESPEED_TIMEOUT_MS + 5000), 'PageSpeed');
+
     setStage('Scanning your website');
     const scan = await timed('scan', () => withTimeout(scanWebsite(site), budget(75000), 'website scan'));
     if (!scan.reachable && !scan.title) throw new Error(`could not reach ${site}`);
 
+    // Falls back to the site's own title so an organic visitor still gets a named report and a
+    // real Google Business lookup instead of both being skipped.
+    const resolvedBiz = bizName || deriveBusinessName(scan);
+
     setStage('Checking speed, Google and AI visibility');
     // allSettled, not all: an outage at Google or Anthropic must degrade the report, never kill it.
     const [ps, gbp, aio] = await timed('enrich', () => Promise.all([
-      softStage(runPageSpeed(scan.finalUrl || scan.url), budget(45000), 'PageSpeed'),
-      softStage(scanGBP(bizName, bizCity, scan.host), budget(25000), 'Google Business Profile'),
-      softStage(scanAIO(bizName, bizCity, bizCategory, scan), budget(45000), 'AI visibility'),
+      psPromise,
+      softStage(scanGBP(resolvedBiz, bizCity, scan.host), budget(25000), 'Google Business Profile'),
+      softStage(scanAIO(resolvedBiz, bizCity, bizCategory, scan), budget(45000), 'AI visibility'),
     ]));
 
     setStage('Writing your report');
     let report;
-    const buildFallback = () => fallbackReport(p || lookup || { business: bizName }, scan, ps, gbp, aio, { firstName });
+    const buildFallback = () => fallbackReport(p || lookup || { business: resolvedBiz }, scan, ps, gbp, aio, { firstName });
     if (left() < 20000) {
       // Not enough budget left to be worth asking the model. Ship what we already know.
       console.warn('[audit] job', jobId, 'out of budget before report generation, using deterministic fallback');
@@ -1639,17 +1675,17 @@ async function runAuditJob(jobId, opts) {
     setStage('Building your PDF');
     const bookingUrl = `${CALENDLY}?utm_content=${p?.id || ''}`;
     let pdf = null;
-    try { pdf = await timed('pdf', () => withTimeout(buildAuditPDF(bizName || 'your business', report, bookingUrl), budget(30000), 'PDF build')); }
+    try { pdf = await timed('pdf', () => withTimeout(buildAuditPDF(resolvedBiz || 'your business', report, bookingUrl), budget(30000), 'PDF build')); }
     catch (e) { console.error('[audit] pdf failed, continuing without attachment -', e.message); }
 
     // The prospect already has their result at this point. Email delivery must never fail the job.
     if (opts.silent) {
       // Canary run: exercise the whole pipeline, email nobody, write nothing.
-      job.result = { canary: true, report, business: bizName };
+      job.result = { canary: true, report, business: resolvedBiz };
     } else if (isTest) {
       const testTo = process.env.AUDIT_TEST_EMAIL || 'zac@openheartmediaco.com';
-      if (pdf && process.env.SENDGRID_API_KEY) await softStage(sendAuditToProspect(testTo, bizName, report, pdf, bookingUrl), 30000, 'test email');
-      job.result = { test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: bizName };
+      if (pdf && process.env.SENDGRID_API_KEY) await softStage(sendAuditToProspect(testTo, resolvedBiz, report, pdf, bookingUrl), 30000, 'test email');
+      job.result = { test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: resolvedBiz };
     } else {
       if (p) {
         p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
@@ -1661,15 +1697,15 @@ async function runAuditJob(jobId, opts) {
       events.push({ type: 'audit', ref: ref || null, ts: new Date().toISOString(), email, business: p?.business || null });
       try { saveMetrics(); } catch {}
       await softStage(notifyAudit(p, email, report, pdf), 30000, 'team notification');
-      if (pdf) await softStage(sendAuditToProspect(email, p?.business, report, pdf, bookingUrl), 30000, 'prospect email');
+      if (pdf) await softStage(sendAuditToProspect(email, p?.business || resolvedBiz, report, pdf, bookingUrl), 30000, 'prospect email');
       job.result = { report, business: p?.business || null };
     }
     job.state = 'done';
     job.stage = 'Done';
     job.updatedAt = Date.now();
-    recordAuditOutcome({ ok: true, ms: Date.now() - t0, site, business: bizName, degraded: !!report.degraded, noPagespeed: !ps, timings, canary: !!opts.silent });
+    recordAuditOutcome({ ok: true, ms: Date.now() - t0, site, business: resolvedBiz, degraded: !!report.degraded, noPagespeed: !ps, timings, canary: !!opts.silent });
     // Per stage timings make a slow job diagnosable after the fact instead of a mystery.
-    console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', bizName || site, report.degraded ? '(degraded report)' : '', JSON.stringify(timings));
+    console.log('[audit] job', jobId, 'completed in', Date.now() - t0, 'ms for', resolvedBiz || site, report.degraded ? '(degraded report)' : '', JSON.stringify(timings));
   } catch (e) {
     console.error('[audit] job', jobId, 'failed at stage:', job?.stage, `(${Date.now() - t0}ms in)`, '-', e.message, '\n', e.stack);
     const unreachable = /could not reach/i.test(e.message);
