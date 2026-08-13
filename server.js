@@ -912,19 +912,43 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 .find h3{font-size:18px;font-weight:700;margin-bottom:4px}.find p{color:#5c5c5c;font-size:15px}
 .est{background:var(--ink);color:#fff;border-radius:16px;padding:22px 26px;margin-top:22px;font-size:18px;font-weight:600;line-height:1.5}.est b{color:var(--red)}
 /* case studies */
-.case{border-top:1px solid var(--line)}
+.case{border-top:1px solid var(--line);position:relative;overflow:hidden}
 .case.cream{background:var(--cream);color:var(--ink);border-top:0}
-.chero{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;margin-bottom:8px}
-.bignum{font-size:clamp(58px,12vw,120px);font-weight:900;letter-spacing:-.04em;line-height:.9;color:var(--red);font-variant-numeric:tabular-nums}
-.case.cream .bignum{color:var(--navy)}
-.chero .cl{font-size:15px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--soft)}
-.ctitle{font-size:clamp(24px,3.6vw,34px);font-weight:800;letter-spacing:-.01em;margin:6px 0 26px;max-width:20ch}
-.cstory{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin-top:8px}
-.cstory .blk h4{font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);margin-bottom:8px}
+/* soft light bloom behind the headline number so the stat reads as the hero of the section */
+.case::before{content:"";position:absolute;top:-140px;left:-120px;width:520px;height:520px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(223,49,49,.14),transparent 70%);pointer-events:none}
+.case.cream::before{background:radial-gradient(closest-side,rgba(26,43,76,.10),transparent 70%)}
+.case .inner{position:relative}
+.chero{display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;margin-bottom:4px}
+.bignum{font-size:clamp(62px,12.5vw,132px);font-weight:900;letter-spacing:-.045em;line-height:.88;
+  font-variant-numeric:tabular-nums;
+  background:linear-gradient(180deg,#ff5b57 0%,var(--red) 62%,#a5211f 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 6px 26px rgba(223,49,49,.28))}
+.case.cream .bignum{background:linear-gradient(180deg,#33507f 0%,var(--navy) 70%,#0b1526 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;filter:none}
+/* industry + timeframe reads as a tag, not stray caption text */
+.chero .cl{font-size:12px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--soft);
+  border:1px solid var(--line);border-radius:100px;padding:7px 14px;align-self:center;white-space:nowrap}
+.case.cream .chero .cl{border-color:var(--lineL);color:#6b6560}
+.ctitle{font-size:clamp(25px,3.7vw,36px);font-weight:800;letter-spacing:-.015em;margin:14px 0 30px;max-width:22ch;line-height:1.18}
+.cstory{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:8px}
+/* each beat becomes a card, so challenge -> action -> result reads as a sequence */
+.cstory .blk{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:14px;padding:20px 20px 22px;
+  border-top:3px solid var(--red);transition:transform .25s ease,background .25s ease}
+.cstory .blk:hover{transform:translateY(-3px);background:rgba(255,255,255,.06)}
+.case.cream .cstory .blk{background:rgba(26,43,76,.04);border-color:var(--lineL);border-top-color:var(--navy)}
+.case.cream .cstory .blk:hover{background:rgba(26,43,76,.07)}
+.cstory .blk h4{font-size:11px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--red);margin-bottom:10px}
 .case.cream .cstory .blk h4{color:var(--navy)}
-.cstory .blk p{font-size:15px;color:#c3c3c3;line-height:1.6}.case.cream .cstory .blk p{color:#57534e}
-.cmetrics{display:flex;gap:30px;flex-wrap:wrap;margin-top:30px;padding-top:26px;border-top:1px solid var(--line)}.case.cream .cmetrics{border-top:1px solid var(--lineL)}
-.cmetrics .m b{font-size:26px;font-weight:900;display:block;font-variant-numeric:tabular-nums}.cmetrics .m span{font-size:13px;color:var(--soft)}
+.cstory .blk p{font-size:14.5px;color:#c3c3c3;line-height:1.62}.case.cream .cstory .blk p{color:#57534e}
+/* metrics as tiles rather than a loose text row */
+.cmetrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:26px;padding-top:0;border-top:0}
+.case.cream .cmetrics{border-top:0}
+.cmetrics .m{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;padding:16px 16px 14px}
+.case.cream .cmetrics .m{background:rgba(26,43,76,.045);border-color:var(--lineL)}
+.cmetrics .m b{font-size:30px;font-weight:900;display:block;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.05}
+.cmetrics .m span{font-size:12.5px;color:var(--soft);display:block;margin-top:6px;line-height:1.35}
 /* video */
 .vframe{aspect-ratio:16/9;border-radius:18px;overflow:hidden;background:#000;margin-top:28px;border:1px solid var(--line);box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
 .vframe video,.vframe iframe{width:100%;height:100%;object-fit:cover;display:block}
@@ -939,7 +963,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 .foot a:hover{border-color:var(--red)}
 .foot .flearn{color:var(--red);border-bottom-color:rgba(223,49,49,.4)}
 .hide{display:none}
-@media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.formwrap{padding:24px}.book h2{font-size:clamp(20px,5.7vw,30px);max-width:none;white-space:nowrap}.book p{font-size:15.5px;max-width:40ch}.book .inner{padding:0}.calwrap{min-width:0}.calwrap .calendly-inline-widget{min-width:0 !important}}
+@media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.cmetrics{grid-template-columns:1fr 1fr}.chero{gap:12px}.formwrap{padding:24px}.book h2{font-size:clamp(20px,5.7vw,30px);max-width:none;white-space:nowrap}.book p{font-size:15.5px;max-width:40ch}.book .inner{padding:0}.calwrap{min-width:0}.calwrap .calendly-inline-widget{min-width:0 !important}}
 @media(max-width:360px){.book h2{white-space:normal;font-size:22px}.frow{flex-direction:column;gap:0}}
 </style></head><body>
 <div class="nav"><img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/><a class="navcta" href="#book">Book a call</a></div>
