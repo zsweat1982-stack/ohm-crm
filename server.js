@@ -213,7 +213,7 @@ function finishDraft(r, p) {
     out.subject = out.subject.slice(0, 45).replace(/\s+\S*$/, '').trim();
   }
 
-  const link = `${LANDING_URL}?ref=${p.id}`;
+  const link = reportUrl(p);
   if (out.body.includes('[LINK]')) out.body = out.body.replace('[LINK]', link);
   else out.body = out.body.replace(/\n*Michelle,/, `\n\n${link}\n\nMichelle,`);
   if (!out.body.includes(link)) out.body += `\n\n${link}`;
@@ -969,12 +969,16 @@ function renderPrescannedReport(p) {
 </section>`;
 }
 
-function renderLandingPage(ref) {
-  const prospect = ref && prospects.find(x => x.id === ref);
+function renderLandingPage(ref, token) {
+  const found = ref && prospects.find(x => x.id === ref);
+  // Sequential ids: without a valid signature this still named the business and prefilled its
+  // website, which leaks the prospect list itself even when the findings stay hidden.
+  const prospect = found && reportTokenValid(found.id, token) ? found : null;
   const bizName = prospect ? prospect.business : null;
   const prefillSite = prospect ? (prospect.website || '') : '';
   // A lead we already scanned skips the whole request flow and lands straight on their findings.
-  const prescanned = !!(prospect && prospect.audit_report && (prospect.prescan_at || prospect.audited_at));
+  const prescanned = !!(prospect && prospect.audit_report && (prospect.prescan_at || prospect.audited_at)
+    && reportTokenValid(prospect.id, token));
   const site = loadSite();
   const video = site.videoEmbed
     ? `<div class="vframe"><iframe src="${site.videoEmbed}" frameborder="0" allowfullscreen></iframe></div>`
@@ -1263,42 +1267,6 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
       box.scrollIntoView({behavior:'smooth'});
     }
 
-    function render(d){
-       var a=d.report;
-       var biz=d.business||'your business';
-       var cats=a.categories||[];
-       function cls(v){return v>=70?'sc-good':v>=45?'sc-mid':'sc-bad';}
-       function mtr(v){return '<div class="meter"><i style="width:'+Math.max(6,Math.round(v))+'%"></i></div>';}
-       function colHex(v){return v>=70?'#3fbf6a':v>=45?'#e0a340':'#df3131';}
-       var overall=cats.length?Math.round(cats.reduce(function(s,c){return s+(Number(c.score)||0);},0)/cats.length):0;
-       var verdict=a.overallVerdict||(overall>=70?'Solid foundation, real room to grow':overall>=45?'Leaving real money on the table':'Big, fixable gaps costing you leads');
-       function scard(v,label){return '<div class="scard '+cls(v)+'"><b>'+v+'<span class="of">/100</span></b><span>'+esc(label)+'</span>'+mtr(v)+'</div>';}
-       var scards=cats.map(function(c){return scard(Number(c.score),c.name);}).join('');
-       var bd=cats.map(function(c){return '<div class="find"><div class="n" style="background:'+colHex(Number(c.score))+'">'+c.score+'</div><div><h3>'+esc(c.name)+'  <span style="color:#8fa0bd;font-weight:600;font-size:14px">'+c.score+'/100</span></h3><p>'+esc(c.why||'')+'</p></div></div>';}).join('');
-       // full scanned checklist
-       function markSym(ok){return ok===true?'<span style="color:#3fbf6a;font-weight:800">&#10003;</span>':ok===false?'<span style="color:#ff6a6a;font-weight:800">&#10007;</span>':'<span style="color:#8fa0bd">&#8211;</span>';}
-       var checklist=(a.checklist||[]).map(function(g){
-         var items=g.items.map(function(it){return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px"><span style="width:16px;text-align:center">'+markSym(it.ok)+'</span><span style="flex:1;color:#dbe2ef">'+esc(it.label)+'</span>'+(it.note?'<span style="color:#8fa0bd;font-size:12px">'+esc(it.note)+'</span>':'')+'</div>';}).join('');
-         return '<div style="margin-top:16px"><div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:4px">'+esc(g.group)+'</div>'+items+'</div>';
-       }).join('');
-       var findings=(a.findings||[]).map(function(f,i){var ic=f.impact==='High'?'#df3131':f.impact==='Medium'?'#e0a340':'#8fa0bd';return '<div class="find"><div class="n">'+(i+1)+'</div><div><h3>'+esc(f.title)+(f.impact?' <span style="font-size:11px;font-weight:700;color:#fff;background:'+ic+';padding:2px 7px;border-radius:20px;vertical-align:middle">'+esc(f.impact).toUpperCase()+'</span>':'')+'</h3><p>'+esc(f.detail)+'</p></div></div>';}).join('');
-       var quick=(a.quickWins||[]).map(function(q){return '<li style="margin-bottom:8px;color:#c7d0e0">'+esc(q)+'</li>';}).join('');
-       var html='<div class="inner">'
-        +'<div class="rhead"><img class="rlogo" src="/media/logo-white.png" alt="Open Heart Media"/><div class="rtag">Growth Audit · '+esc(biz)+'</div></div>'
-        +'<div class="ctitle" style="color:var(--ink)">'+esc(a.headline||'Where you are leaving leads on the table')+'</div>'
-        +'<div class="grade"><div class="gbig">'+overall+'<span>/100</span></div><div class="glabel"><b>Overall growth score</b><span>'+esc(verdict)+'</span></div></div>'
-        +'<div class="scoregrid">'+scards+'</div>'
-        +'<div class="fhead">Score breakdown</div>'+bd
-        +'<div class="fhead" style="margin-top:22px">Everything we scanned</div>'+checklist
-        +'<div class="fhead" style="margin-top:26px">What is costing you leads</div>'+findings
-        +(quick?'<div class="fhead" style="margin-top:22px">Quick wins</div><ul style="margin:8px 0 0;padding-left:20px">'+quick+'</ul>':'')
-        +'<div class="est"><b>The upside: </b>'+esc(a.estimate||'')+'</div>'
-        +'<a class="btn" id="rbook" href="#book" style="max-width:360px;margin:28px auto 0;text-decoration:none">Book my free discovery call</a></div>';
-       var res=document.getElementById('result'); res.innerHTML=html; res.classList.remove('hide');
-       document.getElementById('auditbox').style.display='none';
-       document.getElementById('rbook').addEventListener('click',function(){track('click');});
-       res.scrollIntoView({behavior:'smooth'});
-    }
   });
 </script>
 </body></html>`;
@@ -1319,6 +1287,22 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || LANDING_URL.replace(/\/go\/?$/, ''
 
 // Signed so the link cannot be walked to unsubscribe someone else, and so a scraped link from one
 // prospect's email does nothing to another's record.
+// A report URL carries a frank assessment of a named business. The ids are sequential, so an
+// unsigned link let anyone who received one email read the report for every other prospect simply
+// by counting up. Same HMAC approach as the unsubscribe links.
+function reportToken(id) {
+  return crypto.createHmac('sha256', AUTH_SECRET).update('report:' + id).digest('hex').slice(0, 16);
+}
+function reportUrl(p) {
+  return `${LANDING_URL}?ref=${p.id}&t=${reportToken(p.id)}`;
+}
+function reportTokenValid(id, t) {
+  if (!t) return false;
+  const want = Buffer.from(reportToken(id));
+  const got = Buffer.from(String(t));
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
 function unsubToken(id) {
   return crypto.createHmac('sha256', AUTH_SECRET).update('unsub:' + id).digest('hex').slice(0, 24);
 }
@@ -1532,7 +1516,7 @@ app.get('/unsubscribe', (req, res) => {
 });
 
 app.get('/go', (req, res) => {
-  res.send(renderLandingPage(req.query.ref));
+  res.send(renderLandingPage(req.query.ref, req.query.t));
 });
 
 // Every prospect report is a public URL carrying a frank, named assessment of somebody else's
@@ -2334,7 +2318,7 @@ app.post('/api/send-approved', async (req, res) => {
 
 // ---------- 3 / 7 / 10 day follow-up sequence ----------
 async function draftFollowup(p, step) {
-  const link = `${LANDING_URL}?ref=${p.id}`;
+  const link = reportUrl(p);
   // A pre-scanned lead has a report but no audited_at: we built it, they did not request it.
   // What matters for the copy is whether they have SEEN it, which viewed_at records when they
   // land on the report page. Branching on audited_at here asked people who had already read
