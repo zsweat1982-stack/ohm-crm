@@ -152,15 +152,28 @@ ${facts.length ? '- Real measurements: ' + facts.join('; ') : ''}
 ${angle && angle.why ? '- Why that area scored badly: ' + angle.why : ''}
 
 WRITE:
-1. Subject line. Lowercase, UNDER 45 CHARACTERS, no exclamation marks, no question mark, no ALL CAPS, never the words "free" or "audit", never their name. Base it on the angle above. Shapes that fit: "${subjHints}". Adapt, do not copy verbatim.
-2. Body, UNDER 90 WORDS, four sentences at most:
-   - Sentence 1 is the finding, stated flat and factual, with ONE real number from above. It must NOT repeat the subject line, because the inbox shows both.
-   - Sentence 2 is what it costs them in customers or money, in plain words. Never jargon, never "LCP" or "conversion rate optimisation".
-   - Then the token [LINK] alone on its own line, introduced as something that already exists, for example "I wrote the whole thing up here".
-   - One short closing line, for example "Worth a look?".
+1. Subject line. SENTENCE CASE (capital first letter only, everything else lowercase unless it is a proper noun). UNDER 45 CHARACTERS. No exclamation marks, no ALL CAPS, never the words "free" or "audit", never their name. Base it on the angle above. Shapes that fit: "${subjHints}". Adapt, do not copy verbatim.
+
+2. Body. THIS IS THE PART THAT MATTERS. UNDER 50 WORDS TOTAL. Structure it as FOUR SHORT BLOCKS separated by blank lines, because a wall of text gets archived unread:
+
+   Line 1: the finding, about THEM, second person, one sentence, with ONE real number.
+           Write "Your site takes 9 seconds to load on a phone." NOT "We ran a scan and found that your site is taking 9 seconds to load on mobile, which is the device most people use."
+   Line 2: what it costs them, one sentence, in customers or money. Plain words only.
+   Line 3: one short handoff, for example "Here's what that's costing you:" or "Full breakdown here:"
+   [LINK]
+   Line 4: "Worth a look?"
+
 3. Sign exactly: Michelle, Open Heart Media
 
-BANNED: em dashes and any dash used as punctuation, exclamation marks, "hope this finds you well", "quick question", "I wanted to reach out", "leverage", "unlock", "scale", "solutions", "circle back", "synergy". Do not explain how to fix anything. Do not mention video, social or web design as services. Do not list a second problem.
+HARD RULES:
+- Under 50 words. Count them. Shorter always wins.
+- NEVER open with "We ran a scan", "We scanned", "I ran your site through", or anything about our process. They do not care what we did, only what is true about them. State the finding directly.
+- NO third-party statistics, no "Google's own data shows", no research citations, no percentages that are not about THEIR business. That is education, and nobody clicks because they learned something. They click because something of theirs is broken.
+- One finding only. A second one means neither lands.
+- Do not explain how to fix it. The fix is the product.
+- Do not mention video, social or web design as services.
+
+BANNED WORDS AND PHRASES: em dashes and any dash used as punctuation, exclamation marks, "hope this finds you well", "quick question", "I wanted to reach out", "leverage", "unlock", "scale", "solutions", "circle back", "synergy", "in today's digital landscape".
 
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
@@ -183,7 +196,7 @@ ${invisible
 
 Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short closing line. Sign exactly: Michelle, Open Heart Media
 
-RULES: subject lowercase and UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never their name. Body UNDER 90 WORDS, four sentences at most, plain words, contractions. The first body line must not repeat the subject. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
+RULES: subject in SENTENCE CASE (capital first letter only) and UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never their name. Body UNDER 50 WORDS in four short blocks separated by blank lines, plain words, contractions. Never open with "we ran a scan" or anything about our process, state the finding directly about them. No third-party statistics. The first body line must not repeat the subject. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
 
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
@@ -208,7 +221,11 @@ function finishDraft(r, p) {
 
   // Subject discipline, enforced rather than requested: lowercase, no trailing punctuation, and
   // trimmed at a word boundary if it ran long.
-  out.subject = out.subject.toLowerCase().replace(/[!.]+$/, '').trim();
+  // Sentence case, not lowercase: lowercase reads as a peer note to a founder and as carelessness
+  // to a roofer, and it is a well known cold-email tell either way. Requested in the prompt and
+  // enforced here, because casing is exactly the kind of instruction a model drifts on.
+  out.subject = out.subject.replace(/[!.]+$/, '').trim();
+  if (out.subject) out.subject = out.subject.charAt(0).toUpperCase() + out.subject.slice(1);
   if (out.subject.length > 45) {
     out.subject = out.subject.slice(0, 45).replace(/\s+\S*$/, '').trim();
   }
