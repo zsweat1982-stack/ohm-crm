@@ -124,7 +124,10 @@ async function draftEmail(p) {
   if (!rep || !(rep.findings || []).length) return draftEmailUnscanned(p);
 
   const angle = pickAngle(p);
-  const top = rep.findings[0];
+  // Rotate which finding leads, not which subject line: the subject has to be about the same thing
+  // the body is about, and rotating them independently drifted them apart.
+  const fh = crypto.createHash('sha1').update('finding:' + p.id).digest()[0];
+  const top = (rep.findings.length > 1 && (fh & 1)) ? rep.findings[1] : rep.findings[0];
   const ps = p.audit_scan && p.audit_scan.pagespeed;
   const facts = [
     p.rating && p.reviews ? `Google rating ${p.rating} from ${p.reviews} reviews` : null,
@@ -152,7 +155,8 @@ ${facts.length ? '- Real measurements: ' + facts.join('; ') : ''}
 ${angle && angle.why ? '- Why that area scored badly: ' + angle.why : ''}
 
 WRITE:
-1. Subject line. SENTENCE CASE (capital first letter only, everything else lowercase unless it is a proper noun). UNDER 45 CHARACTERS. No exclamation marks, no ALL CAPS, never the words "free" or "audit", never their name. Base it on the angle above. Shapes that fit: "${subjHints}". Adapt, do not copy verbatim.
+1. Subject line. SENTENCE CASE (capital first letter only, everything else lowercase unless it is a proper noun). UNDER 45 CHARACTERS. No exclamation marks, no ALL CAPS, never the words "free" or "audit", never their name.
+   THE SUBJECT MUST BE ABOUT THE SAME PROBLEM AS THE BODY. Both come from "Biggest problem" above. Do not write a subject about one issue and a body about another. For tone, shapes like "${subjHints}" work, but the topic must match the finding.
 
 2. Body. THIS IS THE PART THAT MATTERS. UNDER 50 WORDS TOTAL. Structure it as FOUR SHORT BLOCKS separated by blank lines, because a wall of text gets archived unread:
 
@@ -161,9 +165,13 @@ WRITE:
    Line 2: what it costs them, one sentence, in customers or money. Plain words only.
    Line 3: one short handoff, for example "Here's what that's costing you:" or "Full breakdown here:"
    [LINK]
-   Line 4: "Worth a look?"
+   Line 4: a short, warm one-liner close. Vary it. "Worth a look?" / "Happy to walk you through it." / "Thought you'd want to know." / "No catch, it's already done." Pick whichever fits what you just told them. Do NOT use the same closer every time.
 
-3. Sign exactly: Michelle, Open Heart Media
+3. Sign exactly, on two lines:
+Michelle Baker
+Open Heart Media
+
+TONE: direct, but human. You are a person in Canton who looked at their business for ten minutes, not a scanner printing a result. Contractions always. Never chatty, never padded, never apologetic. Being brief IS the courtesy here, so do not add warm-up lines, but the close should sound like a person wrote it.
 
 HARD RULES:
 - Under 50 words. Count them. Shorter always wins.
@@ -194,7 +202,7 @@ ${invisible
   ? `TRUE AND JUST CHECKED: we asked an AI assistant to recommend a ${p.category} in ${p.city} and ${p.business} did not come up. Lead with that, stated flatly. Then one line on what it costs: more buyers now ask AI assistants for a local ${p.category}, so whoever it does name gets the call.`
   : `Lead with one specific, genuine observation about their standing as a ${p.category} in ${p.city}, using their real review numbers. Then one line: a business this good is losing customers who never find or book them.`}
 
-Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short closing line. Sign exactly: Michelle, Open Heart Media
+Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short, warm closing line, varied rather than the same every time. Sign exactly on two lines: Michelle Baker / Open Heart Media
 
 RULES: subject in SENTENCE CASE (capital first letter only) and UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never their name. Body UNDER 50 WORDS in four short blocks separated by blank lines, plain words, contractions. Never open with "we ran a scan" or anything about our process, state the finding directly about them. No third-party statistics. The first body line must not repeat the subject. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
 
@@ -235,10 +243,15 @@ function finishDraft(r, p) {
   else out.body = out.body.replace(/\n*Michelle,/, `\n\n${link}\n\nMichelle,`);
   if (!out.body.includes(link)) out.body += `\n\n${link}`;
   // Asked for in the prompt and dropped every single time, so it is enforced rather than requested.
-  if (!/Michelle/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\n\nMichelle\nOpen Heart Media';
+  if (!/Michelle/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\n\nMichelle Baker\nOpen Heart Media';
+  out.body = out.body.replace(/^Michelle,?\s*$/m, 'Michelle Baker');
   return out;
 }
 
+// Origin of the public site, derived from LANDING_URL so there is one place to change it.
+const SITE_ORIGIN = (process.env.PUBLIC_URL
+  || (process.env.LANDING_URL || '').replace(/\/go\/?$/, '')
+  || `http://localhost:${process.env.PORT || 4100}`).replace(/\/$/, '');
 const META_PIXEL_ID = process.env.META_PIXEL_ID || '';
 const GA4_ID = process.env.GA4_ID || '';
 const LANDING_URL = process.env.LANDING_URL || `http://localhost:${process.env.PORT || 4100}/go`;
@@ -1323,8 +1336,19 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || LANDING_URL.replace(/\/go\/?$/, ''
 function reportToken(id) {
   return crypto.createHmac('sha256', AUTH_SECRET).update('report:' + id).digest('hex').slice(0, 16);
 }
+function reportSlug(p) {
+  const name = String(p.business || 'report')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 38)
+    .replace(/-+$/, '');
+  return `${name || 'report'}-${reportToken(p.id).slice(0, 8)}`;
+}
 function reportUrl(p) {
-  return `${LANDING_URL}?ref=${p.id}&t=${reportToken(p.id)}`;
+  // e.g. https://go.openheartmediaco.com/r/elite-landscape-services-c923e315
+  return `${SITE_ORIGIN}/r/${reportSlug(p)}`;
 }
 function reportTokenValid(id, t) {
   if (!t) return false;
@@ -1387,7 +1411,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
 // '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
 // creating an account or logging in to anything.
-const PUBLIC_PATHS = ['/go', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+const PUBLIC_PATHS = ['/go', '/r', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -1545,6 +1569,17 @@ app.get('/unsubscribe', (req, res) => {
 </div></body>`);
 });
 
+// Readable counterpart to /go?ref=..&t=.. . The trailing 8 hex characters are the signature; the
+// name in front of them is there so the link previews as a report rather than as a redirect.
+app.get('/r/:slug', (req, res) => {
+  const m = String(req.params.slug || '').match(/([0-9a-f]{8})$/i);
+  if (!m) return res.redirect('/go');
+  const short = m[1].toLowerCase();
+  const p = prospects.find(x => reportToken(x.id).slice(0, 8) === short);
+  if (!p) return res.redirect('/go');
+  res.send(renderLandingPage(p.id, reportToken(p.id)));
+});
+
 app.get('/go', (req, res) => {
   res.send(renderLandingPage(req.query.ref, req.query.t));
 });
@@ -1557,6 +1592,7 @@ app.get('/robots.txt', (_, res) => {
   res.type('text/plain').send([
     'User-agent: *',
     'Disallow: /go?ref=',
+    'Disallow: /r/',
     'Disallow: /api/',
     'Disallow: /login',
     'Disallow: /unsubscribe',
