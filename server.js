@@ -136,6 +136,17 @@ async function draftEmail(p) {
     angle ? `their weakest area is ${angle.name} at ${angle.score} out of 100` : null,
   ].filter(Boolean);
 
+  // Rotated in code, not chosen by the model, for the reason above.
+  const CLOSERS = [
+    'Worth a look?',
+    "Thought you'd want to know.",
+    'Happy to walk you through it.',
+    "It's already done, just say the word.",
+    'Might be worth ten minutes.',
+    'Take a look when you get a second.',
+  ];
+  const closer = CLOSERS[crypto.createHash('sha1').update('close:' + p.id).digest()[0] % CLOSERS.length];
+
   const subjHints = (angle ? angle.subj : ['what is costing you customers'])
     .map(t => t.replace('{cat}', (p.category || 'business').toLowerCase())
                .replace('{city}', (p.city || '').toLowerCase())
@@ -165,7 +176,7 @@ WRITE:
    Line 2: what it costs them, one sentence, in customers or money. Plain words only.
    Line 3: one short handoff, for example "Here's what that's costing you:" or "Full breakdown here:"
    [LINK]
-   Line 4: a short, warm one-liner close. Vary it. "Worth a look?" / "Happy to walk you through it." / "Thought you'd want to know." / "No catch, it's already done." Pick whichever fits what you just told them. Do NOT use the same closer every time.
+   Line 4: write exactly this closing line and nothing else: ${closer}
 
 3. Sign exactly, on two lines:
 Michelle Baker
