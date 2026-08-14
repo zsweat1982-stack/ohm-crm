@@ -192,9 +192,10 @@ WRITE:
    [LINK]
    Line 5: write exactly this closing line and nothing else: ${closer}
 
-3. Sign exactly, on two lines:
+3. Sign exactly, on three lines:
 Michelle Baker
 Open Heart Media
+openheartmediaco.com
 
 TONE: direct, but human. You are a person in Canton who looked at their business for ten minutes, not a scanner printing a result. Contractions always. Never chatty, never padded, never apologetic. Being brief IS the courtesy here, so do not add warm-up lines, but the close should sound like a person wrote it.
 
@@ -229,7 +230,7 @@ ${invisible
   ? `TRUE AND JUST CHECKED: we asked an AI assistant to recommend a ${p.category} in ${p.city} and ${p.business} did not come up. Lead with that, stated flatly. Then one line on what it costs: more buyers now ask AI assistants for a local ${p.category}, so whoever it does name gets the call.`
   : `Lead with one specific, genuine observation about their standing as a ${p.category} in ${p.city}, using their real review numbers. Then one line: a business this good is losing customers who never find or book them.`}
 
-Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short, warm closing line, varied rather than the same every time. Sign exactly on two lines: Michelle Baker / Open Heart Media
+Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short, warm closing line, varied rather than the same every time. Sign exactly on three lines: Michelle Baker / Open Heart Media / openheartmediaco.com
 
 RULES: subject in SENTENCE CASE (capital first letter only) and UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never their name. Body UNDER 50 WORDS in four short blocks separated by blank lines, plain words, contractions. Never open with "we ran a scan" or anything about our process, state the finding directly about them. No third-party statistics. The first body line must not repeat the subject. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
 
@@ -271,6 +272,9 @@ function finishDraft(r, p) {
   if (!out.body.includes(link)) out.body += `\n\n${link}`;
   // Asked for in the prompt and dropped every single time, so it is enforced rather than requested.
   if (!/Michelle/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\n\nMichelle Baker\nOpen Heart Media';
+  // A recognisable domain they can look up themselves. Wariness about links from strangers is
+  // reasonable, and the answer is giving them something checkable, not a shorter URL.
+  if (!/openheartmediaco\.com\s*$/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\nopenheartmediaco.com';
   out.body = out.body.replace(/^Michelle,?\s*$/m, 'Michelle Baker');
   return out;
 }
@@ -1374,8 +1378,10 @@ function reportSlug(p) {
   return `${name || 'report'}-${reportToken(p.id).slice(0, 8)}`;
 }
 function reportUrl(p) {
-  // e.g. https://go.openheartmediaco.com/r/elite-landscape-services-c923e315
-  return `${SITE_ORIGIN}/r/${reportSlug(p)}`;
+  // e.g. https://reports.openheartmediaco.com/report/elite-landscape-services-c923e315
+  // "/r/" read as a redirect, which is the shape people have learned to distrust. "/report/" says
+  // what is actually on the other side.
+  return `${SITE_ORIGIN}/report/${reportSlug(p)}`;
 }
 function reportTokenValid(id, t) {
   if (!t) return false;
@@ -1438,7 +1444,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
 // '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
 // creating an account or logging in to anything.
-const PUBLIC_PATHS = ['/go', '/r', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -1494,13 +1500,30 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/prospects', (_, res) => {
   const counts = {};
   for (const p of prospects) counts[p.status] = (counts[p.status] || 0) + 1;
+  // Every full report inlined here made this response 16MB, which the dashboard pulled on each
+  // load and which was enough to take the instance down (observed: a 502 followed by a restart).
+  // The UI only reads audit_report.categories, so findings, checklist, summary and the raw scan
+  // stay on the server and are fetched per lead when someone actually opens one.
+  const slim = prospects.map(p => {
+    const { audit_report, audit_scan, ...rest } = p;
+    return audit_report
+      ? { ...rest, audit_report: { categories: audit_report.categories || [] } }
+      : rest;
+  });
   const wonValue = prospects.filter(p => p.status === 'won').reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
   const openValue = prospects.filter(p => ['replied', 'booked'].includes(p.status)).reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
-  res.json({ prospects, counts, sentToday: sentToday(), dailyCap: DAILY_CAP, team: TEAM, wonValue, openValue });
+  res.json({ prospects: slim, counts, sentToday: sentToday(), dailyCap: DAILY_CAP, team: TEAM, wonValue, openValue });
 });
 
 // Team members who can be "on" a response. Configurable via TEAM env (comma list).
 const TEAM = (process.env.TEAM || 'Zac,Michelle,Brad,Griffin').split(',').map(s => s.trim()).filter(Boolean);
+
+// Full record including the report, for the single lead being viewed.
+app.get('/api/prospects/:id', (req, res) => {
+  const p = prospects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(p);
+});
 
 app.patch('/api/prospects/:id', (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
@@ -1598,7 +1621,7 @@ app.get('/unsubscribe', (req, res) => {
 
 // Readable counterpart to /go?ref=..&t=.. . The trailing 8 hex characters are the signature; the
 // name in front of them is there so the link previews as a report rather than as a redirect.
-app.get('/r/:slug', (req, res) => {
+app.get(['/report/:slug', '/r/:slug'], (req, res) => {
   const m = String(req.params.slug || '').match(/([0-9a-f]{8})$/i);
   if (!m) return res.redirect('/go');
   const short = m[1].toLowerCase();
@@ -1620,6 +1643,7 @@ app.get('/robots.txt', (_, res) => {
     'User-agent: *',
     'Disallow: /go?ref=',
     'Disallow: /r/',
+    'Disallow: /report/',
     'Disallow: /api/',
     'Disallow: /login',
     'Disallow: /unsubscribe',
