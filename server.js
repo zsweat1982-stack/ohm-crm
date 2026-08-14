@@ -1710,9 +1710,20 @@ app.post('/api/track', (req, res) => {
 
 // Calendly webhook — fires when someone books (invitee.created) or cancels.
 // Set this URL as a webhook in Calendly. We attribute via utm_content=<prospectId>.
-const NOTIFY = (process.env.NOTIFY_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
+const NOTIFY_FALLBACK = 'zac@openheartmediaco.com';
+const NOTIFY = (process.env.NOTIFY_EMAILS || NOTIFY_FALLBACK)
+  .split(',').map(s => s.trim()).filter(Boolean);
+if (!process.env.NOTIFY_EMAILS) {
+  console.warn(`[notify] NOTIFY_EMAILS is not set, falling back to ${NOTIFY_FALLBACK}. Set it to a comma separated list so the whole team is told about bookings and failures.`);
+}
+// Silence here used to be indistinguishable from success.
+function notifyTargets(what) {
+  if (!process.env.SENDGRID_API_KEY) { console.warn('[notify] no SENDGRID_API_KEY, cannot send', what); return []; }
+  if (!NOTIFY.length) { console.error('[notify] NOBODY to notify about', what, '- set NOTIFY_EMAILS'); return []; }
+  return NOTIFY;
+}
 async function notifyBooking(info) {
-  if (!process.env.SENDGRID_API_KEY || !NOTIFY.length) return;
+  if (!notifyTargets('a booking').length) return;
   const text = `New discovery call booked.\n\n`
     + `Name:  ${info.name || 'n/a'}\n`
     + `Email: ${info.email || 'n/a'}\n`
@@ -1753,7 +1764,7 @@ app.post('/api/calendly-webhook', async (req, res) => {
 });
 
 async function notifyAudit(p, email, report, pdf) {
-  if (!process.env.SENDGRID_API_KEY || !NOTIFY.length) return;
+  if (!notifyTargets('a completed audit').length) return;
   const text = `New audit completed (hot lead).\n\n`
     + `Business: ${p?.business || 'unknown'}\n`
     + `Email:    ${email}\n`
@@ -2219,7 +2230,7 @@ async function runAuditJob(jobId, opts) {
 // Tell the team the moment a real prospect's scan fails, so the lead can be worked manually.
 async function notifyAuditFailure(p, err, stage) {
   if (!process.env.SENDGRID_API_KEY) return;
-  const to = (process.env.NOTIFY_EMAILS || 'zac@openheartmediaco.com').split(',').map(s => s.trim()).filter(Boolean);
+  const to = NOTIFY;
   await sgMail.send({
     to,
     from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
@@ -2268,7 +2279,7 @@ async function runCanary() {
 }
 async function alertTeam(subject, html) {
   if (!process.env.SENDGRID_API_KEY) return;
-  const to = (process.env.NOTIFY_EMAILS || 'zac@openheartmediaco.com').split(',').map(s => s.trim()).filter(Boolean);
+  const to = NOTIFY;
   await sgMail.send({ to, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME }, subject: `[OHM] ${subject}`, html });
 }
 if (process.env.CANARY_ENABLED !== 'false') {
