@@ -1506,8 +1506,10 @@ app.get('/api/prospects', (_, res) => {
   // stay on the server and are fetched per lead when someone actually opens one.
   const slim = prospects.map(p => {
     const { audit_report, audit_scan, ...rest } = p;
+    // The list renders only the name and the score. Each category also carries a two to three
+    // sentence "why", which across seven categories and 1,413 leads was most of what remained.
     return audit_report
-      ? { ...rest, audit_report: { categories: audit_report.categories || [] } }
+      ? { ...rest, audit_report: { categories: (audit_report.categories || []).map(c => ({ name: c.name, score: c.score })) } }
       : rest;
   });
   const wonValue = prospects.filter(p => p.status === 'won').reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
