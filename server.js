@@ -137,6 +137,19 @@ async function draftEmail(p) {
   ].filter(Boolean);
 
   // Rotated in code, not chosen by the model, for the reason above.
+  // Naming the cold email disarms it. Pretending it is anything else is the thing that makes people
+  // delete it, and a business owner who has just been told their site is broken by a stranger is
+  // not in a buying mood unless you take the sting out first.
+  const OPENERS = [
+    "Cold email, I know. This one's short.",
+    "Cold email. I'll be quick.",
+    "Yes, this is a cold email. It's a short one.",
+    "Cold outreach, so I'll get straight to it.",
+    "This is a cold email, but it's about your business, not mine.",
+    "Cold email. Thirty seconds, then I'm gone.",
+  ];
+  const opener = OPENERS[crypto.createHash('sha1').update('open:' + p.id).digest()[0] % OPENERS.length];
+
   const CLOSERS = [
     'Worth a look?',
     "Thought you'd want to know.",
@@ -169,14 +182,15 @@ WRITE:
 1. Subject line. SENTENCE CASE (capital first letter only, everything else lowercase unless it is a proper noun). UNDER 45 CHARACTERS. No exclamation marks, no ALL CAPS, never the words "free" or "audit", never their name.
    THE SUBJECT MUST BE ABOUT THE SAME PROBLEM AS THE BODY. Both come from "Biggest problem" above. Do not write a subject about one issue and a body about another. For tone, shapes like "${subjHints}" work, but the topic must match the finding.
 
-2. Body. THIS IS THE PART THAT MATTERS. UNDER 50 WORDS TOTAL. Structure it as FOUR SHORT BLOCKS separated by blank lines, because a wall of text gets archived unread:
+2. Body. THIS IS THE PART THAT MATTERS. UNDER 65 WORDS TOTAL. Structure it as FIVE SHORT BLOCKS separated by blank lines, because a wall of text gets archived unread:
 
-   Line 1: the finding, about THEM, second person, one sentence, with ONE real number.
+   Line 1: write exactly this opener and nothing else: ${opener}
+   Line 2: the finding, about THEM, second person, one sentence, with ONE real number.
            Write "Your site takes 9 seconds to load on a phone." NOT "We ran a scan and found that your site is taking 9 seconds to load on mobile, which is the device most people use."
-   Line 2: what it costs them, one sentence, in customers or money. Plain words only.
-   Line 3: one short handoff, for example "Here's what that's costing you:" or "Full breakdown here:"
+   Line 3: what it costs them in customers or money, one sentence, plain words. Then, in the SAME block, a short clause that takes the sting out by making clear this is invisible from the inside and not a failure on their part. For example "Nobody ever sees their own site on a bad connection", "It's the kind of thing that only shows up in a test", "Your web guy wouldn't catch this either". Vary the wording to fit the finding.
+   Line 4: one short handoff, for example "Here's what that's costing you:" or "Full breakdown here:"
    [LINK]
-   Line 4: write exactly this closing line and nothing else: ${closer}
+   Line 5: write exactly this closing line and nothing else: ${closer}
 
 3. Sign exactly, on two lines:
 Michelle Baker
@@ -185,7 +199,9 @@ Open Heart Media
 TONE: direct, but human. You are a person in Canton who looked at their business for ten minutes, not a scanner printing a result. Contractions always. Never chatty, never padded, never apologetic. Being brief IS the courtesy here, so do not add warm-up lines, but the close should sound like a person wrote it.
 
 HARD RULES:
-- Under 50 words. Count them. Shorter always wins.
+- Under 65 words. Count them. Shorter always wins.
+- NEVER make them feel stupid. They built this business and are proud of it. The finding is a fact about a machine, not a verdict on them. No "unfortunately", no "sadly", no "you should have", no lecturing, and never imply carelessness.
+- Dry wit is welcome in the phrasing. Smugness is not. If a line would make them wince rather than smile, cut it.
 - NEVER open with "We ran a scan", "We scanned", "I ran your site through", or anything about our process. They do not care what we did, only what is true about them. State the finding directly.
 - NO third-party statistics, no "Google's own data shows", no research citations, no percentages that are not about THEIR business. That is education, and nobody clicks because they learned something. They click because something of theirs is broken.
 - One finding only. A second one means neither lands.
