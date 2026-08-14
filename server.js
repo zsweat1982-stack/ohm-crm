@@ -94,8 +94,8 @@ const ANGLES = {
   'Website & Speed':      { key: 'speed',    subj: ['how long your site takes to load', 'your site on a phone', 'slow on mobile'] },
   'Converting Visitors':  { key: 'convert',  subj: ['no way to book you online', 'nowhere to click on your site'] },
   'Tracking & Data':      { key: 'tracking', subj: ['no tracking on your site', 'where your leads come from'] },
-  'AI Search Presence (AIO)': { key: 'ai',   subj: ['chatgpt has not heard of you', 'when people ask ai for a {cat}'] },
-  'AI Search':            { key: 'ai',       subj: ['chatgpt has not heard of you', 'when people ask ai for a {cat}'] },
+  'AI Search Presence (AIO)': { key: 'ai',   subj: ['ai assistants do not know you yet', 'when people ask ai for a {cat}'] },
+  'AI Search':            { key: 'ai',       subj: ['ai assistants do not know you yet', 'when people ask ai for a {cat}'] },
   'Local Visibility':     { key: 'local',    subj: ['{n} reviews and still hard to find'] },
   'Getting Found (SEO)':  { key: 'seo',      subj: ['not on page one for {cat} in {city}', 'what google cannot read on your site'] },
   'Social & Content':     { key: 'social',   subj: ['nothing for people to look at'] },
@@ -697,7 +697,7 @@ Return ONLY JSON:
    {"name": "Local Visibility", "score": <0-100>, "why": "2 to 3 sentences citing the LIVE Google Business Profile data: rating and review count and recency vs a typical ${p.category} in ${p.city}, and whether hours, website, photos, and description are filled in on the profile"},
    {"name": "Tracking & Data", "score": <0-100>, "why": "2 sentences on analytics, Meta pixel, Google Ads tag, and what not tracking costs them"},
    {"name": "Social & Content", "score": <0-100>, "why": "2 to 3 sentences on which platforms they are and are not on, video presence, and the specific opportunity to optimize their profiles (bios, consistent branding, link in bio, posting cadence) for a ${p.category}. Do not mention follower counts."},
-   {"name": "AI Search Presence (AIO)", "score": <0-100>, "why": "2 to 3 sentences on whether AI assistants (ChatGPT, Google AI Overviews, Perplexity) can find and recommend them: cite whether AI crawlers are allowed, whether structured data and entity links exist for AI to read, and the LIVE result of whether AI models actually recognize this business by name yet. Frame not-being-known as the single biggest emerging visibility gap: buyers increasingly ask AI for recommendations, and if the AI has never heard of them, they are invisible in that channel while competitors may not be."}
+   {"name": "AI Search Presence (AIO)", "score": <0-100>, "why": "2 to 3 sentences on whether AI assistants (ChatGPT, Google AI Overviews, Perplexity) can find and recommend them: cite whether AI crawlers are allowed, whether structured data and entity links exist for AI to read, and whether AI models recognise this business by name yet (we tested what a leading model knows, so refer to "AI assistants" or "AI models" generally and never claim we ran a live query against ChatGPT, Perplexity or Google AI Overviews). Frame not-being-known as the single biggest emerging visibility gap: buyers increasingly ask AI for recommendations, and if the AI has never heard of them, they are invisible in that channel while competitors may not be."}
  ],
  "findings": [ {"title": "punchy specific title", "detail": "2 to 3 sentences tied to lost leads or revenue, referencing the actual scan finding", "impact": "High|Medium|Low"} ],
  "quickWins": ["3 to 4 short fixes they could do fast, each one line, specific to what failed"],
@@ -2337,13 +2337,13 @@ async function draftFollowup(p, step) {
     context = `IMPORTANT: they have ALREADY run their free audit, so do NOT ask if they ran it. Reference what it showed.`
       + (topFinding ? ` The biggest gap their audit flagged was "${topFinding.title}": ${topFinding.detail || ''}` : '')
       + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '')
-      + (aiUnknown ? ` A LIVE AI-visibility test in their audit found that AI assistants (ChatGPT, Google AI Overviews, Perplexity) do NOT recognize ${p.business} yet when asked to recommend a ${p.category} in ${p.city}. This is a real, fast-growing, high-priority channel: buyers increasingly ask AI assistants for local recommendations, and a business the AI has never heard of is completely invisible there while competitors who show up win those referrals.` : '');
+      + (aiUnknown ? ` Their audit tested whether a leading AI model recognises ${p.business} as a ${p.category} in ${p.city}, and it does not. Say "AI assistants" or "AI models" generally. Do NOT claim we queried ChatGPT, Perplexity or Google AI Overviews specifically, and do NOT call it a live search: we tested what the model knows, which is not the same thing. Buyers increasingly ask AI assistants for local recommendations, and a business the model has never heard of is invisible in that channel.` : '');
     length = '3 to 4 SHORT sentences, tight and skimmable, no long paragraphs or run-on sentences';
     linkPurpose = 'the discovery call link (they can also revisit their audit there)';
     angles = {
       1: 'Lead with the single most painful finding from their audit, stated plainly as lost customers or revenue (not jargon). Then give ONE concrete free fix in one sentence. End with a one-line invite to a short call to fix the rest.',
       2: aiUnknown
-        ? `Lead with the AI-search shift as the high-priority, trending pain: more buyers now ask AI assistants (ChatGPT, Google AI Overviews) for a ${p.category}, and their audit's LIVE test found that AI does not recognize ${p.business} yet, so they are invisible in that channel while competitors get recommended. One line on what that costs them. One sharp one-line CTA to a short call.`
+        ? `Lead with the AI-search shift: more buyers now ask AI assistants for a ${p.category}, and their audit found that AI models do not recognise ${p.business} yet, so they are invisible in that channel. Say "AI assistants" generally, never name ChatGPT or Perplexity as something we queried, and never call it a live search. One line on what that costs them. One sharp one-line CTA to a short call.`
         : 'One-line proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their biggest gap in one line, then one sharp one-line CTA to a short call.',
       3: 'Very short. Restate their biggest pain in one line, leave one final quick tip, and a warm door-open close.',
     };
