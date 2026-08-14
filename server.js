@@ -222,6 +222,8 @@ function finishDraft(r, p) {
   return out;
 }
 
+const META_PIXEL_ID = process.env.META_PIXEL_ID || '';
+const GA4_ID = process.env.GA4_ID || '';
 const LANDING_URL = process.env.LANDING_URL || `http://localhost:${process.env.PORT || 4100}/go`;
 
 // ---------- SCANNING AUDIT ENGINE (multi-page website + social + marketing + AI-search scan) ----------
@@ -986,6 +988,14 @@ function renderLandingPage(ref, token) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${prescanned ? esc(bizName || 'Your') + ' growth audit · Open Heart Media' : 'Free growth audit · Open Heart Media'}</title>
+${META_PIXEL_ID ? `<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;
+s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','${META_PIXEL_ID}');fbq('track','PageView');
+</script>` : ''}
+${GA4_ID ? `<script async src="https://www.googletagmanager.com/gtag/js?id=${GA4_ID}"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${GA4_ID}');</script>` : ''}
 ${prescanned ? `<meta name="robots" content="noindex,nofollow,noarchive"/>
 <meta name="referrer" content="no-referrer"/>` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1251,6 +1261,9 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
      .then(function(r){return r.json();})
      .then(function(j){
        if(j.error) return fail(j.error);
+       // The one moment we know a real lead exists. Everything upstream is just traffic.
+       try{ if(window.fbq) fbq('track','Lead',{content_name:'growth audit'}); }catch(e){}
+       try{ if(window.gtag) gtag('event','generate_lead',{currency:'USD',value:1}); }catch(e){}
        confirmed(first,email);
      })
      .catch(function(){ fail(); });
