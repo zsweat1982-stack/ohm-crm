@@ -539,7 +539,11 @@ async function scanWebsite(rawUrl) {
 // same set, so this is a long tail rather than a fixed cost. 70s clipped that tail and lost the
 // speed data on about a third of runs. PageSpeed runs in parallel with everything else, so a
 // higher ceiling costs the slow minority some wall clock and costs the fast majority nothing.
-const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS) || 95000;
+// Lighthouse needs 60-120s on a heavy page builder site (our own homepage makes 266 requests and
+// takes 8.7s to paint), and 95s was cutting it off often enough that most audits of sites like
+// ours had no speed data at all. The whole job budget is 6 minutes and PageSpeed is kicked off
+// before everything else, so waiting longer costs nothing on fast sites.
+const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS) || 150000;
 
 // Vendor endpoints are matched narrowly and deliberately: an early version matched the substring
 // "arc" and hit a Wix bundle URL, reporting live chat on a site that had none. A false pass is
@@ -879,12 +883,20 @@ Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype wo
   // Lets the canary, the dashboard and the PDF tell a fully measured audit apart from one that is
   // missing a real input. Without it a partial audit is indistinguishable from a complete one.
   report.speedMeasured = !!ps;
+  // Mark it on the category itself so the overall score can leave it out rather than average in a
+  // number nobody measured.
+  if (!ps) {
+    const speedCat = (report.categories || []).find(c => /speed/i.test(c.name || ''));
+    if (speedCat) speedCat.measured = false;
+  }
   return report;
 }
 
 // overall growth score = average of the six category scores
 function overallScore(report) {
-  const cats = report.categories || [];
+  // A category we could not measure is excluded rather than averaged in. Including an unmeasured
+  // "Website & Speed" pulled the headline number toward whatever the blind spot happened to be.
+  const cats = (report.categories || []).filter(c => c.measured !== false);
   if (!cats.length) return 0;
   return Math.round(cats.reduce((s, c) => s + (Number(c.score) || 0), 0) / cats.length);
 }
@@ -2152,7 +2164,13 @@ function fallbackReport(p, scan, ps, gbp, aio, answers) {
   };
   const perf = ps && typeof ps.performance === 'number' ? ps.performance : null;
   const categories = [
-    { name: 'Website & Speed', score: perf !== null ? perf : scoreOf(['Foundation & Speed']), why: 'Scored from the live technical scan of the site.' },
+    // Without a speed measurement the only Foundation items left are HTTPS, viewport and mixed
+    // content, and a site passing those three scored a confident 100 for "Website & Speed" while
+    // its speed was entirely unknown. Flagged as unmeasured instead, and left out of the overall.
+    { name: 'Website & Speed', score: perf !== null ? perf : scoreOf(['Foundation & Speed']),
+      measured: perf !== null,
+      why: perf !== null ? 'Scored from the live technical scan of the site.'
+        : 'Page speed could not be measured on this run, so this covers only the secure connection and mobile checks. Speed is not included in the overall score.' },
     { name: 'Getting Found (SEO)', score: scoreOf(['Getting Found (SEO)']), why: 'Scored from on page SEO signals found during the crawl.' },
     { name: 'Converting Visitors', score: scoreOf(['Turning Visitors Into Leads']), why: 'Scored from the contact, form, booking and call to action signals found across the pages scanned.' },
     { name: 'Local Visibility', score: scoreOf(['Google Business Profile']), why: 'Scored from the live Google Business Profile lookup.' },
