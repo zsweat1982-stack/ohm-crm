@@ -387,9 +387,20 @@ function deriveBusinessName(scan) {
   return host ? host.charAt(0).toUpperCase() + host.slice(1) : null;
 }
 
+// One place that turns whatever the prospect typed into an absolute URL. The scan normalized it
+// internally, but PageSpeed was handed the raw string, and Google's API rejects a bare hostname
+// outright ("Values must match: (?i)(url:|origin:)?http(s)?://.*"). Since most people type
+// "theirsite.com", speed and Core Web Vitals were quietly missing from most audits, and with them
+// the rendered-Chrome fallbacks that stop JS-heavy sites being false-flagged.
+function normalizeUrl(raw) {
+  let u = (raw || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { return new URL(u).toString(); } catch { return ''; }
+}
+
 async function scanWebsite(rawUrl) {
-  let url = (rawUrl || '').trim();
-  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  const url = normalizeUrl(rawUrl);
   const out = {
     url, reachable: false, https: url.startsWith('https'), redirectsToHttps: false, finalUrl: null,
     // content / SEO
@@ -432,7 +443,12 @@ async function scanWebsite(rawUrl) {
   let origin = null;
   try { const u = new URL(out.finalUrl || url); origin = u.origin; out.host = u.host.replace(/^www\./, ''); } catch {}
   const html = home.html;
-  const head = html.slice(0, 220000);
+  // Same trap as the 900KB body truncation, one level down. Page builders front-load a megabyte of
+  // inline script and CSS before the real metadata: on our own Wix site </head> sits at offset
+  // ~1.05M, so a fixed 220KB window missed the canonical tag and every Open Graph tag and reported
+  // them as missing on a site that has them. Use the document's real head when it gives us one.
+  const headEnd = html.search(/<\/head>/i);
+  const head = headEnd > 0 ? html.slice(0, headEnd) : html.slice(0, 1500000);
 
   // ----- homepage-only SEO signals -----
   out.title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.replace(/<[^>]+>/g, '').trim() || null;
@@ -525,7 +541,46 @@ async function scanWebsite(rawUrl) {
 // higher ceiling costs the slow minority some wall clock and costs the fast majority nothing.
 const PAGESPEED_TIMEOUT_MS = Number(process.env.PAGESPEED_TIMEOUT_MS) || 95000;
 
-async function runPageSpeed(url) {
+// Vendor endpoints are matched narrowly and deliberately: an early version matched the substring
+// "arc" and hit a Wix bundle URL, reporting live chat on a site that had none. A false pass is
+// worse than a miss here, because the prospect knows their own site.
+function renderedSignals(audits) {
+  const reqs = (audits?.['network-requests']?.details?.items || []).map(i => String(i.url || ''));
+  if (!reqs.length) return null;
+  const seen = re => reqs.some(u => re.test(u));
+  return {
+    ga4: seen(/googletagmanager\.com\/gtag\/js|google-analytics\.com|\/g\/collect\?/i),
+    gtm: seen(/googletagmanager\.com\/gtm\.js/i),
+    metaPixel: seen(/connect\.facebook\.net\/[a-z_]+\/fbevents\.js|facebook\.com\/tr[\/?]/i),
+    googleAds: seen(/googleadservices\.com|googleads\.g\.doubleclick\.net|gtag\/js\?id=AW-/i),
+    // leadconnectorhq/msgsndr is GoHighLevel, which is what a lot of agency-built local sites run
+    // their chat widget on. It was missing here, so our own site reported "no live chat" with the
+    // widget sitting in the corner of the page.
+    chat: seen(/tawk\.to|intercom(cdn|\.io)|js\.driftt\.com|client\.crisp\.chat|code\.tidio\.co|livechatinc\.com|js\.hs-scripts\.com|podium\.com|olark\.com|birdeye\.com|leadconnectorhq\.com|msgsndr\.com|zdassets\.com|smooch\.io|gorgias\.chat|front\.com\/chat|chatway|jivosite|zalo|manychat/i),
+    video: seen(/youtube\.com\/embed|youtube-nocookie\.com|player\.vimeo\.com|fast\.wistia|videodelivery\.net/i),
+    requests: reqs.length,
+  };
+}
+
+// Rendered evidence may only ever turn a signal ON. It proves a tag is present; it can never be
+// used to prove one is absent, because Lighthouse sees a single page load and consent gating can
+// legitimately defer a tag.
+function mergeRenderedSignals(scan, ps) {
+  const r = ps && ps.rendered;
+  if (!r || !scan) return scan;
+  if (r.ga4 || r.gtm) {
+    scan.analytics = true;
+    scan.analyticsType = scan.analyticsType || (r.ga4 ? 'Google Analytics 4' : 'Google Tag Manager');
+  }
+  if (r.metaPixel) scan.fbPixel = true;
+  if (r.googleAds) scan.googleAdsTag = true;
+  if (r.chat) scan.hasLiveChat = true;
+  if (r.video) scan.hasVideo = true;
+  return scan;
+}
+
+async function runPageSpeed(rawUrl) {
+  const url = normalizeUrl(rawUrl);
   if (!url) return null;
   const attempt = async () => {
     const key = process.env.PAGESPEED_KEY ? `&key=${process.env.PAGESPEED_KEY}` : '';
@@ -559,6 +614,11 @@ async function runPageSpeed(url) {
       renderedViewport: passed('viewport'),
       isCrawlable: passed('is-crawlable'),
       httpStatusOk: passed('http-status-code'),
+      // Every request real Chrome actually made. Raw HTML cannot see a tag that a site builder,
+      // tag manager or consent tool injects at runtime, and Wix/Squarespace/GTM sites inject all
+      // of them, so an HTML-only scan reported live analytics and pixels as missing. A network
+      // request to the vendor is direct proof the tag fired.
+      rendered: renderedSignals(a),
     };
   };
   // Retrying a timeout is pointless: the first attempt already consumed the stage budget, so the
@@ -614,7 +674,19 @@ async function scanGBP(business, city, siteHost) {
       found: true, name: r.name || null, rating: r.rating ?? null, reviews: r.user_ratings_total ?? null,
       hasHours: !!r.opening_hours, websiteOnGbp: !!r.website, phoneOnGbp: !!r.formatted_phone_number,
       photos: Array.isArray(r.photos) ? r.photos.length : 0, categories: cats, primaryCategory: cats[0] || null,
-      status: r.business_status || null, hasDescription: !!r.editorial_summary?.overview, latestReviewDays,
+      status: r.business_status || null,
+      // editorial_summary is Google's OWN curated blurb, not the owner-written "from the business"
+      // description, and Google returns it for almost no local listing. Reading it as "description
+      // filled in" reported a FAIL on profiles that are fully filled in, including our own. We
+      // cannot see that field at all, so we say so instead of guessing.
+      hasDescription: r.editorial_summary?.overview ? true : null,
+      latestReviewDays,
+      // Place Details returns at most 5 reviews chosen by relevance, not recency. On a profile with
+      // more reviews than that, the newest one we can see says nothing about the newest one there
+      // is, so review recency is only trustworthy when we can see the whole set.
+      reviewSample: Array.isArray(r.reviews) ? r.reviews.length : 0,
+      reviewRecencyReliable: Array.isArray(r.reviews) && r.reviews.length > 0
+        && (r.user_ratings_total == null || r.user_ratings_total <= r.reviews.length),
       verified, matchHost,
     };
   } catch (e) { return null; }
@@ -636,7 +708,7 @@ async function scanAIO(business, city, category, scan) {
   // Live visibility probe: reflects what AI assistants actually know from training. An honest signal
   // of AI-search presence for a local business (usually "not known yet" = the real opportunity).
   const visibility = await aiVisibilityProbe(business, city, category);
-  let score = 0;
+  let score = 0, max = 85;
   score += ready.aiCrawlersAllowed ? 22 : 0;
   score += ready.schema ? 20 : 0;
   score += ready.sameAs ? 10 : 0;
@@ -644,8 +716,11 @@ async function scanAIO(business, city, category, scan) {
   score += ready.contentDepth ? 10 : 0;
   score += ready.napClear ? 8 : 0;
   score += ready.llmsTxt ? 5 : 0;
-  if (visibility) { score += visibility.known ? 10 : 0; score += visibility.wouldRecommend ? 5 : 0; }
-  return { ready, visibility, score: Math.min(100, score) };
+  // The live probe carries 15 of the 100 points. When it could not run those points were
+  // unearnable, so a perfectly healthy site was capped at 85 for a reason that had nothing to do
+  // with the business. Score against what we were actually able to measure.
+  if (visibility) { max = 100; score += visibility.known ? 10 : 0; score += visibility.wouldRecommend ? 5 : 0; }
+  return { ready, visibility, probed: !!visibility, score: Math.min(100, Math.round((score / max) * 100)) };
 }
 
 // Build a full pass/fail checklist from the scan so the audit shows everything we looked at.
@@ -667,16 +742,24 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'AI would recommend you in your category', ok: !!aio.visibility.wouldRecommend },
     ] : []),
   ]} : null;
+  // Absence of evidence is not evidence of absence. Runtime-injected tags are invisible to a raw
+  // HTML scan, so without Lighthouse's rendered view we cannot honestly call a tag missing.
+  const canVerifyTags = !!(ps && ps.rendered);
+  const tagOk = v => v ? true : (canVerifyTags ? false : null);
+  const tagNote = v => v ? '' : (canVerifyTags ? '' : 'could not verify on this run');
   const gbpGroup = gbp && gbp.found ? { group: 'Google Business Profile', items: [
     { label: 'Business profile found on Google', ok: true, note: gbp.verified === false ? 'match unverified' : '' },
     { label: 'Strong star rating (4.5+)', ok: gbp.rating != null ? gbp.rating >= 4.5 : null, note: gbp.rating != null ? gbp.rating + '/5' : '' },
     { label: 'Healthy review count (50+)', ok: gbp.reviews != null ? gbp.reviews >= 50 : null, note: gbp.reviews != null ? gbp.reviews + ' reviews' : '' },
-    { label: 'Getting recent reviews (last 60 days)', ok: gbp.latestReviewDays != null ? gbp.latestReviewDays <= 60 : null, note: gbp.latestReviewDays != null ? gbp.latestReviewDays + ' days ago' : '' },
+    { label: 'Getting recent reviews (last 60 days)',
+      ok: (gbp.latestReviewDays != null && gbp.reviewRecencyReliable !== false) ? gbp.latestReviewDays <= 60 : null,
+      note: gbp.reviewRecencyReliable === false ? 'Google only exposes ' + gbp.reviewSample + ' of ' + gbp.reviews + ' reviews, so recency cannot be confirmed'
+            : (gbp.latestReviewDays != null ? gbp.latestReviewDays + ' days ago' : '') },
     { label: 'Business hours listed', ok: gbp.hasHours },
     { label: 'Website linked on profile', ok: gbp.websiteOnGbp },
     { label: 'Phone number on profile', ok: gbp.phoneOnGbp },
     { label: 'Photos on profile', ok: gbp.photos >= 5, note: gbp.photos ? gbp.photos + (gbp.photos >= 10 ? '+' : '') + ' photos' : 'none' },
-    { label: 'Business description filled in', ok: gbp.hasDescription },
+    { label: 'Business description filled in', ok: gbp.hasDescription, note: gbp.hasDescription === null ? 'not exposed by Google\'s API, check the profile directly' : '' },
   ]} : (gbp && gbp.found === false ? { group: 'Google Business Profile', items: [
     { label: 'Business profile found on Google', ok: false, note: 'not found' },
   ]} : null);
@@ -704,14 +787,14 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'Lead capture form', ok: scan.hasForm },
       { label: 'Online booking / scheduling', ok: scan.hasBooking },
       { label: 'Clear call to action', ok: scan.hasCta },
-      { label: 'Live chat', ok: scan.hasLiveChat },
+      { label: 'Live chat', ok: tagOk(scan.hasLiveChat), note: tagNote(scan.hasLiveChat) },
       { label: 'Email / newsletter capture', ok: scan.hasNewsletter },
       { label: 'Address listed (local trust)', ok: scan.napAddress },
     ]},
     { group: 'Tracking & Ad Readiness', items: [
-      { label: 'Website analytics installed', ok: scan.analytics, note: scan.analyticsType || '' },
-      { label: 'Facebook / Meta pixel (retargeting)', ok: scan.fbPixel },
-      { label: 'Google Ads conversion tag', ok: scan.googleAdsTag },
+      { label: 'Website analytics installed', ok: tagOk(scan.analytics), note: scan.analytics ? (scan.analyticsType || '') : tagNote(scan.analytics) },
+      { label: 'Facebook / Meta pixel (retargeting)', ok: tagOk(scan.fbPixel), note: tagNote(scan.fbPixel) },
+      { label: 'Google Ads conversion tag', ok: tagOk(scan.googleAdsTag), note: tagNote(scan.googleAdsTag) },
     ]},
     { group: 'Content, Media & Social', items: [
       { label: 'Video on site', ok: scan.hasVideo },
@@ -727,6 +810,16 @@ function buildChecklist(scan, ps, gbp, aio) {
 
 async function generateAuditReport(p, scan, ps, gbp, answers, aio) {
   const checklist = buildChecklist(scan, ps, gbp, aio);
+  // The report is read by the business owner, who knows their own site. Telling them a pixel is
+  // missing when it is live, or that their Google description is empty when it is filled in, loses
+  // the deal on the spot. Anything we could not actually measure is named here so the model treats
+  // it as unknown instead of turning a blind spot into a finding.
+  const unverifiable = [];
+  if (!ps) unverifiable.push('page load speed, Core Web Vitals, and anything about how fast or slow the site is');
+  if (!ps || !ps.rendered) unverifiable.push('analytics, Meta pixel, Google Ads tag and live chat (these are injected after page load and cannot be seen without a rendered page load)');
+  if (gbp && gbp.found && gbp.hasDescription === null) unverifiable.push('whether the Google Business Profile description is filled in (Google does not expose it)');
+  if (gbp && gbp.found && !gbp.primaryCategory) unverifiable.push('the Google Business Profile primary category (Google did not return one)');
+  if (gbp && gbp.found && gbp.reviewRecencyReliable === false) unverifiable.push('how recently the newest Google review was left (Google exposes only a handful of reviews, chosen by relevance rather than date)');
   const flat = checklist.flatMap(g => g.items.map(i => `${i.ok === true ? 'PASS' : i.ok === false ? 'FAIL' : 'n/a'} - ${g.group}: ${i.label}${i.note ? ' (' + i.note + ')' : ''}`)).join('\n');
   const prompt = `You are a senior growth strategist at Open Heart Media (OHM). Produce a thorough, elite growth audit for a local business based ONLY on the real scan data below. It must read like a paid consultant did it: specific, researched, and honest. Tie findings to lost leads and revenue. This report is what earns the discovery call, so it must be genuinely valuable and impressively detailed, while keeping the exact HOW of fixing things at a strategic level (name the gap and the opportunity, do not write the full implementation playbook).
 
@@ -737,7 +830,7 @@ ${answers.firstName
 WHAT THEY WANT MORE OF: ${answers.goal || 'more customers'}  (weave this in naturally where relevant. NEVER write the phrases "stated goal", "stated business goal", or "your stated goal". Just refer to what they want in plain words.)
 
 FULL TECHNICAL + MARKETING SCAN (real, just run):
-GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, bestPractices: ps.bestPractices, LCP: ps.lcpLabel, CLS: ps.clsLabel, TBT: ps.tbtLabel }) : 'unavailable'}
+GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, bestPractices: ps.bestPractices, LCP: ps.lcpLabel, CLS: ps.clsLabel, TBT: ps.tbtLabel }) : 'NOT MEASURED on this run. You do NOT have a speed number for this site. Do not state one, do not estimate one, and do not imply the site is fast or slow.'}
 SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileViewport: scan.mobileViewport, title: scan.title, titleLen: scan.titleLen, metaDescription: scan.description ? 'present (' + scan.descriptionLen + ' chars)' : 'MISSING', h1Count: scan.h1Count, wordCount: scan.wordCount, schemaLocalBusiness: scan.schemaLocalBusiness, canonical: scan.canonical, hasPhone: scan.hasPhone, hasForm: scan.hasForm, hasBooking: scan.hasBooking, hasCta: scan.hasCta, hasLiveChat: scan.hasLiveChat, hasNewsletter: scan.hasNewsletter, napAddress: scan.napAddress, analytics: scan.analyticsType || false, facebookPixel: scan.fbPixel, googleAdsTag: scan.googleAdsTag, hasVideo: scan.hasVideo, images: scan.imgCount, imagesMissingAlt: scan.imgMissingAlt, ogShareTags: scan.ogTitle && scan.ogImage, mixedContent: scan.mixedContent })}
 GOOGLE BUSINESS PROFILE (live from Google Places): ${gbp && gbp.found ? JSON.stringify({ rating: gbp.rating, reviews: gbp.reviews, latestReviewDaysAgo: gbp.latestReviewDays, hoursListed: gbp.hasHours, websiteLinked: gbp.websiteOnGbp, phoneListed: gbp.phoneOnGbp, photos: gbp.photos, descriptionFilled: gbp.hasDescription, primaryCategory: gbp.primaryCategory, status: gbp.status }) : (gbp && gbp.found === false ? 'NO GOOGLE BUSINESS PROFILE FOUND (major local visibility gap)' : 'not checked')}
 SOCIAL PROFILES LINKED FROM SITE: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
@@ -747,6 +840,9 @@ AI SEARCH PRESENCE (AIO): ${aio ? JSON.stringify({ score: aio.score, aiCrawlersA
 PASS/FAIL CHECKLIST (already computed, use it to ground your scores):
 ${flat}
 
+COULD NOT BE VERIFIED ON THIS RUN: ${unverifiable.length ? unverifiable.join('; ') : 'nothing, every signal above was measured'}
+Treat everything on that line as UNKNOWN. Never present an unverified item as a failure, a gap, or something they are missing, and never score a category down for it. Any checklist item marked "n/a" was not measured either: do not describe an n/a item as missing, broken or absent. If an unverified item matters to the story, say plainly that it was not measured on this run. Being wrong about something the owner can see for themselves destroys the credibility of the whole report, so when in doubt, leave it out.
+
 Score each of the seven categories 0-100 HONESTLY from the data (a site failing many checks should score low, do not inflate). Base "Local Visibility" mostly on the LIVE Google Business Profile data above (rating, review count and recency versus a typical ${p.category} in ${p.city}, whether hours/website/photos/description are filled, and whether a profile exists at all) plus on-site schema and address. Base "Tracking & Data" on analytics, pixel, and ads tag. For "Social & Content", focus on PRESENCE and OPTIMIZATION, not follower counts (we do not have those): which platforms they are and are not on, whether they have video, and the opportunity to optimize their profiles (complete bios, consistent branding and handles, a clear link in bio, regular posting, and short video content for a ${p.category}). For "AI Search Presence (AIO)", base the score on the AIO data above: whether AI crawlers are blocked (a hard cap on the score if they are), whether structured data and sameAs entity links exist, content depth, and the LIVE probe of whether AI models actually recognize this business. If AI does not know them yet, that is a real and urgent gap, not a minor one. The site title, meta description, and mobile viewport were cross-checked against Google's real rendered Chrome result, so treat those signals as accurate even for JavaScript-heavy sites. Every "why" must cite specific real findings.
 
 Return ONLY JSON:
@@ -754,7 +850,9 @@ Return ONLY JSON:
  "headline": "one specific line, e.g. 'Where ${p.business || 'your business'} is quietly losing customers'",
  "overallVerdict": "one honest sentence summarizing the state of their online presence",
  "categories": [
-   {"name": "Website & Speed", "score": <0-100>, "why": "2 sentences citing the real PageSpeed number, HTTPS, mobile, Core Web Vitals"},
+   {"name": "Website & Speed", "score": <0-100>, "why": ${ps
+     ? '"2 sentences citing the real PageSpeed number, HTTPS, mobile, Core Web Vitals"'
+     : '"2 sentences on HTTPS, mobile viewport and mixed content ONLY. Speed was not measured on this run, so say plainly that load speed could not be measured this time and score this category from the secure-connection and mobile-friendly checks alone. Never cite or estimate a speed number, a load time or a Core Web Vital."'}},
    {"name": "Getting Found (SEO)", "score": <0-100>, "why": "2 sentences citing title/meta/schema/H1/content findings"},
    {"name": "Converting Visitors", "score": <0-100>, "why": "2 sentences citing phone, form, booking, CTA, chat findings"},
    {"name": "Local Visibility", "score": <0-100>, "why": "2 to 3 sentences citing the LIVE Google Business Profile data: rating and review count and recency vs a typical ${p.category} in ${p.city}, and whether hours, website, photos, and description are filled in on the profile"},
@@ -778,6 +876,9 @@ Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype wo
   scrub(report);
   report.checklist = checklist;
   report.pagespeed = ps || null;
+  // Lets the canary, the dashboard and the PDF tell a fully measured audit apart from one that is
+  // missing a real input. Without it a partial audit is indistinguishable from a complete one.
+  report.speedMeasured = !!ps;
   return report;
 }
 
@@ -2075,6 +2176,7 @@ function fallbackReport(p, scan, ps, gbp, aio, answers) {
     estimate: 'Closing these gaps typically recovers enquiries that are currently reaching competitors instead.',
     checklist,
     pagespeed: ps || null,
+    speedMeasured: !!ps,
     degraded: true,
   };
 }
@@ -2124,6 +2226,10 @@ async function runAuditJob(jobId, opts) {
       softStage(scanAIO(resolvedBiz, bizCity, bizCategory, scan), budget(45000), 'AI visibility'),
     ]));
 
+    // Fold rendered-Chrome evidence back into the scan before anything is scored, written or saved,
+    // so the checklist, the report, the PDF and the stored record all agree on one set of facts.
+    mergeRenderedSignals(scan, ps);
+
     setStage('Writing your report');
     let report;
     const buildFallback = () => fallbackReport(p || lookup || { business: resolvedBiz }, scan, ps, gbp, aio, { firstName });
@@ -2142,6 +2248,7 @@ async function runAuditJob(jobId, opts) {
         } catch (e2) {
           console.error('[audit] report generation failed twice, using deterministic fallback -', e2.message);
           report = buildFallback();
+          report.degradedReason = e2.message;
         }
       }
     }
@@ -2253,6 +2360,7 @@ async function notifyAuditFailure(p, err, stage) {
 // against a known site every hour and alerts the team on the transition into and out of failure.
 const CANARY_SITE = process.env.CANARY_SITE || 'openheartmediaco.com';
 let canaryFailures = 0;
+let canaryDegraded = 0;
 async function runCanary() {
   const jobId = 'canary-' + crypto.randomBytes(6).toString('hex');
   auditJobs.set(jobId, { state: 'running', stage: 'canary', startedAt: Date.now(), updatedAt: Date.now(), result: null, error: null });
@@ -2263,13 +2371,29 @@ async function runCanary() {
   });
   const job = auditJobs.get(jobId);
   const ok = job && job.state === 'done';
+  const rep = job?.result?.report || null;
+  // A degraded run still counts as a success: the prospect gets a report, nothing throws, and the
+  // health endpoint stays green. That is exactly how weeks of audits went out with a fabricated
+  // speed score and no AI-written report while every alarm stayed silent. A report built on
+  // missing inputs is an incident, so it now gets treated as one.
+  const degradedWhy = !ok ? null
+    : rep?.degraded ? `the written report fell back to the deterministic one: ${rep.degradedReason || 'the AI report call failed twice'}`
+    : rep?.speedMeasured === false ? 'Google PageSpeed returned no data, so Website and Speed is scored without a speed measurement'
+    : null;
   auditJobs.delete(jobId);
-  if (ok) {
-    if (canaryFailures >= 2) {
-      console.log('[canary] recovered after', canaryFailures, 'failures');
+  if (ok && !degradedWhy) {
+    if (canaryFailures >= 2 || canaryDegraded >= 2) {
+      console.log('[canary] recovered after', canaryFailures, 'failures and', canaryDegraded, 'degraded runs');
       await softStage(alertTeam('Audit is working again', `The prospect audit recovered and is completing normally against ${CANARY_SITE}.`), 20000, 'canary recovery alert');
     }
     canaryFailures = 0;
+    canaryDegraded = 0;
+  } else if (ok) {
+    canaryDegraded++;
+    console.error('[canary] DEGRADED', canaryDegraded, 'in a row -', degradedWhy);
+    if (canaryDegraded === 2) {
+      await softStage(alertTeam('Audit scores are degraded', `The hourly check against ${CANARY_SITE} completed, but the report is being built on incomplete data ${canaryDegraded} runs in a row.<br/><br/>Reason: ${esc(degradedWhy)}<br/><br/>Prospects are still receiving reports, but the scores in them are not fully measured. Worth fixing before sending more cold email.`), 20000, 'canary degraded alert');
+    }
   } else {
     canaryFailures++;
     console.error('[canary] FAILED', canaryFailures, 'in a row -', job?.error);
