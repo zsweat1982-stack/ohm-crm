@@ -1843,11 +1843,21 @@ app.post('/api/track', (req, res) => {
 // Calendly webhook — fires when someone books (invitee.created) or cancels.
 // Set this URL as a webhook in Calendly. We attribute via utm_content=<prospectId>.
 const NOTIFY_FALLBACK = 'zac@openheartmediaco.com';
-const NOTIFY = (process.env.NOTIFY_EMAILS || NOTIFY_FALLBACK)
+// Internal notifications go to the owner alone by default. Every audit, audit failure, booking and
+// canary alert used to fan out to the whole NOTIFY_EMAILS list, so a single systemic problem (the
+// API credit balance hitting zero, which degrades every run) paged four people repeatedly for one
+// thing one person was already fixing. Deliberately ignores NOTIFY_EMAILS rather than depending on
+// that env var being edited, because a Render env change needs a manual deploy to take effect.
+// Set NOTIFY_SOLO=false to put the whole team back on internal notifications.
+// This does NOT touch prospect-facing mail: audit reports, follow-ups and outreach are addressed to
+// the prospect and are unaffected.
+const NOTIFY_SOLO = process.env.NOTIFY_SOLO !== 'false';
+const OWNER_EMAIL = process.env.OWNER_EMAIL || NOTIFY_FALLBACK;
+const NOTIFY = (NOTIFY_SOLO ? OWNER_EMAIL : (process.env.NOTIFY_EMAILS || NOTIFY_FALLBACK))
   .split(',').map(s => s.trim()).filter(Boolean);
-if (!process.env.NOTIFY_EMAILS) {
-  console.warn(`[notify] NOTIFY_EMAILS is not set, falling back to ${NOTIFY_FALLBACK}. Set it to a comma separated list so the whole team is told about bookings and failures.`);
-}
+console.log(NOTIFY_SOLO
+  ? `[notify] solo mode: internal notifications go to ${NOTIFY.join(', ')} only. Set NOTIFY_SOLO=false to notify the whole team.`
+  : `[notify] team mode: internal notifications go to ${NOTIFY.join(', ')}.`);
 // Silence here used to be indistinguishable from success.
 function notifyTargets(what) {
   if (!process.env.SENDGRID_API_KEY) { console.warn('[notify] no SENDGRID_API_KEY, cannot send', what); return []; }
