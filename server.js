@@ -1905,6 +1905,26 @@ app.post('/api/calendly-webhook', async (req, res) => {
   } catch (e) { console.error('[calendly-webhook]', e.message); }
 });
 
+// A degraded report is the deterministic fallback: real numbers, but none of the written analysis
+// that makes the audit worth reading. Sending that to a prospect spends the one impression we get
+// on our weakest possible artifact, so it is held and worked by hand instead of delivered.
+async function notifyAuditHeld(p, email, report, reason) {
+  if (!notifyTargets('a held audit').length) return;
+  const text = `HELD, not sent to the prospect.\n\n`
+    + `A real lead completed the audit form, but the report came back degraded so it was not emailed to them.\n\n`
+    + `Business: ${p?.business || 'unknown'}\n`
+    + `Contact:  ${p?.contact_name || ''} <${email}>\n`
+    + `Website:  ${p?.website || 'n/a'}\n`
+    + `Reason:   ${reason}\n\n`
+    + `Scores from the scan (these are accurate, only the written report is missing):\n`
+    + (report.categories || []).map(c => `  ${c.name}: ${c.score}/100${c.measured === false ? ' (not measured)' : ''}`).join('\n')
+    + `\n\nThe lead is in the CRM under "Audit held". Fix the cause, re-run their scan, then send it.`;
+  try {
+    await sgMail.sendMultiple({ to: NOTIFY, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+      subject: `⚠️ Audit HELD, needs a resend${p?.business ? ': ' + p.business : ''}`, text });
+  } catch (e) { console.error('[notifyAuditHeld]', e.message); }
+}
+
 async function notifyAudit(p, email, report, pdf) {
   if (!notifyTargets('a completed audit').length) return;
   const text = `New audit completed (hot lead).\n\n`
@@ -1916,7 +1936,7 @@ async function notifyAudit(p, email, report, pdf) {
     + (report.findings || []).map(f => `- [${f.impact || ''}] ${f.title}`).join('\n')
     + `\n\nThey saw this and got a Book-a-call CTA. Follow up fast.`;
   const msg = { to: NOTIFY, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
-    subject: `🔥 Audit completed${p?.business ? ' — ' + p.business : ''}`, text };
+    subject: `🔥 Audit completed${p?.business ? ': ' + p.business : ''}`, text };
   if (pdf) msg.attachments = [{ content: pdf.toString('base64'), filename: 'audit-' + (p?.business || 'lead').replace(/[^a-z0-9]/gi, '-') + '.pdf', type: 'application/pdf', disposition: 'attachment' }];
   try { await sgMail.sendMultiple(msg); } catch (e) { console.error('[notifyAudit]', e.message); }
 }
@@ -2329,18 +2349,36 @@ async function runAuditJob(jobId, opts) {
       if (pdf && process.env.SENDGRID_API_KEY) await softStage(sendAuditToProspect(testTo, resolvedBiz, report, pdf, bookingUrl), 30000, 'test email');
       job.result = { test: true, emailedTo: (pdf && process.env.SENDGRID_API_KEY) ? testTo : null, report, business: resolvedBiz };
     } else {
+      // Quality gate on the one thing the prospect actually receives.
+      const heldReason = report.degraded
+        ? (report.degradedReason || 'the written report fell back to deterministic text')
+        : null;
+      const nowIso = new Date().toISOString();
       if (p) {
         p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
         p.contact_first = firstName; p.contact_last = lastName; p.contact_name = `${firstName} ${lastName}`.trim();
         p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
-        p.status = 'audited'; p.audited_at = new Date().toISOString(); p.updated_at = p.audited_at;
+        if (heldReason) {
+          // Deliberately NOT 'audited': that status means they received their report, and the
+          // follow-up copy branches on it to ask whether they had a chance to read it.
+          p.status = 'audit_held'; p.audit_held_at = nowIso; p.audit_held_reason = heldReason;
+        } else {
+          p.status = 'audited'; p.audited_at = nowIso;
+          p.audit_held_at = null; p.audit_held_reason = null;
+        }
+        p.updated_at = nowIso;
         try { save(prospects); } catch (e) { console.error('[audit] save failed -', e.message); }
       }
-      events.push({ type: 'audit', ref: ref || null, ts: new Date().toISOString(), email, business: p?.business || null });
+      events.push({ type: 'audit', ref: ref || null, ts: nowIso, email, business: p?.business || null, held: !!heldReason });
       try { saveMetrics(); } catch {}
-      await softStage(notifyAudit(p, email, report, pdf), 30000, 'team notification');
-      if (pdf) await softStage(sendAuditToProspect(email, p?.business || resolvedBiz, report, pdf, bookingUrl), 30000, 'prospect email');
-      job.result = { report, business: p?.business || null };
+      if (heldReason) {
+        console.warn('[audit] HELD, not emailing prospect', email, '-', heldReason);
+        await softStage(notifyAuditHeld(p, email, report, heldReason), 30000, 'held notification');
+      } else {
+        await softStage(notifyAudit(p, email, report, pdf), 30000, 'team notification');
+        if (pdf) await softStage(sendAuditToProspect(email, p?.business || resolvedBiz, report, pdf, bookingUrl), 30000, 'prospect email');
+      }
+      job.result = { report, business: p?.business || null, held: !!heldReason };
     }
     job.state = 'done';
     job.stage = 'Done';
