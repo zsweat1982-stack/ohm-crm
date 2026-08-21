@@ -2191,10 +2191,32 @@ async function prescanOne(p) {
   }
 }
 
+// A full rescan used to mean "every lead, right now", held only in memory. Render restarted this
+// instance about an hour into a twelve hour run and the job vanished, and auto-resume did nothing
+// because it only looked for leads with no report at all, which by then was none of them. Any run
+// long enough to matter will outlive the process, so the target set is now derived from the data
+// itself: rescan anything whose last scan predates the cutoff. A restart resumes automatically,
+// and leads already redone are skipped instead of repeated.
+const RESCAN_STALE_FILE = path.join(DATA_DIR, 'rescan_before.json');
+function rescanCutoff() {
+  try { return JSON.parse(fs.readFileSync(RESCAN_STALE_FILE, 'utf8')).before || null; } catch { return null; }
+}
+function setRescanCutoff(iso) {
+  if (iso) fs.writeFileSync(RESCAN_STALE_FILE, JSON.stringify({ before: iso, set_at: new Date().toISOString() }));
+  else { try { fs.unlinkSync(RESCAN_STALE_FILE); } catch {} }
+}
 function prescanTargets({ force = false } = {}) {
-  return prospects.filter(p =>
-    p.website && /^https?:\/\//i.test(p.website) &&
-    (force || (!p.prescan_at && !p.prescan_failed_at)));
+  const cutoff = rescanCutoff();
+  return prospects.filter(p => {
+    if (!p.website || !/^https?:\/\//i.test(p.website)) return false;
+    if (force) return true;
+    if (!p.prescan_at && !p.prescan_failed_at) return true;          // never scanned
+    if (cutoff) {                                                     // scanned, but before the fix
+      const last = [p.prescan_at, p.prescan_failed_at].filter(Boolean).sort().pop() || '';
+      if (last < cutoff) return true;
+    }
+    return false;
+  });
 }
 
 async function runPrescan({ limit = 0, force = false } = {}) {
@@ -2233,6 +2255,12 @@ async function runPrescan({ limit = 0, force = false } = {}) {
   prescanState.running = false;
   prescanState.current = null;
   prescanState.finishedAt = new Date().toISOString();
+  // The standing instruction has done its job once nothing is stale. Clearing it stops a restart
+  // from re-queueing a rescan that already finished.
+  if (!prescanState.stop && rescanCutoff() && !prescanTargets().length) {
+    setRescanCutoff(null);
+    console.log('[prescan] rescan complete, cutoff cleared');
+  }
   console.log(`[prescan] finished: ${prescanState.ok} ok, ${prescanState.failed} failed of ${prescanState.total}`);
   return prescanState;
 }
@@ -2856,10 +2884,14 @@ app.post('/api/prescan', (req, res) => {
   if (prescanState.running) return res.status(409).json({ error: 'a pre-scan is already running', state: prescanState });
   const limit = Number(req.body?.limit) || 0;
   const force = req.body?.force === true;
+  // Written before the run starts so a crash one minute in still leaves a resumable instruction.
+  if (force && !limit) setRescanCutoff(new Date().toISOString());
   const pending = prescanTargets({ force }).length;
   runPrescan({ limit, force }).catch(e => console.error('[prescan] run failed -', e.message));
-  res.json({ started: true, queued: limit > 0 ? Math.min(limit, pending) : pending });
+  res.json({ started: true, queued: limit > 0 ? Math.min(limit, pending) : pending, cutoff: rescanCutoff() });
 });
+// Clears the standing instruction, so a rescan can be called off without stopping the process.
+app.post('/api/prescan/clear-cutoff', (_, res) => { setRescanCutoff(null); res.json({ cleared: true }); });
 app.post('/api/prescan/stop', (_, res) => { prescanState.stop = true; res.json({ stopping: true }); });
 app.get('/api/prescan/status', (_, res) => {
   const withReport = prospects.filter(p => p.prescan_at && p.audit_report).length;
@@ -2867,6 +2899,7 @@ app.get('/api/prescan/status', (_, res) => {
   res.json({
     ...prescanState,
     remaining: prescanTargets().length,
+    rescanCutoff: rescanCutoff(),
     reportsReady: withReport,
     permanentlyFailed: failed,
     totalProspects: prospects.length,
