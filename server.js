@@ -289,6 +289,13 @@ const LANDING_URL = process.env.LANDING_URL || `http://localhost:${process.env.P
 
 // ---------- SCANNING AUDIT ENGINE (multi-page website + social + marketing + AI-search scan) ----------
 const AUDIT_UA = 'Mozilla/5.0 (compatible; OHMAuditBot/1.0; +https://openheartmediaco.com)';
+// Security plugins on WordPress (Wordfence and friends) and most WAF bot rules reject any agent
+// they do not recognise, so a self-identifying string gets a 403 from a perfectly healthy site:
+// azerplumb.com answers 403 to the line above and 200 to this one. That surfaced to the prospect
+// as "we could not load your site", which is both wrong and embarrassing on a page selling audits.
+// We lead with the honest identity and only fall back when we are actively blocked.
+const AUDIT_UA_FALLBACK = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const BLOCKED = new Set([401, 403, 405, 406, 409, 418, 429, 451]);
 
 function stripText(html) {
   return html
@@ -301,7 +308,14 @@ function stripText(html) {
 
 async function fetchPage(url, timeout = 12000) {
   try {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeout), headers: { 'User-Agent': AUDIT_UA } });
+    // From: keeps us identifiable to anyone reading their logs even on the fallback attempt.
+    const get = ua => fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(timeout),
+      headers: { 'User-Agent': ua, 'From': 'zac@openheartmediaco.com', 'Accept': 'text/html,application/xhtml+xml' } });
+    let res = await get(AUDIT_UA);
+    if (BLOCKED.has(res.status)) {
+      console.warn('[audit] blocked with', res.status, 'on', url, '- retrying as a standard browser');
+      res = await get(AUDIT_UA_FALLBACK);
+    }
     // 900KB was too small: heavy page builders (Wix, Squarespace, etc.) routinely front-load huge
     // amounts of inline script/CSS/JSON before the real body content, so real signals like the H1
     // and images were getting silently truncated away on larger sites. 6MB comfortably covers that
