@@ -310,7 +310,7 @@ async function patch(id, body){ try{ await api('/api/prospects/'+id,'PATCH',body
 async function setStatus(id, status){ await patch(id,{status}); toast('Moved to '+status); }
 async function markWon(id){ const v=prompt('Deal value for this win? (numbers only)',''); const body={status:'won'}; if(v!==null&&v.trim())body.deal_value=v; await patch(id,body); toast('🏆 Marked won'); }
 async function addNote(id){ const t=document.getElementById('noteInput').value.trim(); const by=document.getElementById('noteBy').value; if(!t){toast('Write a note first');return;} try{ await api('/api/prospects/'+id+'/note','POST',{text:t,by}); document.getElementById('noteInput').value=''; await load(); toast('Note added'); }catch(e){toast(e.message);} }
-async async function rerunAudit(id){
+async function rerunAudit(id){
   if(!confirm('Re-run this audit and email it to the lead?')) return;
   const r = await fetch('/api/prospects/'+id+'/rerun-audit',{method:'POST'});
   const j = await r.json();
@@ -318,7 +318,7 @@ async async function rerunAudit(id){
   alert('Started. It takes a couple of minutes, then it sends automatically if the report comes back clean.');
   load();
 }
-function gen(id) { toast('Drafting…'); try { await api('/api/prospects/'+id+'/generate','POST'); await load(); toast('Draft ready'); } catch(e){toast(e.message);} }
+async function gen(id) { toast('Drafting…'); try { await api('/api/prospects/'+id+'/generate','POST'); await load(); toast('Draft ready'); } catch(e){toast(e.message);} }
 async function generateAll() { toast('Drafting next 25 (may take a minute)…'); try { const r=await api('/api/generate-all','POST',{limit:25}); await load(); toast('Drafted '+r.drafted); } catch(e){toast(e.message);} }
 async function sendOne(id) { try { await api('/api/prospects/'+id+'/send','POST'); await load(); toast('Sent'); } catch(e){toast('Send failed: '+e.message);} }
 async function sendApproved() { if(!confirm('Send all approved emails now (up to your daily cap)?'))return; toast('Sending…'); try { const r=await api('/api/send-approved','POST'); await load(); toast('Sent '+r.sent+(r.errors&&r.errors.length?' ('+r.errors.length+' failed)':'')); } catch(e){toast(e.message);} }
