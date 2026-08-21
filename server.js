@@ -889,7 +889,7 @@ SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, m
 GOOGLE BUSINESS PROFILE (live from Google Places): ${gbp && gbp.found ? JSON.stringify({ rating: gbp.rating, reviews: gbp.reviews, latestReviewDaysAgo: gbp.latestReviewDays, hoursListed: gbp.hasHours, websiteLinked: gbp.websiteOnGbp, phoneListed: gbp.phoneOnGbp, photos: gbp.photos, descriptionFilled: gbp.hasDescription, primaryCategory: gbp.primaryCategory, status: gbp.status }) : (gbp && gbp.found === false ? 'NO GOOGLE BUSINESS PROFILE FOUND (major local visibility gap)' : 'not checked')}
 SOCIAL PROFILES LINKED FROM SITE: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
 PAGES ACTUALLY SCANNED (not just homepage): ${(scan.pagesScanned || ['/']).join(', ')}  (conversion, contact, and trust signals were merged across all of these pages, so if a signal is FAIL it is genuinely missing site-wide, not just off the homepage)
-AI SEARCH PRESENCE (AIO): ${aio ? JSON.stringify({ score: aio.score, aiCrawlersAllowed: aio.ready.aiCrawlersAllowed, aiCrawlersBlocked: aio.ready.aiCrawlersBlocked, structuredData: aio.ready.schema, faqSchema: aio.ready.faqSchema, entityLinks_sameAs: aio.ready.sameAs, llmsTxt: aio.ready.llmsTxt, contentDepthOk: aio.ready.contentDepth, aiKnowsThisBusiness: aio.visibility ? aio.visibility.known : 'not tested', aiWouldRecommend: aio.visibility ? aio.visibility.wouldRecommend : 'not tested', whatAiKnows: aio.visibility ? aio.visibility.whatAiKnows : null, aiKnowsCompetitors: aio.visibility ? aio.visibility.competitorsKnown : null }) : 'not checked'}
+AI SEARCH PRESENCE (AIO): ${aio ? JSON.stringify({ score: aio.score, onPageReadiness: aio.ready ? undefined : 'NOT CHECKED, their server refused our scanner', aiCrawlersAllowed: aio.ready?.aiCrawlersAllowed, aiCrawlersBlocked: aio.ready?.aiCrawlersBlocked, structuredData: aio.ready?.schema, faqSchema: aio.ready?.faqSchema, entityLinks_sameAs: aio.ready?.sameAs, llmsTxt: aio.ready?.llmsTxt, contentDepthOk: aio.ready?.contentDepth, aiKnowsThisBusiness: aio.visibility ? aio.visibility.known : 'not tested', aiWouldRecommend: aio.visibility ? aio.visibility.wouldRecommend : 'not tested', whatAiKnows: aio.visibility ? aio.visibility.whatAiKnows : null, aiKnowsCompetitors: aio.visibility ? aio.visibility.competitorsKnown : null }) : 'not checked'}
 
 PASS/FAIL CHECKLIST (already computed, use it to ground your scores):
 ${flat}
@@ -2239,26 +2239,29 @@ async function softStage(promise, ms, labelStr, fallback = null) {
 // derives one straight from the deterministic pass/fail checklist we already computed.
 function fallbackReport(p, scan, ps, gbp, aio, answers) {
   const checklist = buildChecklist(scan, ps, gbp, aio);
+  // null means "no measurable items", which is different from a low score. Handing back 50 put a
+  // made-up number on a category we knew nothing about, which is the exact fault this whole pass
+  // exists to remove.
   const scoreOf = names => {
     const items = checklist.filter(g => names.includes(g.group)).flatMap(g => g.items).filter(i => i.ok !== null && i.ok !== undefined);
-    if (!items.length) return 50;
+    if (!items.length) return null;
     return Math.round((items.filter(i => i.ok === true).length / items.length) * 100);
   };
+  const cat = (name, score, why) => score === null
+    ? { name, score: 0, measured: false, why: 'Not measured on this run, so it is left out of the overall score.' }
+    : { name, score, why };
   const perf = ps && typeof ps.performance === 'number' ? ps.performance : null;
   const categories = [
-    // Without a speed measurement the only Foundation items left are HTTPS, viewport and mixed
-    // content, and a site passing those three scored a confident 100 for "Website & Speed" while
-    // its speed was entirely unknown. Flagged as unmeasured instead, and left out of the overall.
-    { name: 'Website & Speed', score: perf !== null ? perf : scoreOf(['Foundation & Speed']),
+    { name: 'Website & Speed', score: perf !== null ? perf : (scoreOf(['Foundation & Speed']) ?? 0),
       measured: perf !== null,
       why: perf !== null ? 'Scored from the live technical scan of the site.'
         : 'Page speed could not be measured on this run, so this covers only the secure connection and mobile checks. Speed is not included in the overall score.' },
-    { name: 'Getting Found (SEO)', score: scoreOf(['Getting Found (SEO)']), why: 'Scored from on page SEO signals found during the crawl.' },
-    { name: 'Converting Visitors', score: scoreOf(['Turning Visitors Into Leads']), why: 'Scored from the contact, form, booking and call to action signals found across the pages scanned.' },
-    { name: 'Local Visibility', score: scoreOf(['Google Business Profile']), why: 'Scored from the live Google Business Profile lookup.' },
-    { name: 'Tracking & Data', score: scoreOf(['Tracking & Ad Readiness']), why: 'Scored from the analytics and advertising tags detected on the site.' },
-    { name: 'Social & Content', score: scoreOf(['Content, Media & Social']), why: 'Scored from the social profiles linked from the site and the media found on it.' },
-    { name: 'AI Search Presence (AIO)', score: aio && typeof aio.score === 'number' ? aio.score : scoreOf(['AI Search Presence (AIO)']), why: 'Scored from AI crawler access, structured data and a live check of whether AI assistants recognize this business.' },
+    cat('Getting Found (SEO)', scoreOf(['Getting Found (SEO)']), 'Scored from on page SEO signals found during the crawl.'),
+    cat('Converting Visitors', scoreOf(['Turning Visitors Into Leads']), 'Scored from the contact, form, booking and call to action signals found across the pages scanned.'),
+    cat('Local Visibility', scoreOf(['Google Business Profile']), 'Scored from the live Google Business Profile lookup.'),
+    cat('Tracking & Data', scoreOf(['Tracking & Ad Readiness']), 'Scored from the analytics and advertising tags detected on the site.'),
+    cat('Social & Content', scoreOf(['Content, Media & Social']), 'Scored from the social profiles linked from the site and the media found on it.'),
+    cat('AI Search Presence (AIO)', aio && typeof aio.score === 'number' ? aio.score : scoreOf(['AI Search Presence (AIO)']), 'Scored from AI crawler access, structured data and a live check of whether AI assistants recognize this business.'),
   ];
   const failed = checklist.flatMap(g => g.items.filter(i => i.ok === false).map(i => ({ group: g.group, label: i.label })));
   const findings = failed.slice(0, 6).map(f => ({
