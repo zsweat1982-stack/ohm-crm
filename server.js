@@ -1724,6 +1724,52 @@ app.patch('/api/prospects/:id', (req, res) => {
 });
 
 // Append a timestamped note to a lead's activity log
+// One click on a held or failed lead: run their audit again and deliver it. Same path a prospect
+// submission takes, so it re-applies the quality gate rather than force sending whatever we have.
+app.post('/api/prospects/:id/rerun-audit', (req, res) => {
+  const p = prospects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const email = p.audit_email || p.email;
+  const site = p.website;
+  if (!email) return res.status(400).json({ error: 'no email on this lead, nothing to send to' });
+  if (!site) return res.status(400).json({ error: 'no website on this lead, nothing to scan' });
+  const jobId = crypto.randomBytes(12).toString('hex');
+  enqueueAudit(jobId, {
+    ref: p.id, email, goal: p.audit_goal || null,
+    firstName: p.contact_first || '', lastName: p.contact_last || '',
+    isTest: false, site, p, lookup: null,
+    bizName: p.business || null, bizCity: p.city || null, bizCategory: p.category || null,
+  });
+  p.audit_rerun_at = new Date().toISOString();
+  try { save(prospects); } catch (e) { console.error('[rerun] save failed -', e.message); }
+  res.json({ started: true, jobId });
+});
+
+// Removing leads is irreversible, so it defaults to telling you what it WOULD remove and writes a
+// timestamped backup of the whole file before it touches anything.
+app.post('/api/prospects/purge', (req, res) => {
+  const { reason = 'unreachable', confirm = false } = req.body || {};
+  const match = p => {
+    if (reason === 'unreachable') return !!p.prescan_error && !p.prescan_at && !p.audit_report;
+    if (reason === 'no_email') return !(p.audit_email || p.email);
+    return false;
+  };
+  const doomed = prospects.filter(match);
+  const sample = doomed.slice(0, 15).map(p => ({ id: p.id, business: p.business, website: p.website, error: p.prescan_error }));
+  if (!confirm) return res.json({ dryRun: true, reason, wouldRemove: doomed.length, remaining: prospects.length - doomed.length, sample });
+  let backup = null;
+  try {
+    backup = DATA.replace(/\.json$/, '') + '.backup-' + Date.now() + '.json';
+    fs.writeFileSync(backup, JSON.stringify(prospects, null, 2));
+  } catch (e) { return res.status(500).json({ error: 'refusing to purge, backup failed: ' + e.message }); }
+  const ids = new Set(doomed.map(p => p.id));
+  const kept = prospects.filter(p => !ids.has(p.id));
+  prospects.length = 0; prospects.push(...kept);
+  save(prospects);
+  console.warn('[purge] removed', ids.size, 'leads for', reason, '- backup at', backup);
+  res.json({ removed: ids.size, remaining: prospects.length, backup, reason });
+});
+
 app.post('/api/prospects/:id/note', (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
