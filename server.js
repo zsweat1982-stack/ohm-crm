@@ -755,10 +755,19 @@ function buildChecklist(scan, ps, gbp, aio) {
   const lim = !!scan.limited;
   const L = v => (lim ? null : v);
   const LN = note => (lim ? 'not checked, the site refused our scanner' : note);
-  // Rendered-DOM fallbacks: if the raw HTML missed it but Lighthouse (real Chrome) saw it, trust Lighthouse.
-  const hasTitle = !!scan.title || ps?.renderedTitle === true;
-  const hasMetaDesc = !!scan.description || ps?.renderedMetaDesc === true;
-  const hasViewport = scan.mobileViewport || ps?.renderedViewport === true;
+  // Rendered-DOM fallbacks: if the raw HTML missed it but Lighthouse (real Chrome) saw it, trust
+  // Lighthouse. Tri-state on purpose. Lighthouse returns a null score for an audit it did not run,
+  // and azerplumb.com came back with exactly that for viewport, which the old boolean collapsed
+  // into a failure and reported as "mobile viewport is not configured" on a site that is fine.
+  // False only when we genuinely read the page and the thing was not there.
+  const sawIt = (raw, rendered) => raw === true ? true
+    : rendered === true ? true
+    : rendered === false ? false
+    : (!lim && scan.reachable === true) ? false
+    : null;
+  const hasTitle = sawIt(!!scan.title, ps?.renderedTitle);
+  const hasMetaDesc = sawIt(!!scan.description, ps?.renderedMetaDesc);
+  const hasViewport = sawIt(scan.mobileViewport === true, ps?.renderedViewport);
   const aioGroup = aio && aio.limited ? { group: 'AI Search Presence (AIO)', items: [
     ...(aio.visibility ? [
       { label: 'AI assistants recognize your business', ok: !!aio.visibility.known, note: aio.visibility.known ? (aio.visibility.confidence || '') + ' confidence' : 'not recognized' },
@@ -812,15 +821,15 @@ function buildChecklist(scan, ps, gbp, aio) {
   return [
     { group: 'Foundation & Speed', items: [
       { label: 'Secure HTTPS connection', ok: scan.https },
-      { label: 'Mobile friendly (responsive viewport)', ok: hasViewport },
+      { label: 'Mobile friendly (responsive viewport)', ok: hasViewport, note: hasViewport === null ? 'not checked' : '' },
       { label: 'Mobile page speed', ok: ps?.performance != null ? ps.performance >= 50 : null, note: ps?.performance != null ? ps.performance + '/100' : 'n/a' },
       { label: 'Largest Contentful Paint under 2.5s', ok: ps?.lcp != null ? ps.lcp <= 2500 : null, note: ps?.lcpLabel || '' },
       { label: 'Layout stable while loading (CLS)', ok: ps?.cls != null ? ps.cls <= 0.1 : null, note: ps?.clsLabel || '' },
       { label: 'No insecure mixed content', ok: L(!scan.mixedContent), note: LN('') },
     ]},
     { group: 'Getting Found (SEO)', items: [
-      { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : (hasTitle ? true : false), note: scan.title ? scan.titleLen + ' chars' : (hasTitle ? 'present (JS-rendered)' : 'missing') },
-      { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : (hasMetaDesc ? true : false), note: scan.description ? scan.descriptionLen + ' chars' : (hasMetaDesc ? 'present (JS-rendered)' : 'missing') },
+      { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : hasTitle, note: scan.title ? scan.titleLen + ' chars' : (hasTitle === true ? 'present, seen in the rendered page' : hasTitle === null ? 'not checked' : 'missing') },
+      { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : hasMetaDesc, note: scan.description ? scan.descriptionLen + ' chars' : (hasMetaDesc === true ? 'present, seen in the rendered page' : hasMetaDesc === null ? 'not checked' : 'missing') },
       { label: 'Single clear H1 headline', ok: L(scan.h1Count === 1), note: LN(scan.h1Count + ' found') },
       { label: 'Local business schema markup', ok: L(scan.schemaLocalBusiness), note: LN('') },
       { label: 'Canonical tag set', ok: L(scan.canonical), note: LN('') },
