@@ -713,6 +713,12 @@ async function scanGBP(business, city, siteHost) {
 // ---------- AI Search Presence (AIO) audit ----------
 // Combines deterministic AI-readiness signals from the crawl with a live check of what AI models actually know.
 async function scanAIO(business, city, category, scan) {
+  if (scan.limited) {
+    // Nothing on-page can be judged, but whether AI models recognise the business is independent
+    // of whether their firewall let us in, and it is usually the most interesting finding anyway.
+    const visibility = await aiVisibilityProbe(business, city, category);
+    return { ready: null, visibility, probed: !!visibility, score: null, limited: true };
+  }
   const ready = {
     aiCrawlersAllowed: scan.aiCrawlersAllowed !== false,
     aiCrawlersBlocked: scan.aiCrawlersBlocked || [],
@@ -744,11 +750,22 @@ async function scanAIO(business, city, category, scan) {
 // Build a full pass/fail checklist from the scan so the audit shows everything we looked at.
 function buildChecklist(scan, ps, gbp, aio) {
   const socials = Object.keys(scan.socials || {});
+  // With the crawl refused, every raw-HTML signal is absent because we never saw the HTML, not
+  // because the site lacks it. Same rule as everywhere else: unmeasured reports as unmeasured.
+  const lim = !!scan.limited;
+  const L = v => (lim ? null : v);
+  const LN = note => (lim ? 'not checked, the site refused our scanner' : note);
   // Rendered-DOM fallbacks: if the raw HTML missed it but Lighthouse (real Chrome) saw it, trust Lighthouse.
   const hasTitle = !!scan.title || ps?.renderedTitle === true;
   const hasMetaDesc = !!scan.description || ps?.renderedMetaDesc === true;
   const hasViewport = scan.mobileViewport || ps?.renderedViewport === true;
-  const aioGroup = aio ? { group: 'AI Search Presence (AIO)', items: [
+  const aioGroup = aio && aio.limited ? { group: 'AI Search Presence (AIO)', items: [
+    ...(aio.visibility ? [
+      { label: 'AI assistants recognize your business', ok: !!aio.visibility.known, note: aio.visibility.known ? (aio.visibility.confidence || '') + ' confidence' : 'not recognized' },
+      { label: 'AI would recommend you in your category', ok: !!aio.visibility.wouldRecommend },
+    ] : []),
+    { label: 'On-page AI readiness (schema, entity links, crawler access)', ok: null, note: 'not checked, the site refused our scanner' },
+  ]} : aio ? { group: 'AI Search Presence (AIO)', items: [
     { label: 'AI crawlers allowed (GPTBot, ClaudeBot, PerplexityBot)', ok: aio.ready.aiCrawlersAllowed, note: aio.ready.aiCrawlersBlocked.length ? 'blocking ' + aio.ready.aiCrawlersBlocked.join(', ') : 'open' },
     { label: 'Structured data so AI can read your business', ok: aio.ready.schema },
     { label: 'Entity links (sameAs) connecting your profiles', ok: aio.ready.sameAs },
@@ -762,7 +779,7 @@ function buildChecklist(scan, ps, gbp, aio) {
   ]} : null;
   // Absence of evidence is not evidence of absence. Runtime-injected tags are invisible to a raw
   // HTML scan, so without Lighthouse's rendered view we cannot honestly call a tag missing.
-  const canVerifyTags = !!(ps && ps.rendered);
+  const canVerifyTags = !!(ps && ps.rendered) && !lim;
   const tagOk = v => v ? true : (canVerifyTags ? false : null);
   const tagNote = v => v ? '' : (canVerifyTags ? '' : 'could not verify on this run');
   const gbpGroup = gbp && gbp.found ? { group: 'Google Business Profile', items: [
@@ -799,26 +816,26 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'Mobile page speed', ok: ps?.performance != null ? ps.performance >= 50 : null, note: ps?.performance != null ? ps.performance + '/100' : 'n/a' },
       { label: 'Largest Contentful Paint under 2.5s', ok: ps?.lcp != null ? ps.lcp <= 2500 : null, note: ps?.lcpLabel || '' },
       { label: 'Layout stable while loading (CLS)', ok: ps?.cls != null ? ps.cls <= 0.1 : null, note: ps?.clsLabel || '' },
-      { label: 'No insecure mixed content', ok: !scan.mixedContent },
+      { label: 'No insecure mixed content', ok: L(!scan.mixedContent), note: LN('') },
     ]},
     { group: 'Getting Found (SEO)', items: [
       { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : (hasTitle ? true : false), note: scan.title ? scan.titleLen + ' chars' : (hasTitle ? 'present (JS-rendered)' : 'missing') },
       { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : (hasMetaDesc ? true : false), note: scan.description ? scan.descriptionLen + ' chars' : (hasMetaDesc ? 'present (JS-rendered)' : 'missing') },
-      { label: 'Single clear H1 headline', ok: scan.h1Count === 1, note: scan.h1Count + ' found' },
-      { label: 'Local business schema markup', ok: scan.schemaLocalBusiness },
-      { label: 'Canonical tag set', ok: scan.canonical },
-      { label: 'Enough content on the page', ok: scan.wordCount >= 300, note: scan.wordCount + ' words' },
+      { label: 'Single clear H1 headline', ok: L(scan.h1Count === 1), note: LN(scan.h1Count + ' found') },
+      { label: 'Local business schema markup', ok: L(scan.schemaLocalBusiness), note: LN('') },
+      { label: 'Canonical tag set', ok: L(scan.canonical), note: LN('') },
+      { label: 'Enough content on the page', ok: L(scan.wordCount >= 300), note: LN(scan.wordCount + ' words') },
     ]},
     ...(gbpGroup ? [gbpGroup] : []),
     ...(aioGroup ? [aioGroup] : []),
     { group: 'Turning Visitors Into Leads', items: [
-      { label: 'Click to call phone number', ok: scan.hasPhone },
-      { label: 'Lead capture form', ok: scan.hasForm },
-      { label: 'Online booking / scheduling', ok: scan.hasBooking },
-      { label: 'Clear call to action', ok: scan.hasCta },
+      { label: 'Click to call phone number', ok: L(scan.hasPhone), note: LN('') },
+      { label: 'Lead capture form', ok: L(scan.hasForm), note: LN('') },
+      { label: 'Online booking / scheduling', ok: L(scan.hasBooking), note: LN('') },
+      { label: 'Clear call to action', ok: L(scan.hasCta), note: LN('') },
       { label: 'Live chat', ok: tagOk(scan.hasLiveChat), note: tagNote(scan.hasLiveChat) },
-      { label: 'Email / newsletter capture', ok: scan.hasNewsletter },
-      { label: 'Address listed (local trust)', ok: scan.napAddress },
+      { label: 'Email / newsletter capture', ok: L(scan.hasNewsletter), note: LN('') },
+      { label: 'Address listed (local trust)', ok: L(scan.napAddress), note: LN('') },
     ]},
     { group: 'Tracking & Ad Readiness', items: [
       { label: 'Website analytics installed', ok: tagOk(scan.analytics), note: scan.analytics ? (scan.analyticsType || '') : tagNote(scan.analytics) },
@@ -826,13 +843,13 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'Google Ads conversion tag', ok: tagOk(scan.googleAdsTag), note: tagNote(scan.googleAdsTag) },
     ]},
     { group: 'Content, Media & Social', items: [
-      { label: 'Video on site', ok: scan.hasVideo },
-      { label: 'Images have alt text', ok: scan.imgCount ? scan.imgMissingAlt === 0 : null, note: scan.imgCount ? (scan.imgCount - scan.imgMissingAlt) + '/' + scan.imgCount : 'none' },
-      { label: 'Social share preview (Open Graph)', ok: scan.ogTitle && scan.ogImage },
-      { label: 'Facebook linked', ok: socials.includes('facebook') },
-      { label: 'Instagram linked', ok: socials.includes('instagram') },
-      { label: 'YouTube linked', ok: socials.includes('youtube') },
-      { label: 'TikTok linked', ok: socials.includes('tiktok') },
+      { label: 'Video on site', ok: L(scan.hasVideo), note: LN('') },
+      { label: 'Images have alt text', ok: lim ? null : (scan.imgCount ? scan.imgMissingAlt === 0 : null), note: LN(scan.imgCount ? (scan.imgCount - scan.imgMissingAlt) + '/' + scan.imgCount : 'none') },
+      { label: 'Social share preview (Open Graph)', ok: L(scan.ogTitle && scan.ogImage), note: LN('') },
+      { label: 'Facebook linked', ok: L(socials.includes('facebook')), note: LN('') },
+      { label: 'Instagram linked', ok: L(socials.includes('instagram')), note: LN('') },
+      { label: 'YouTube linked', ok: L(socials.includes('youtube')), note: LN('') },
+      { label: 'TikTok linked', ok: L(socials.includes('tiktok')), note: LN('') },
     ]},
   ];
 }
@@ -845,6 +862,9 @@ async function generateAuditReport(p, scan, ps, gbp, answers, aio) {
   // it as unknown instead of turning a blind spot into a finding.
   const unverifiable = [];
   const caveated = [];
+  if (scan.limited) {
+    unverifiable.push('EVERYTHING ON THE PAGE ITSELF. Their server refused our scanner, so we never received the HTML. We have Google Lighthouse\'s rendered measurements and their Google Business Profile, and nothing else. Do not comment on their content, contact options, forms, booking, tracking tags, social links, schema or headings in any way, and do not imply any of them are missing. Say once, plainly, that a firewall on their hosting blocked our scanner so this report covers speed, Google visibility and AI presence only, and note that the block itself is worth checking since it can also affect how search engines reach the site.');
+  }
   if (!ps) unverifiable.push('page load speed, Core Web Vitals, and anything about how fast or slow the site is');
   if (!ps || !ps.rendered) unverifiable.push('analytics, Meta pixel, Google Ads tag and live chat (these are injected after page load and cannot be seen without a rendered page load)');
   if (gbp && gbp.found && gbp.hasDescription === null) unverifiable.push('whether the Google Business Profile description is filled in (Google does not expose it)');
@@ -914,6 +934,7 @@ Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype wo
   // Lets the canary, the dashboard and the PDF tell a fully measured audit apart from one that is
   // missing a real input. Without it a partial audit is indistinguishable from a complete one.
   report.speedMeasured = !!ps;
+  report.limited = !!scan.limited;
   // Mark it on the category itself so the overall score can leave it out rather than average in a
   // number nobody measured.
   if (!ps) {
@@ -2256,6 +2277,7 @@ function fallbackReport(p, scan, ps, gbp, aio, answers) {
     checklist,
     pagespeed: ps || null,
     speedMeasured: !!ps,
+    limited: !!scan.limited,
     degraded: true,
   };
 }
@@ -2291,7 +2313,18 @@ async function runAuditJob(jobId, opts) {
 
     setStage('Scanning your website');
     const scan = await timed('scan', () => withTimeout(scanWebsite(site), budget(75000), 'website scan'));
-    if (!scan.reachable && !scan.title) throw new Error(`could not reach ${site}`);
+    if (!scan.reachable && !scan.title) {
+      // Being refused is not the same as being down. Host firewalls routinely block datacenter IPs
+      // (azerplumb.com answers us with a 403 from Render and a 200 from a laptop), while Google's
+      // Lighthouse crawls from Google's own ranges and gets through. If it did, we still hold real
+      // rendered measurements of the page and owe the prospect a report built on them, rather than
+      // telling the owner of a perfectly healthy site that we could not load it.
+      const psEarly = await psPromise;
+      if (!psEarly) throw new Error(`could not reach ${site}`);
+      console.warn('[audit] crawl refused for', site, '- continuing on Lighthouse data alone');
+      scan.limited = true;
+      scan.host = scan.host || (() => { try { return new URL(site.startsWith('http') ? site : 'https://' + site).host.replace(/^www\./, ''); } catch { return null; } })();
+    }
 
     // Falls back to the site's own title so an organic visitor still gets a named report and a
     // real Google Business lookup instead of both being skipped.
