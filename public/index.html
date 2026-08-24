@@ -255,6 +255,10 @@ function renderDrawer(p){
         ${st!=='lost'&&st!=='won'?`<button onclick="setStatus('${p.id}','lost')">Lost</button>`:''}
         ${st!=='rejected'?`<button class="red" onclick="setStatus('${p.id}','rejected')">Reject</button>`:''}
         ${st==='new'||!p.body?`<button class="primary" onclick="gen('${p.id}')">✍️ Generate email</button>`:''}
+        ${p.body?`<div style="margin:12px 0;padding:10px 12px;background:#f5f7fb;border-left:3px solid #df3131;border-radius:4px">
+          <div style="font-size:10px;letter-spacing:.12em;color:#8a97ad;font-weight:700;margin-bottom:4px">INBOX PREVIEW</div>
+          <div style="font-size:12.5px;color:#57607a;line-height:1.5">${esc(p.preview||p.body.replace(/\s+/g,' ').trim().slice(0,110))}…</div>
+        </div>`:''}
         ${(st==='audit_held'||st==='audit_failed')?`<button class="primary" onclick="rerunAudit('${p.id}')">🔁 Re-run audit and send</button>`:''}
       </div>
     </div>

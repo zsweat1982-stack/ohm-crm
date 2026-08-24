@@ -266,12 +266,18 @@ function finishDraft(r, p) {
     out.subject = out.subject.slice(0, 45).replace(/\s+\S*$/, '').trim();
   }
 
+  // These emails are plain text, deliberately, because that is what survives spam filters and
+  // reads like a person. Plain text has no preheader to set: Gmail builds the preview from the
+  // opening of the body. So rather than pretend we control a separate field, compute exactly what
+  // the inbox will show and store it, so it can be read and edited before anything is sent.
+  out.preview = '';
   const link = reportUrl(p);
   if (out.body.includes('[LINK]')) out.body = out.body.replace('[LINK]', link);
   else out.body = out.body.replace(/\n*Michelle,/, `\n\n${link}\n\nMichelle,`);
   if (!out.body.includes(link)) out.body += `\n\n${link}`;
   // Asked for in the prompt and dropped every single time, so it is enforced rather than requested.
   if (!/Michelle/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\n\nMichelle Baker\nOpen Heart Media';
+  out.preview = out.body.replace(/\s+/g, ' ').trim().slice(0, 110);
   // A recognisable domain they can look up themselves. Wariness about links from strangers is
   // reasonable, and the answer is giving them something checkable, not a shorter URL.
   if (!/openheartmediaco\.com\s*$/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\nopenheartmediaco.com';
@@ -1782,12 +1788,17 @@ app.post('/api/prospects/:id/note', (req, res) => {
   res.json(p);
 });
 
+// Preview is derived, never authored: recomputing it here keeps it honest for leads drafted
+// before this existed.
+function inboxPreview(body) {
+  return String(body || '').replace(/\s+/g, ' ').trim().slice(0, 110);
+}
 app.post('/api/prospects/:id/generate', async (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   try {
     const d = await draftEmail(p);
-    p.subject = d.subject; p.body = d.body;
+    p.subject = d.subject; p.body = d.body; p.preview = inboxPreview(d.body);
     if (p.status === 'new') p.status = 'drafted';
     p.updated_at = new Date().toISOString();
     save(prospects);
@@ -1802,7 +1813,7 @@ app.post('/api/generate-all', async (req, res) => {
   for (const p of todo) {
     try {
       const d = await draftEmail(p);
-      p.subject = d.subject; p.body = d.body;
+      p.subject = d.subject; p.body = d.body; p.preview = inboxPreview(d.body);
       if (p.status === 'new') p.status = 'drafted';
       p.updated_at = new Date().toISOString();
       done++;
@@ -1945,6 +1956,14 @@ const NOTIFY_SOLO = process.env.NOTIFY_SOLO !== 'false';
 const OWNER_EMAIL = process.env.OWNER_EMAIL || NOTIFY_FALLBACK;
 const NOTIFY = (NOTIFY_SOLO ? OWNER_EMAIL : (process.env.NOTIFY_EMAILS || NOTIFY_FALLBACK))
   .split(',').map(s => s.trim()).filter(Boolean);
+// Two lists, because two different jobs. NOTIFY carries the system alarms (canary, failures, held
+// audits) and stays with whoever fixes things. SALES carries the commercial events (a booking, a
+// completed audit) and has to include whoever is actually selling: Michelle sends every one of
+// these emails and hosts the discovery call, so a booking landing only in Zac's inbox is a lead
+// waiting on a forward.
+const SALES = (process.env.SALES_EMAILS || `${OWNER_EMAIL},michelle@openheartmediaco.com`)
+  .split(',').map(s => s.trim()).filter(Boolean);
+console.log('[notify] alarms ->', NOTIFY.join(', '), '| sales ->', SALES.join(', '));
 console.log(NOTIFY_SOLO
   ? `[notify] solo mode: internal notifications go to ${NOTIFY.join(', ')} only. Set NOTIFY_SOLO=false to notify the whole team.`
   : `[notify] team mode: internal notifications go to ${NOTIFY.join(', ')}.`);
@@ -1964,7 +1983,7 @@ async function notifyBooking(info) {
     + `Event: ${info.eventName || 'Discovery call'}\n`;
   try {
     await sgMail.sendMultiple({
-      to: NOTIFY,
+      to: SALES,
       from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
       subject: `📅 New call booked${info.business ? ' — ' + info.business : ''}`,
       text,
@@ -2025,7 +2044,7 @@ async function notifyAudit(p, email, report, pdf) {
     + (report.categories || []).map(c => `  ${c.name}: ${c.score}/100`).join('\n') + `\n\n`
     + (report.findings || []).map(f => `- [${f.impact || ''}] ${f.title}`).join('\n')
     + `\n\nThey saw this and got a Book-a-call CTA. Follow up fast.`;
-  const msg = { to: NOTIFY, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+  const msg = { to: SALES, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
     subject: `🔥 Audit completed${p?.business ? ': ' + p.business : ''}`, text };
   if (pdf) msg.attachments = [{ content: pdf.toString('base64'), filename: 'audit-' + (p?.business || 'lead').replace(/[^a-z0-9]/gi, '-') + '.pdf', type: 'application/pdf', disposition: 'attachment' }];
   try { await sgMail.sendMultiple(msg); } catch (e) { console.error('[notifyAudit]', e.message); }
