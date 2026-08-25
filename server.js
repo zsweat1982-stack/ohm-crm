@@ -2227,24 +2227,33 @@ async function prescanOne(p) {
 // long enough to matter will outlive the process, so the target set is now derived from the data
 // itself: rescan anything whose last scan predates the cutoff. A restart resumes automatically,
 // and leads already redone are skipped instead of repeated.
+// The cutoff was one-directional ("anything last scanned BEFORE this"), which fits a fix rolling
+// forward. It does not fit an outage: when the Anthropic credit balance ran out mid-run, every
+// lead scanned AFTER that moment got a deterministic fallback narrative instead of a written
+// report. Those are the leads that need redoing, and they are the newest ones, so `before` alone
+// can only select them by also reselecting the ~950 that are already good. `after` is the other
+// half of the same window, and both persist so a restart still resumes the right set.
 const RESCAN_STALE_FILE = path.join(DATA_DIR, 'rescan_before.json');
-function rescanCutoff() {
-  try { return JSON.parse(fs.readFileSync(RESCAN_STALE_FILE, 'utf8')).before || null; } catch { return null; }
+function rescanWindow() {
+  try {
+    const j = JSON.parse(fs.readFileSync(RESCAN_STALE_FILE, 'utf8'));
+    return { before: j.before || null, after: j.after || null };
+  } catch { return { before: null, after: null }; }
 }
-function setRescanCutoff(iso) {
-  if (iso) fs.writeFileSync(RESCAN_STALE_FILE, JSON.stringify({ before: iso, set_at: new Date().toISOString() }));
+function rescanCutoff() { return rescanWindow().before; }
+function setRescanCutoff(iso, after) {
+  if (iso || after) fs.writeFileSync(RESCAN_STALE_FILE, JSON.stringify({ before: iso || null, after: after || null, set_at: new Date().toISOString() }));
   else { try { fs.unlinkSync(RESCAN_STALE_FILE); } catch {} }
 }
 function prescanTargets({ force = false } = {}) {
-  const cutoff = rescanCutoff();
+  const { before, after } = rescanWindow();
   return prospects.filter(p => {
     if (!p.website || !/^https?:\/\//i.test(p.website)) return false;
     if (force) return true;
     if (!p.prescan_at && !p.prescan_failed_at) return true;          // never scanned
-    if (cutoff) {                                                     // scanned, but before the fix
-      const last = [p.prescan_at, p.prescan_failed_at].filter(Boolean).sort().pop() || '';
-      if (last < cutoff) return true;
-    }
+    const last = [p.prescan_at, p.prescan_failed_at].filter(Boolean).sort().pop() || '';
+    if (before && last < before) return true;                         // scanned before the fix
+    if (after && last > after) return true;                           // scanned during the outage
     return false;
   });
 }
@@ -2914,8 +2923,10 @@ app.post('/api/prescan', (req, res) => {
   if (prescanState.running) return res.status(409).json({ error: 'a pre-scan is already running', state: prescanState });
   const limit = Number(req.body?.limit) || 0;
   const force = req.body?.force === true;
+  const after = typeof req.body?.after === 'string' ? req.body.after : null;
   // Written before the run starts so a crash one minute in still leaves a resumable instruction.
-  if (force && !limit) setRescanCutoff(new Date().toISOString());
+  if (after) setRescanCutoff(null, after);
+  else if (force && !limit) setRescanCutoff(new Date().toISOString());
   const pending = prescanTargets({ force }).length;
   runPrescan({ limit, force }).catch(e => console.error('[prescan] run failed -', e.message));
   res.json({ started: true, queued: limit > 0 ? Math.min(limit, pending) : pending, cutoff: rescanCutoff() });
