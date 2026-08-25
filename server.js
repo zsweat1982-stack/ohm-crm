@@ -2295,8 +2295,8 @@ const RESCAN_STALE_FILE = path.join(DATA_DIR, 'rescan_before.json');
 function rescanWindow() {
   try {
     const j = JSON.parse(fs.readFileSync(RESCAN_STALE_FILE, 'utf8'));
-    return { before: j.before || null, after: j.after || null };
-  } catch { return { before: null, after: null }; }
+    return { before: j.before || null, after: j.after || null, until: j.set_at || null };
+  } catch { return { before: null, after: null, until: null }; }
 }
 function rescanCutoff() { return rescanWindow().before; }
 function setRescanCutoff(iso, after) {
@@ -2304,14 +2304,18 @@ function setRescanCutoff(iso, after) {
   else { try { fs.unlinkSync(RESCAN_STALE_FILE); } catch {} }
 }
 function prescanTargets({ force = false } = {}) {
-  const { before, after } = rescanWindow();
+  const { before, after, until } = rescanWindow();
   return prospects.filter(p => {
     if (!p.website || !/^https?:\/\//i.test(p.website)) return false;
     if (force) return true;
     if (!p.prescan_at && !p.prescan_failed_at) return true;          // never scanned
     const last = [p.prescan_at, p.prescan_failed_at].filter(Boolean).sort().pop() || '';
     if (before && last < before) return true;                         // scanned before the fix
-    if (after && last > after) return true;                           // scanned during the outage
+    // The outage window needs BOTH ends. `before` is self closing: redoing a lead stamps it with
+    // now, which is later than the cutoff, so it drops out of the set. `after` is not, because a
+    // fresh timestamp is still later than the outage and the lead reselects itself forever. The
+    // moment the instruction was written is the upper bound, so anything redone since is done.
+    if (after && last > after && (!until || last < until)) return true;
     return false;
   });
 }
