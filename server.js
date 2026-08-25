@@ -2888,28 +2888,63 @@ app.post('/api/audit', async (req, res) => {
 });
 
 // Metrics aggregate for the dashboard
+// Everything before the first real send was us: preview renders, link tests, a test booking, and
+// a few report pages opened to check they worked. Counted alongside the campaign it produced a
+// dashboard that was confidently wrong, most visibly a "visit rate" of 40% built from four
+// visitors who arrived days before a single email existed. The baseline is the line between the
+// two. Events stay on disk; the dashboard just stops counting the rehearsal.
+const METRICS_BASELINE_FILE = path.join(DATA_DIR, 'metrics_baseline.json');
+function metricsBaseline() {
+  try { return JSON.parse(fs.readFileSync(METRICS_BASELINE_FILE, 'utf8')).since || null; } catch { return null; }
+}
+app.post('/api/metrics/baseline', (req, res) => {
+  const since = req.body?.since || new Date().toISOString();
+  if (since === 'clear') { try { fs.unlinkSync(METRICS_BASELINE_FILE); } catch {} return res.json({ since: null }); }
+  fs.writeFileSync(METRICS_BASELINE_FILE, JSON.stringify({ since, set_at: new Date().toISOString() }));
+  res.json({ since });
+});
+
 app.get('/api/metrics', (_, res) => {
-  const views = events.filter(e => e.type === 'view');
-  const clicks = events.filter(e => e.type === 'click');
+  const since = metricsBaseline();
+  const live = since ? events.filter(e => (e.ts || '') >= since) : events;
+  const views = live.filter(e => e.type === 'view');
+  const clicks = live.filter(e => e.type === 'click');
   const uniqRefsViewed = new Set(views.map(e => e.ref).filter(Boolean));
   const nameOf = id => (prospects.find(p => p.id === id)?.business) || id || '(untagged)';
   const perRef = {};
-  for (const e of events) {
+  for (const e of live) {
     const k = e.ref || '(untagged)';
     perRef[k] = perRef[k] || { business: nameOf(e.ref), views: 0, clicks: 0 };
     perRef[k][e.type === 'click' ? 'clicks' : 'views']++;
   }
-  const booked = events.filter(e => e.type === 'booked');
-  const sent = prospects.filter(p => ['sent', 'clicked', 'replied', 'booked'].includes(p.status)).length;
+  const booked = live.filter(e => e.type === 'booked');
+
+  // Count what actually left the building. Keying this off status meant a bounce three minutes
+  // later removed the lead from the sent total, so the denominator shrank every time delivery got
+  // worse and the rates above it quietly improved.
+  const outbound = prospects.filter(p => p.sent_at && (!since || p.sent_at >= since));
+  const sent = outbound.length;
+  const bounced = outbound.filter(p => p.status === 'unreachable').length;
+  const complained = outbound.filter(p => p.unsubscribed_at && p.status === 'rejected').length;
+  const delivered = sent - bounced;
+
   res.json({
+    since,
     totals: {
       sent,
+      delivered,
+      bounced,
+      bounceRate: sent ? Math.round((bounced / sent) * 100) : 0,
+      complained,
       views: views.length,
       uniqueVisitors: uniqRefsViewed.size,
       clicks: clicks.length,
       booked: booked.length,
-      clickRate: sent ? Math.round((uniqRefsViewed.size / sent) * 100) : 0,
-      bookRate: views.length ? Math.round((clicks.length / views.length) * 100) : 0,
+      // Of the people who could have opened it, how many did. Delivered is the honest denominator:
+      // a bounced address was never given the chance.
+      visitRate: delivered ? Math.round((uniqRefsViewed.size / delivered) * 100) : 0,
+      clickRate: views.length ? Math.round((clicks.length / views.length) * 100) : 0,
+      bookRate: delivered ? Math.round((booked.length / delivered) * 100) : 0,
     },
     perRef: Object.entries(perRef).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.clicks - a.clicks || b.views - a.views),
   });

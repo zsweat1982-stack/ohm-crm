@@ -165,11 +165,12 @@ async function loadMetrics() {
     const m = await api('/api/metrics'); const t = m.totals;
     document.getElementById('metrics').innerHTML =
       `<div class="m">Emails sent<b>${t.sent}</b></div>`
-    + `<div class="m">Page visits<b>${t.views}</b></div>`
-    + `<div class="m">Unique visitors<b>${t.uniqueVisitors}</b></div>`
+    + `<div class="m">Delivered<b>${t.delivered!=null?t.delivered:t.sent}</b></div>`
+    + `<div class="m"${(t.bounceRate||0)>=5?' style="color:#df3131"':''}>Bounced<b>${t.bounced||0}${t.sent?' ('+(t.bounceRate||0)+'%)':''}</b></div>`
+    + `<div class="m">Report opened<b>${t.uniqueVisitors}</b></div>`
     + `<div class="m">Book clicks<b>${t.clicks}</b></div>`
     + `<div class="m">📅 Calls booked<b>${t.booked||0}</b></div>`
-    + `<div class="m">Visit rate<b>${t.clickRate}%</b></div>`
+    + `<div class="m">Open rate<b>${t.visitRate!=null?t.visitRate:0}%</b></div>`
     + `<a href="/go?ref=PREVIEW" target="_blank">↗ View the live landing page</a>`;
   } catch(e){}
 }
