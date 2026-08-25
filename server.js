@@ -263,7 +263,18 @@ function finishDraft(r, p) {
   out.subject = out.subject.replace(/[!.]+$/, '').trim();
   if (out.subject) out.subject = out.subject.charAt(0).toUpperCase() + out.subject.slice(1);
   if (out.subject.length > 45) {
-    out.subject = out.subject.slice(0, 45).replace(/\s+\S*$/, '').trim();
+    // Cutting at 45 and stopping used to leave the subject hanging mid-clause ("Your site takes
+    // 6.9 seconds to load on a"), which reads as a broken email rather than a short one. Trim the
+    // partial word, then keep dropping trailing connectives until the line ends on a word that can
+    // actually end a sentence. If that leaves nothing usable, keep the model's line intact and let
+    // the inbox truncate it, because an over-long real sentence beats a severed one.
+    let cut = out.subject.slice(0, 45).replace(/\s+\S*$/, '').trim();
+    let prev;
+    do {
+      prev = cut;
+      cut = cut.replace(/[\s,;:]+(?:in|on|at|to|of|for|a|an|the|your|our|and|or|with|from|by|into|about|that|this|is|are|was|were|it|its|you|they|who|when|where|how|why)$/i, '').trim();
+    } while (cut !== prev);
+    out.subject = cut.length >= 18 ? cut : out.subject.trim();
   }
 
   // These emails are plain text, deliberately, because that is what survives spam filters and
@@ -2757,13 +2768,13 @@ app.post('/api/prospects/:id/send', async (req, res) => {
   if (!p) return res.status(404).json({ error: 'not found' });
   if (!p.email || !p.email.includes('@')) return res.status(400).json({ error: 'no valid email' });
   if (p.status !== 'approved') return res.status(400).json({ error: 'must be approved first' });
+  if (p.unsubscribed_at) return res.status(400).json({ error: 'lead has unsubscribed' });
   try {
-    const [r] = await sgMail.send({
-      to: p.email,
-      from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
-      subject: p.subject,
-      text: p.body,
-    });
+    // Must go through sendMail, not sgMail.send: sendMail is what attaches the CAN-SPAM footer
+    // (unsubscribe link + physical address), honours the suppression check, and tags the message
+    // with prospect_id for attribution. Sending one lead by hand from the dashboard is still a
+    // commercial email and carries exactly the same obligations as the bulk run.
+    const r = await sendMail(p, p.subject, p.body, { kind: 'cold' });
     p.status = 'sent'; p.sent_at = new Date().toISOString(); p.updated_at = p.sent_at;
     p.provider_id = r.headers['x-message-id'] || null;
     save(prospects);
