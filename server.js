@@ -2720,6 +2720,162 @@ async function runCanary() {
     }
   }
 }
+// ---------- Watching for replies ----------
+// The footer promises "reply STOP and we will not contact you again", and until now that promise
+// was kept by a person remembering to read the inbox. Nothing set a lead to 'replied' either, so
+// somebody who wrote back "not interested" still collected follow ups on days 3, 7 and 10. The
+// follow up loop already skips 'replied' and 'rejected'; it was never told when to.
+//
+// This watches Michelle's mailbox rather than intercepting her mail. SendGrid's Inbound Parse
+// would need an MX record on a subdomain and would take delivery of the reply, so a human answer
+// would arrive as a forward instead of a normal thread. Reading the mailbox leaves every reply
+// exactly where she expects it and lets the CRM draw its own conclusions.
+const GMAIL_TOKEN_FILE = path.join(DATA_DIR, 'gmail_token.json');
+const GMAIL_SEEN_FILE = path.join(DATA_DIR, 'gmail_seen.json');
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GMAIL_REDIRECT = `${PUBLIC_URL}/api/gmail/callback`;
+
+function gmailToken() { try { return JSON.parse(fs.readFileSync(GMAIL_TOKEN_FILE, 'utf8')); } catch { return null; } }
+function saveGmailToken(t) { fs.writeFileSync(GMAIL_TOKEN_FILE, JSON.stringify(t)); }
+function gmailSeen() { try { return new Set(JSON.parse(fs.readFileSync(GMAIL_SEEN_FILE, 'utf8'))); } catch { return new Set(); } }
+function saveGmailSeen(set) {
+  // Bounded: only recent ids matter, and the query never looks back more than a few days anyway.
+  const arr = [...set].slice(-4000);
+  try { fs.writeFileSync(GMAIL_SEEN_FILE, JSON.stringify(arr)); } catch {}
+}
+
+async function gmailAccessToken() {
+  const t = gmailToken();
+  if (!t || !t.refresh_token) return null;
+  if (t.access_token && t.expires_at && Date.now() < t.expires_at - 60000) return t.access_token;
+  const body = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET,
+    refresh_token: t.refresh_token, grant_type: 'refresh_token',
+  });
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
+  if (!r.ok) { console.error('[gmail] refresh failed', r.status, (await r.text()).slice(0, 200)); return null; }
+  const j = await r.json();
+  saveGmailToken({ ...t, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 });
+  return j.access_token;
+}
+
+// Step one of consent. Behind the team login, so only someone already in the CRM can start it.
+app.get('/api/gmail/connect', (req, res) => {
+  if (!GOOGLE_CLIENT_ID) return res.status(400).send('GOOGLE_CLIENT_ID is not set on this service.');
+  const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  u.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+  u.searchParams.set('redirect_uri', GMAIL_REDIRECT);
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly');
+  u.searchParams.set('access_type', 'offline');
+  u.searchParams.set('prompt', 'consent');       // force a refresh_token even on a repeat consent
+  res.redirect(u.toString());
+});
+
+app.get('/api/gmail/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.status(400).send('No code returned.');
+  try {
+    const body = new URLSearchParams({
+      code: String(code), client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: GMAIL_REDIRECT, grant_type: 'authorization_code',
+    });
+    const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
+    const j = await r.json();
+    if (!j.refresh_token) return res.status(400).send('Google did not return a refresh token. Revoke the app at myaccount.google.com/permissions and try again.');
+    saveGmailToken({ refresh_token: j.refresh_token, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 });
+    console.log('[gmail] connected');
+    res.send('<body style="font:16px -apple-system,sans-serif;padding:40px">Gmail connected. Replies will now stop the follow up sequence automatically. You can close this tab.</body>');
+  } catch (e) { res.status(500).send('Failed: ' + e.message); }
+});
+
+const STOP_RE = /^\s*(stop|unsubscribe|remove me|take me off|opt out|no thanks,? ?stop)\b/i;
+
+// A prospect who replies from a different mailbox at the same company is still that prospect, so
+// the domain is a fallback. Free mail hosts are excluded from that rule for obvious reasons.
+const FREEMAIL = /^(gmail|yahoo|hotmail|outlook|live|aol|icloud|me|msn|comcast|bellsouth|att|verizon|proton|protonmail)\./i;
+function prospectForSender(addr) {
+  const email = String(addr || '').toLowerCase().trim();
+  if (!email.includes('@')) return null;
+  const exact = prospects.find(p => p.sent_at && (p.email || '').toLowerCase().trim() === email);
+  if (exact) return exact;
+  const dom = email.split('@')[1];
+  if (!dom || FREEMAIL.test(dom)) return null;
+  return prospects.find(p => {
+    if (!p.sent_at) return false;
+    const pd = (p.email || '').toLowerCase().split('@')[1];
+    return pd && pd === dom;
+  }) || null;
+}
+
+async function checkGmailReplies() {
+  if (!GOOGLE_CLIENT_ID || !gmailToken()) return 0;
+  const tok = await gmailAccessToken();
+  if (!tok) return 0;
+  const auth = { Authorization: `Bearer ${tok}` };
+  // Bounded window, and never our own outbound.
+  const q = encodeURIComponent('newer_than:3d -in:sent -in:chats');
+  const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=${q}`, { headers: auth });
+  if (!listRes.ok) { console.error('[gmail] list failed', listRes.status); return 0; }
+  const { messages = [] } = await listRes.json();
+  const seen = gmailSeen();
+  let hits = 0;
+  for (const m of messages) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    const detRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`, { headers: auth });
+    if (!detRes.ok) continue;
+    const det = await detRes.json();
+    const hdr = Object.fromEntries((det.payload?.headers || []).map(h => [h.name.toLowerCase(), h.value]));
+    const from = (hdr.from || '').match(/<([^>]+)>/)?.[1] || (hdr.from || '');
+    const p = prospectForSender(from);
+    if (!p) continue;
+    const now = new Date().toISOString();
+    const snippet = det.snippet || '';
+    const isStop = STOP_RE.test(snippet) || STOP_RE.test(hdr.subject || '');
+    if (!Array.isArray(p.notes)) p.notes = [];
+    if (isStop) {
+      p.unsubscribed_at = p.unsubscribed_at || now;
+      p.status = 'rejected';
+      p.notes.push({ ts: now, by: null, text: `Replied asking to stop. Suppressed. "${snippet.slice(0, 120)}"` });
+    } else if (p.status !== 'booked' && p.status !== 'won') {
+      p.status = 'replied';
+      p.replied_at = p.replied_at || now;
+      p.notes.push({ ts: now, by: null, text: `Replied: "${snippet.slice(0, 160)}"` });
+    } else { continue; }
+    p.updated_at = now;
+    hits++;
+    try {
+      if (notifyTargets('a reply').length) {
+        await sgMail.sendMultiple({
+          to: SALES,
+          from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+          subject: isStop ? `Opt out: ${p.business || from}` : `Reply from ${p.business || from}`,
+          text: `${isStop ? 'They asked to be removed and have been suppressed.' : 'They replied. The follow up sequence is stopped.'}\n\n`
+            + `Business: ${p.business || 'unknown'}\nFrom: ${from}\nSubject: ${hdr.subject || ''}\n\n${snippet}\n\n`
+            + `The full message is in the mailbox as normal.`,
+        });
+      }
+    } catch (e) { console.error('[gmail] notify failed', e.message); }
+  }
+  if (hits) { try { save(prospects); } catch (e) { console.error('[gmail] save failed', e.message); } }
+  saveGmailSeen(seen);
+  if (hits) console.log('[gmail]', hits, 'replies matched to leads');
+  return hits;
+}
+
+app.get('/api/gmail/status', (_, res) => {
+  res.json({ configured: !!GOOGLE_CLIENT_ID, connected: !!gmailToken(), redirect: GMAIL_REDIRECT });
+});
+app.post('/api/gmail/check', async (_, res) => {
+  try { res.json({ matched: await checkGmailReplies() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+setInterval(() => { checkGmailReplies().catch(e => console.error('[gmail]', e.message)); }, 5 * 60 * 1000);
+setTimeout(() => { checkGmailReplies().catch(() => {}); }, 60 * 1000);
+
 // ---------- SendGrid delivery events ----------
 // Sending was previously a one way street: sendMail reported whether SendGrid ACCEPTED the
 // message, and nothing after that. A real bounce arrives minutes or hours later, asynchronously,
