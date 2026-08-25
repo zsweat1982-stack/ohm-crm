@@ -1693,7 +1693,11 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
 // '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
 // creating an account or logging in to anything.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/login', '/api/login', '/api/logout'];
+// '/api/gmail/callback' has to be here: Google redirects the browser back to PUBLIC_URL, which is
+// the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
+// callback would bounce to /login and drop the one time code. The code is worthless without the
+// client secret, and Google will only redirect to a URI registered on the OAuth client.
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
