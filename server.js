@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import sgMail from '@sendgrid/mail';
 import PDFDocument from 'pdfkit';
 import crypto from 'crypto';
+import dns from 'dns/promises';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Runtime data lives in DATA_DIR (a persistent disk in production). The committed ./data folder
@@ -1606,9 +1607,66 @@ function isPermanentFailure(err) {
 
 // The one place mail leaves this system. Suppression and the footer are enforced here so a new
 // send path cannot be added later that quietly skips either.
+// ---------- Is this address worth spending domain reputation on? ----------
+// The only test this system ever applied to an address was whether it contained an "@". Every row
+// came in from a scrape and nothing looked at it again, which held up fine for as long as nothing
+// was actually sent. The first real batch had four addresses in fifteen that should never have
+// gone out: two placeholder domains belonging to unrelated companies, one web agency, and one
+// misspelled domain with no mail server at all.
+//
+// A hard bounce and a stranger's spam complaint both cost the sending domain, and a young domain
+// has no reputation to spend. So the check happens here, once, in the one place every message
+// passes through, rather than depending on somebody reading the list first.
+
+// Domains that are template boilerplate rather than a business. Scrapers lift these straight off
+// a site's own placeholder copy, and they resolve to real companies who never heard of the lead.
+const PLACEHOLDER_DOMAINS = new Set([
+  'company.com', 'example.com', 'example.org', 'example.net', 'domain.com', 'yourdomain.com',
+  'mysite.com', 'yoursite.com', 'website.com', 'email.com', 'test.com', 'sample.com',
+  'fashionshop.com', 'secret.com', 'mydomain.com', 'sitename.com',
+]);
+
+const mxCache = new Map();                                   // domain -> { ok, ts }
+const MX_TTL_MS = 24 * 60 * 60 * 1000;
+async function domainAcceptsMail(domain) {
+  const hit = mxCache.get(domain);
+  if (hit && Date.now() - hit.ts < MX_TTL_MS) return hit.ok;
+  let ok;
+  try {
+    const mx = await dns.resolveMx(domain);
+    ok = Array.isArray(mx) && mx.length > 0;
+  } catch (e) {
+    // NXDOMAIN and "no records" are answers: nothing there accepts mail. A timeout or a resolver
+    // failure is not an answer, so let it through rather than parking a good lead on a bad lookup.
+    ok = !(e && (e.code === 'ENOTFOUND' || e.code === 'ENODATA'));
+  }
+  mxCache.set(domain, { ok, ts: Date.now() });
+  return ok;
+}
+
+// Returns null when the address is worth sending to, or a human readable reason when it is not.
+async function addressProblem(email) {
+  const addr = String(email || '').trim();
+  // Deliberately stricter than "has an @". The scrape put fragments of Google Maps URLs in this
+  // column ("+LLC/@34.10254", "//www.google.com/maps/place/.../@33.665614"), and those satisfy any
+  // check loose enough to accept a real address but loose enough to accept a slash or a numeric
+  // TLD. No slashes, and the TLD has to be letters.
+  if (!/^[^\s@/]+@[^\s@/]+\.[A-Za-z]{2,}$/.test(addr)) return 'not a valid email address';
+  const domain = addr.split('@')[1].toLowerCase();
+  if (PLACEHOLDER_DOMAINS.has(domain)) {
+    return `${domain} is placeholder text a scraper lifted from their site, not their real address`;
+  }
+  if (!(await domainAcceptsMail(domain))) {
+    return `${domain} has no mail server, so this would hard bounce`;
+  }
+  return null;
+}
+
 async function sendMail(p, subject, body, { kind = 'outreach' } = {}) {
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
   if (!p.email || !p.email.includes('@')) throw Object.assign(new Error('no valid email'), { permanent: true });
+  const problem = await addressProblem(p.email);
+  if (problem) throw Object.assign(new Error(problem), { permanent: true });
   const [r] = await sgMail.send({
     to: p.email,
     from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
@@ -1635,7 +1693,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
 // '/unsubscribe' MUST stay here: CAN-SPAM requires the opt-out to work without the recipient
 // creating an account or logging in to anything.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/login', '/api/login', '/api/logout'];
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/login', '/api/login', '/api/logout'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -2658,6 +2716,87 @@ async function runCanary() {
     }
   }
 }
+// ---------- SendGrid delivery events ----------
+// Sending was previously a one way street: sendMail reported whether SendGrid ACCEPTED the
+// message, and nothing after that. A real bounce arrives minutes or hours later, asynchronously,
+// so a dead address stayed 'sent' and then collected follow ups on days 3, 7 and 10. On a scraped
+// list that is four hits on a mailbox that does not exist, repeated across however many bad rows
+// the list carries, which is exactly how a young sending domain gets throttled.
+//
+// Every message already leaves with customArgs.prospect_id attached, so SendGrid hands the lead
+// back to us in the event payload and no matching heuristics are needed. Email is only a fallback
+// for anything sent before that was true.
+const SG_EVENT_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('sendgrid-events-v1').digest('hex').slice(0, 32);
+function sgEventUrl() { return `${PUBLIC_URL}/api/sendgrid-events?k=${SG_EVENT_TOKEN}`; }
+
+app.post('/api/sendgrid-events', async (req, res) => {
+  // The URL carries an unguessable token derived from AUTH_SECRET. Anyone who cannot read the
+  // server env cannot post here, and rotating AUTH_SECRET rotates this with it.
+  const given = String(req.query.k || '');
+  const want = Buffer.from(SG_EVENT_TOKEN);
+  const got = Buffer.from(given);
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.status(403).end();
+  res.status(200).end();                       // ack immediately, SendGrid retries on anything else
+
+  const batch = Array.isArray(req.body) ? req.body : [];
+  let changed = 0;
+  const complaints = [];
+  for (const ev of batch) {
+    const p = (ev.prospect_id && prospects.find(x => String(x.id) === String(ev.prospect_id)))
+      || (ev.email && prospects.find(x => (x.email || '').toLowerCase() === String(ev.email).toLowerCase()));
+    if (!p) continue;
+    const now = new Date().toISOString();
+    const park = (why) => {
+      if (p.status !== 'unreachable') { p.status = 'unreachable'; changed++; }
+      p.updated_at = now; p.last_send_error = why;
+      if (!Array.isArray(p.notes)) p.notes = [];
+      p.notes.push({ ts: now, by: null, text: why });
+    };
+    switch (ev.event) {
+      case 'delivered':
+        if (!p.delivered_at) { p.delivered_at = now; changed++; }
+        break;
+      case 'bounce':
+        // 'blocked' is a receiving server saying not right now; a real bounce is the address
+        // being wrong. Only the latter is permanent.
+        if (ev.type === 'blocked') {
+          p.soft_bounces = (p.soft_bounces || 0) + 1; changed++;
+          if (p.soft_bounces >= 3) park(`Blocked by the receiving server ${p.soft_bounces} times. Parked.`);
+        } else {
+          park(`Hard bounce: ${ev.reason || 'address rejected'}`);
+        }
+        break;
+      case 'dropped':
+        // SendGrid refused to even attempt it, usually because the address is already suppressed.
+        park(`Dropped before sending: ${ev.reason || 'on the suppression list'}`);
+        break;
+      case 'spamreport':
+        // The most expensive event there is. Suppress permanently and tell someone.
+        p.unsubscribed_at = p.unsubscribed_at || now;
+        p.status = 'rejected'; p.updated_at = now; changed++;
+        if (!Array.isArray(p.notes)) p.notes = [];
+        p.notes.push({ ts: now, by: null, text: 'Marked this as spam. Suppressed permanently.' });
+        complaints.push(p);
+        break;
+      case 'unsubscribe':
+      case 'group_unsubscribe':
+        if (!p.unsubscribed_at) {
+          p.unsubscribed_at = now; p.status = 'rejected'; p.updated_at = now; changed++;
+          if (!Array.isArray(p.notes)) p.notes = [];
+          p.notes.push({ ts: now, by: null, text: 'Unsubscribed via SendGrid.' });
+        }
+        break;
+      default: break;                          // processed, open, deferred and the rest are noise here
+    }
+  }
+  if (changed) { try { save(prospects); } catch (e) { console.error('[sg-events] save failed -', e.message); } }
+  if (complaints.length) {
+    const rows = complaints.map(p => `${esc(p.business || p.id)} (${esc(p.email || '')})`).join('<br/>');
+    await alertTeam('Spam complaint', `A recipient marked our cold email as spam.<br/><br/>${rows}<br/><br/>They are suppressed and will not be contacted again. Complaints are the fastest way to lose the sending domain, so if this happens more than once in a batch it is worth pausing and rereading the copy before sending more.`).catch(() => {});
+  }
+  if (batch.length) console.log('[sg-events]', batch.length, 'events,', changed, 'leads updated');
+});
+
 async function alertTeam(subject, html) {
   if (!process.env.SENDGRID_API_KEY) return;
   const to = NOTIFY;
