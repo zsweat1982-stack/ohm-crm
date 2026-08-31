@@ -1662,19 +1662,21 @@ async function addressProblem(email) {
   return null;
 }
 
-async function sendMail(p, subject, body, { kind = 'outreach' } = {}) {
+async function sendMail(p, subject, body, { kind = 'outreach', attachments = null } = {}) {
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
   if (!p.email || !p.email.includes('@')) throw Object.assign(new Error('no valid email'), { permanent: true });
   const problem = await addressProblem(p.email);
   if (problem) throw Object.assign(new Error(problem), { permanent: true });
-  const [r] = await sgMail.send({
+  const msg = {
     to: p.email,
     from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
     subject,
     text: body + complianceFooter(p),
     trackingSettings: { subscriptionTracking: { enable: false } },
     customArgs: { prospect_id: String(p.id), kind },
-  });
+  };
+  if (attachments && attachments.length) msg.attachments = attachments;
+  const [r] = await sgMail.send(msg);
   return r;
 }
 
@@ -1697,7 +1699,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout'];
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/qualify', '/guide'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -2998,6 +3000,16 @@ app.post('/api/audit', async (req, res) => {
   const { ref, email, goal, website, test } = req.body || {};
   const firstName = (req.body?.firstName || '').trim();
   const lastName = (req.body?.lastName || '').trim();
+  // Campaign landing pages send a phone number and their traffic source alongside the scan. The
+  // scan itself does not need either, but a lead with a phone number is worth calling and a lead
+  // with a source is the only way to tell paid traffic from cold email later.
+  const phone = String(req.body?.phone || '').trim().slice(0, 40);
+  const bizTyped = String(req.body?.business || '').trim().slice(0, 200);
+  const campaign = {};
+  for (const k of ['source', 'page', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid']) {
+    const v = String(req.body?.[k] || '').trim().slice(0, 300);
+    if (v) campaign[k] = v;
+  }
   if (!firstName || !lastName) return res.status(400).json({ error: 'first and last name required' });
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'valid email required' });
   if (!website || !website.trim()) return res.status(400).json({ error: 'website required' });
@@ -3024,18 +3036,23 @@ app.post('/api/audit', async (req, res) => {
       leadRow.contact_first = firstName; leadRow.contact_last = lastName;
       leadRow.contact_name = `${firstName} ${lastName}`.trim();
       leadRow.audit_email = email; leadRow.audit_goal = goal || null;
+      if (phone) leadRow.phone = leadRow.phone || phone;
+      if (bizTyped) leadRow.business = leadRow.business || bizTyped;
+      if (Object.keys(campaign).length) leadRow.campaign = { ...(leadRow.campaign || {}), ...campaign };
       if (!['audited', 'booked', 'won', 'replied'].includes(leadRow.status)) leadRow.status = 'audit_requested';
       leadRow.audit_requested_at = nowIso; leadRow.updated_at = nowIso;
     } else {
       // Organic visitor with no ref: create a new lead so they are not lost.
       leadRow = {
         id: 'W' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
-        business: '', category: '', city: '', phone: '', website: site,
+        business: bizTyped, category: '', city: '', phone, website: site,
         rating: '', reviews: '', email, subject: '', body: '', notes: '',
         handled_by: '', deal_value: '',
         contact_first: firstName, contact_last: lastName, contact_name: `${firstName} ${lastName}`.trim(),
         audit_email: email, audit_goal: goal || null,
-        status: 'audit_requested', source: 'self_serve', audit_requested_at: nowIso, updated_at: nowIso,
+        status: 'audit_requested', source: campaign.source || 'self_serve',
+        campaign: Object.keys(campaign).length ? campaign : undefined,
+        audit_requested_at: nowIso, updated_at: nowIso,
       };
       prospects.push(leadRow);
     }
@@ -3045,6 +3062,261 @@ app.post('/api/audit', async (req, res) => {
   const jobId = crypto.randomBytes(12).toString('hex');
   enqueueAudit(jobId, { ref, email, goal, firstName, lastName, isTest, site, p: leadRow && !isTest ? leadRow : p, lookup, bizName: bizName || (leadRow && leadRow.business) || null, bizCity, bizCategory });
   res.status(202).json({ jobId, state: 'queued' });
+});
+
+
+// ---------- Lead magnet: the "Free guide" modal on the marketing site ----------
+// The site lives on a different origin (and inside a sandboxed artifact frame while it is being
+// designed), so this needs CORS and it cannot rely on a redirect. It answers JSON and the modal
+// stays put.
+//
+// The guide is ATTACHED rather than only linked. A link alone means the lead has to click twice
+// and the second click happens in a mail client we do not control. It also goes through sendMail
+// like everything else, so the CAN-SPAM footer, the unsubscribe link and the address check are
+// applied here exactly as they are on a cold send. There is deliberately no second path.
+const GUIDE_PDF = path.join(__dirname, 'public', 'guide', 'rank-higher-without-us.pdf');
+const GUIDE_URL = `${PUBLIC_URL}/guide/rank-higher-without-us.pdf`;
+const SUB_RATE_MAX = Number(process.env.SUBSCRIBE_RATE_MAX || 4);
+const subHits = new Map();
+function subscribeRateLimited(ip) {
+  const now = Date.now();
+  const hits = (subHits.get(ip) || []).filter(t => now - t < AUDIT_RATE_WINDOW_MS);
+  if (hits.length >= SUB_RATE_MAX) { subHits.set(ip, hits); return true; }
+  hits.push(now); subHits.set(ip, hits);
+  if (subHits.size > 5000) for (const [k, v] of subHits) if (!v.some(t => now - t < AUDIT_RATE_WINDOW_MS)) subHits.delete(k);
+  return false;
+}
+
+function guideEmail(first) {
+  const hi = first ? `Hi ${first},` : 'Hi,';
+  return `${hi}
+
+Here is the guide, attached. It is also here if the attachment does not come through:
+${GUIDE_URL}
+
+It is sixteen pages and it holds nothing back. Every step we run for paying clients, in the order we run them, with the tools named.
+
+Read chapter one first. It is about your website, and it is the layer everything else depends on. There is one fix in there that takes ten minutes and beats everything else in the document for most local businesses.
+
+Each chapter ends with an honest count of the hours it takes. That part matters more than the steps.
+
+If you get stuck or you want it run for you, just reply to this email. It comes straight to us.
+
+Zac Sweat
+Open Heart Media
+Canton, GA`;
+}
+
+app.options('/api/subscribe', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+  }).status(204).end();
+});
+
+app.post('/api/subscribe', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', req.headers.origin || '*');
+
+  const body = req.body || {};
+  // Honeypot. A real person never fills a hidden field; a bot fills every field it finds.
+  // Answer 200 so the bot cannot tell it was caught and does not come back to probe.
+  if (String(body.company || '').trim()) return res.json({ ok: true });
+
+  const first = String(body.name || body.first || '').trim().slice(0, 80);
+  const email = String(body.email || '').trim().toLowerCase().slice(0, 254);
+  if (!first) return res.status(400).json({ error: 'Please add your first name.' });
+
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  if (subscribeRateLimited(ip)) {
+    return res.status(429).json({ error: 'That has been requested a few times already. Give it an hour, or just email us.' });
+  }
+
+  // Same address check the cold sends use. Sending a lead magnet to a dead domain still costs the
+  // sending domain, and the person is standing right there so we can tell them instead of bouncing.
+  const problem = await addressProblem(email);
+  if (problem) {
+    return res.status(400).json({ error: 'That email address does not look deliverable. Mind checking it?' });
+  }
+
+  const nowIso = new Date().toISOString();
+  let row = prospects.find(x => (x.email || '').toLowerCase() === email
+    || (x.audit_email || '').toLowerCase() === email);
+
+  if (row) {
+    // Already known, possibly from the cold list. An inbound request is a much warmer signal than
+    // a scrape, so record it, but never downgrade a status that is further along.
+    row.contact_first = row.contact_first || first;
+    row.contact_name = row.contact_name || first;
+    row.guide_requested_at = nowIso;
+    row.updated_at = nowIso;
+    if (['new', 'drafted', 'approved', 'unreachable', 'rejected'].includes(row.status)) row.status = 'subscriber';
+  } else {
+    row = {
+      id: 'G' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+      business: '', category: '', city: '', phone: '', website: '',
+      rating: '', reviews: '', email, subject: '', body: '', notes: '',
+      handled_by: '', deal_value: '',
+      contact_first: first, contact_name: first,
+      status: 'subscriber', source: 'guide',
+      guide_requested_at: nowIso, updated_at: nowIso,
+      // CAN-SPAM wants to know where consent came from if it is ever questioned.
+      consent: { at: nowIso, ip, source: 'free-guide-modal', page: String(body.page || '').slice(0, 200) },
+    };
+    prospects.push(row);
+  }
+  try { save(prospects); } catch (e) { console.error('[subscribe] save failed -', e.message); }
+
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('[subscribe] no SENDGRID_API_KEY, captured but not sent:', email);
+    return res.json({ ok: true, sent: false, url: GUIDE_URL });
+  }
+
+  try {
+    const pdf = fs.readFileSync(GUIDE_PDF);
+    await sendMail(row, 'Your copy of Rank Higher Without Us', guideEmail(first), {
+      kind: 'guide',
+      attachments: [{
+        content: pdf.toString('base64'),
+        filename: 'Rank-Higher-Without-Us.pdf',
+        type: 'application/pdf',
+        disposition: 'attachment',
+      }],
+    });
+    // Deliberately NOT sent_at. That field drives the cold-outreach daily cap, and a requested
+    // lead magnet must not eat a cold send from the day's budget.
+    row.guide_sent_at = new Date().toISOString();
+    row.updated_at = row.guide_sent_at;
+    try { save(prospects); } catch (e) { console.error('[subscribe] save failed -', e.message); }
+    return res.json({ ok: true, sent: true, url: GUIDE_URL });
+  } catch (e) {
+    const msg = e.response?.body?.errors?.[0]?.message || e.message;
+    row.guide_error = msg;
+    try { save(prospects); } catch {}
+    console.error('[subscribe] send failed -', email, msg);
+    // The lead is captured either way, so give them the file rather than a dead end.
+    return res.status(200).json({ ok: true, sent: false, url: GUIDE_URL,
+      note: 'We could not email it just now, but you can download it directly.' });
+  }
+});
+
+
+// ---------- Inbound qualified lead (contact form + campaign landing pages) ----------
+// The website's long qualifying form and the cold-outreach landing page both post here. It was
+// pointed at a route that did not exist, so every completed form came back 401 and the visitor
+// got "that did not send". These are the warmest leads the business gets; they do not get to fail
+// quietly. Public by necessity, so it carries the same honeypot and rate limit as /api/subscribe.
+const QUALIFY_RATE_MAX = Number(process.env.QUALIFY_RATE_MAX || 6);
+const qualHits = new Map();
+function qualifyRateLimited(ip) {
+  const now = Date.now();
+  const hits = (qualHits.get(ip) || []).filter(t => now - t < AUDIT_RATE_WINDOW_MS);
+  if (hits.length >= QUALIFY_RATE_MAX) { qualHits.set(ip, hits); return true; }
+  hits.push(now); qualHits.set(ip, hits);
+  if (qualHits.size > 5000) for (const [k, v] of qualHits) if (!v.some(t => now - t < AUDIT_RATE_WINDOW_MS)) qualHits.delete(k);
+  return false;
+}
+
+// Everything the two forms can send. The website form asks all of it; the landing page asks for
+// five fields and leaves the rest empty, which is deliberate: a paid click that has to answer
+// twelve questions does not convert.
+const QUALIFY_FIELDS = ['business', 'website', 'name', 'role', 'email', 'phone',
+  'spend', 'value', 'timing', 'decision', 'term', 'tried', 'goal',
+  'source', 'page', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+  'gclid', 'fbclid', 'src'];
+
+function qualifyEmailBody(d, row) {
+  const line = (k, v) => (v ? `${k}: ${v}\n` : '');
+  return `New lead from ${d.source || 'the website'}.
+
+${line('Business', d.business)}${line('Website', d.website)}${line('Name', d.name)}${line('Role', d.role)}${line('Email', d.email)}${line('Phone', d.phone)}
+${line('Monthly ad spend', d.spend)}${line('Average job value', d.value)}${line('Timing', d.timing)}${line('Decision maker', d.decision)}${line('Commitment', d.term)}
+${line('What they have tried', d.tried)}${line('What they want', d.goal)}
+${line('Campaign', [d.utm_source, d.utm_medium, d.utm_campaign].filter(Boolean).join(' / '))}${line('Landed on', d.page)}
+In the CRM: ${process.env.APP_URL || 'https://app.openheartmediaco.com'}/#/prospect/${row.id}
+`;
+}
+
+app.options('/api/qualify', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+  }).status(204).end();
+});
+
+app.post('/api/qualify', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const body = req.body || {};
+
+  // Honeypot, answered 200 so a bot learns nothing and does not come back to probe.
+  if (String(body.company_website || body.company || '').trim()) return res.json({ ok: true });
+
+  const d = {};
+  for (const k of QUALIFY_FIELDS) d[k] = String(body[k] == null ? '' : body[k]).trim().slice(0, 500);
+  d.email = d.email.toLowerCase().slice(0, 254);
+
+  if (!d.name || !d.business) return res.status(400).json({ error: 'Please add your name and business.' });
+  if (!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(d.email)) return res.status(400).json({ error: 'That email does not look right.' });
+  if (d.phone.replace(/\D/g, '').length < 10) return res.status(400).json({ error: 'Please add a phone number we can reach you on.' });
+
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  if (qualifyRateLimited(ip)) {
+    return res.status(429).json({ error: 'That has come through a few times already. Give it an hour, or call us on 404-491-1466.' });
+  }
+
+  const nowIso = new Date().toISOString();
+  let row = prospects.find(x => (x.email || '').toLowerCase() === d.email
+    || (x.audit_email || '').toLowerCase() === d.email);
+
+  if (row) {
+    // Known already, usually from the cold list. Somebody filling in a qualifying form is a far
+    // stronger signal than a scrape, so it moves forward, but a status further along is never
+    // walked backwards by an inbound form.
+    row.business = row.business || d.business;
+    row.website = row.website || d.website;
+    row.phone = row.phone || d.phone;
+    row.contact_name = row.contact_name || d.name;
+    row.contact_first = row.contact_first || d.name.split(' ')[0];
+    if (['new', 'drafted', 'approved', 'unreachable', 'rejected', 'subscriber'].includes(row.status)) row.status = 'lead';
+  } else {
+    row = {
+      id: 'L' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+      business: d.business, category: '', city: '', phone: d.phone, website: d.website,
+      rating: '', reviews: '', email: d.email, subject: '', body: '', notes: '',
+      handled_by: '', deal_value: d.value || '',
+      contact_first: d.name.split(' ')[0], contact_name: d.name,
+      status: 'lead', source: d.source || 'website-form',
+      created_at: nowIso, updated_at: nowIso,
+      consent: { at: nowIso, ip, source: d.source || 'website-form', page: d.page },
+    };
+    prospects.push(row);
+  }
+  row.qualify = { at: nowIso, ...d };
+  row.updated_at = nowIso;
+  try { save(prospects); } catch (e) { console.error('[qualify] save failed -', e.message); }
+
+  // The lead is on disk before anything else can fail. The notification is best effort: if
+  // SendGrid is down the lead is still captured and still in the CRM.
+  try {
+    if (process.env.SENDGRID_API_KEY && SALES.length) {
+      await sgMail.sendMultiple({
+        to: SALES,
+        from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+        replyTo: d.email,
+        subject: `New lead: ${d.business}${d.timing ? ' (' + d.timing + ')' : ''}`,
+        text: qualifyEmailBody(d, row),
+      });
+    } else {
+      console.warn('[qualify] captured but not notified:', d.email);
+    }
+  } catch (e) {
+    console.error('[qualify] notify failed -', e.message);
+  }
+
+  return res.json({ ok: true, id: row.id });
 });
 
 // Metrics aggregate for the dashboard
@@ -3129,9 +3401,10 @@ app.post('/api/prospects/:id/send', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.response?.body?.errors?.[0]?.message || e.message }); }
 });
 
-app.post('/api/send-approved', async (req, res) => {
-  let budget = DAILY_CAP - sentToday();
-  if (budget <= 0) return res.json({ sent: 0, reason: 'daily cap reached' });
+// Extracted from the route so the scheduler below and the button in the dashboard run the exact
+// same code. Two implementations of "send the approved ones" would drift, and the one that drifts
+// is the one nobody is watching.
+async function sendApprovedBatch(budget) {
   const queue = prospects.filter(p =>
     p.status === 'approved' && !p.unsubscribed_at && p.email && p.email.includes('@'));
   let sent = 0; const errors = []; let parked = 0;
@@ -3160,7 +3433,13 @@ app.post('/api/send-approved', async (req, res) => {
       errors.push({ id: p.id, error: msg, parked: p.status === 'unreachable' });
     }
   }
-  res.json({ sent, parked, remainingBudget: budget, errors });
+  return { sent, parked, remainingBudget: budget, errors };
+}
+
+app.post('/api/send-approved', async (req, res) => {
+  const budget = DAILY_CAP - sentToday();
+  if (budget <= 0) return res.json({ sent: 0, reason: 'daily cap reached' });
+  res.json(await sendApprovedBatch(budget));
 });
 
 // ---------- 3 / 7 / 10 day follow-up sequence ----------
@@ -3306,6 +3585,132 @@ async function followupTick(reason) {
 }
 setInterval(() => followupTick('interval'), 60 * 60 * 1000);
 setTimeout(() => followupTick('boot catch-up'), 90 * 1000);
+
+
+// ---------- Automatic daily cold send ----------
+// Cold sending was the only part of this system that still needed a person. Follow-ups ran on
+// their own hourly tick, but the first touch required somebody to draft a batch, approve it and
+// press send. Any day that did not happen, nothing went out at all: on 29 Aug the queue held
+// zero approved and 1,279 prospects that had never been drafted, so the day sent nothing while
+// the list sat there. This closes that loop.
+//
+// Everything that gated a manual send still gates this one. sendMail refuses an unsubscribed
+// lead, checks the address is deliverable before spending the sending domain on it, and parks a
+// lead as unreachable after a permanent failure instead of retrying it forever.
+const AUTOSEND = process.env.AUTOSEND !== '0';        // kill switch, no deploy needed
+const AUTOSEND_HOUR_START = Number(process.env.AUTOSEND_HOUR_START || 9);
+const AUTOSEND_HOUR_END = Number(process.env.AUTOSEND_HOUR_END || 16);
+const AUTOSEND_TZ = process.env.AUTOSEND_TZ || 'America/New_York';
+const AUTOSEND_STAMP = path.join(DATA_DIR, 'autosend_last_run.json');
+
+function localNow() {
+  // Render runs in UTC. A cold email that lands at 4am reads as a blast, so the window has to be
+  // the recipient's working day, not the server's.
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: AUTOSEND_TZ, hour: 'numeric', hour12: false, weekday: 'short',
+  }).formatToParts(new Date());
+  const hour = Number(f.find(x => x.type === 'hour').value);
+  const day = f.find(x => x.type === 'weekday').value;
+  return { hour, day };
+}
+function inSendWindow() {
+  const { hour, day } = localNow();
+  if (day === 'Sat' || day === 'Sun') return false;   // weekend cold email performs badly
+  return hour >= AUTOSEND_HOUR_START && hour < AUTOSEND_HOUR_END;
+}
+function lastAutosendRun() {
+  try { return new Date(JSON.parse(fs.readFileSync(AUTOSEND_STAMP, 'utf8')).ts).getTime(); } catch { return 0; }
+}
+function stampAutosendRun() {
+  try { fs.writeFileSync(AUTOSEND_STAMP, JSON.stringify({ ts: new Date().toISOString() })); } catch {}
+}
+
+async function runDailyCold() {
+  // Follow-ups draw on the same cap. Counting them here is what stops a heavy follow-up day from
+  // pushing the total over the limit that protects the sending domain.
+  let budget = DAILY_CAP - sentToday() - followupsSentToday();
+  if (budget <= 0) return { sent: 0, drafted: 0, approved: 0, reason: 'daily cap reached' };
+
+  // Draft only what is missing, so a queue left over from yesterday is used before writing more.
+  const readyNow = prospects.filter(p => p.status === 'approved').length;
+  let drafted = 0;
+  const need = budget - readyNow;
+  if (need > 0) {
+    const todo = prospects
+      .filter(p => p.status === 'new' && p.email && p.email.includes('@') && !p.unsubscribed_at)
+      .slice(0, need);
+    for (const p of todo) {
+      try {
+        const d = await draftEmail(p);
+        p.subject = d.subject; p.body = d.body; p.preview = inboxPreview(d.body);
+        p.status = 'drafted';
+        p.updated_at = new Date().toISOString();
+        drafted++;
+        save(prospects);
+      } catch (e) {
+        console.error('[autosend] draft failed', p.id, e.message);
+      }
+    }
+  }
+
+  // A draft that came back empty is a failed generation, not something to mail to a stranger.
+  let approved = 0;
+  for (const p of prospects) {
+    if (approved >= budget) break;
+    if (p.status !== 'drafted') continue;
+    if (!p.subject || !p.body || p.body.trim().length < 120) continue;
+    if (p.unsubscribed_at || !p.email || !p.email.includes('@')) continue;
+    p.status = 'approved';
+    p.approved_by = 'auto';
+    p.updated_at = new Date().toISOString();
+    approved++;
+  }
+  if (approved) save(prospects);
+
+  const result = await sendApprovedBatch(budget);
+  console.log('[autosend] drafted', drafted, 'approved', approved, 'sent', result.sent, 'parked', result.parked);
+  return { ...result, drafted, approved };
+}
+
+async function autosendTick(reason) {
+  if (!AUTOSEND) return;
+  if (Date.now() - lastAutosendRun() < 20 * 60 * 60 * 1000) return;  // once a day
+  if (!inSendWindow()) return;
+  stampAutosendRun();
+  console.log('[autosend] running,', reason);
+  try { await runDailyCold(); } catch (e) { console.error('[autosend] run failed -', e.message); }
+}
+// Same belt and braces as the follow-ups: the interval is the fast path, and the boot check
+// catches a day missed while the instance was idled out or redeploying.
+setInterval(() => autosendTick('interval'), 30 * 60 * 1000);
+setTimeout(() => autosendTick('boot catch-up'), 120 * 1000);
+
+// Manual trigger, for testing and for a day you want it to go early. Ignores the window and the
+// once-a-day stamp on purpose, but still respects the cap.
+app.post('/api/run-autosend', async (_, res) => {
+  try {
+    stampAutosendRun();
+    res.json(await runDailyCold());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/autosend-status', (_, res) => {
+  const { hour, day } = localNow();
+  res.json({
+    enabled: AUTOSEND,
+    window: `${AUTOSEND_HOUR_START}:00 to ${AUTOSEND_HOUR_END}:00 ${AUTOSEND_TZ}, weekdays`,
+    localHour: hour, localDay: day, inWindow: inSendWindow(),
+    lastRun: lastAutosendRun() ? new Date(lastAutosendRun()).toISOString() : null,
+    dailyCap: DAILY_CAP,
+    sentToday: sentToday(), followupsToday: followupsSentToday(),
+    budgetLeft: Math.max(0, DAILY_CAP - sentToday() - followupsSentToday()),
+    queue: {
+      approved: prospects.filter(p => p.status === 'approved').length,
+      drafted: prospects.filter(p => p.status === 'drafted').length,
+      new: prospects.filter(p => p.status === 'new').length,
+    },
+  });
+});
 
 app.post('/api/reseed', (_, res) => { prospects = seedFromCsv(); res.json({ count: prospects.length }); });
 
