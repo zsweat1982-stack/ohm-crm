@@ -1662,9 +1662,61 @@ async function addressProblem(email) {
   return null;
 }
 
+// ---------- SendGrid suppression sync ----------
+// addressProblem() checks syntax, placeholder domains and whether the DOMAIN accepts mail. It
+// cannot tell that a real domain has no such mailbox, which is what "552 mailbox not found" and
+// "550 user unknown" are, and those were 21 of 344 sends. SendGrid already knows every address
+// that has failed: it keeps bounces, blocks and invalids and silently drops future mail to them.
+// The CRM was never told, so it kept drafting (an Anthropic call each) and attempting addresses
+// that could never be delivered. Pull that list in and park them once.
+const SUPPRESSED = new Set();
+
+async function refreshSuppressions() {
+  if (!process.env.SENDGRID_API_KEY) return 0;
+  const groups = ['bounces', 'blocks', 'invalid_emails', 'spam_reports'];
+  let added = 0;
+  for (const g of groups) {
+    try {
+      const r = await fetch(`https://api.sendgrid.com/v3/suppression/${g}?limit=500`, {
+        headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}` },
+      });
+      if (!r.ok) continue;
+      for (const row of await r.json()) {
+        const e = String(row.email || '').toLowerCase();
+        if (e && !SUPPRESSED.has(e)) { SUPPRESSED.add(e); added++; }
+      }
+    } catch (e) { console.error('[suppression]', g, e.message); }
+  }
+  // Park anyone in the pipeline who is on that list, so they stop consuming queue slots.
+  let parked = 0;
+  const now = new Date().toISOString();
+  for (const p of prospects) {
+    const e = (p.email || '').toLowerCase();
+    if (!e || !SUPPRESSED.has(e)) continue;
+    if (p.status === 'unreachable' || p.status === 'won' || p.status === 'lost') continue;
+    p.status = 'unreachable';
+    p.updated_at = now;
+    p.last_send_error = 'On the SendGrid suppression list, mail to this address is dropped.';
+    parked++;
+  }
+  if (parked) { try { save(prospects); } catch {} }
+  console.log(`[suppression] ${SUPPRESSED.size} known-bad addresses, parked ${parked} prospects`);
+  return parked;
+}
+
+function isSuppressed(email) {
+  return SUPPRESSED.has(String(email || '').toLowerCase());
+}
+
+setTimeout(() => { refreshSuppressions().catch(e => console.error('[suppression]', e.message)); }, 20 * 1000);
+setInterval(() => { refreshSuppressions().catch(e => console.error('[suppression]', e.message)); }, 6 * 60 * 60 * 1000);
+
 async function sendMail(p, subject, body, { kind = 'outreach', attachments = null } = {}) {
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
   if (!p.email || !p.email.includes('@')) throw Object.assign(new Error('no valid email'), { permanent: true });
+  if (isSuppressed(p.email)) {
+    throw Object.assign(new Error('SendGrid already suppresses this address, it would be dropped'), { permanent: true });
+  }
   const problem = await addressProblem(p.email);
   if (problem) throw Object.assign(new Error(problem), { permanent: true });
   const msg = {
