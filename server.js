@@ -1935,11 +1935,45 @@ app.get(['/report/:slug', '/r/:slug'], (req, res) => {
   const short = m[1].toLowerCase();
   const p = prospects.find(x => reportToken(x.id).slice(0, 8) === short);
   if (!p) return res.redirect('/go');
+  // Record the visit HERE, on the server, rather than trusting a browser call.
+  // This link is the only one in a cold email, so arriving on it IS the click.
+  // /api/track was written to do this and nothing ever called it, so every
+  // prospect who read their own audit stayed at status "sent", which made the
+  // warmest people in the pipeline invisible. Server side cannot be blocked by
+  // an ad blocker, a privacy setting or a mail client prefetching nothing.
+  recordReportVisit(p, req);
   res.send(renderLandingPage(p.id, reportToken(p.id)));
 });
 
+// Shared by the report link and by /go?ref=, so both entry points attribute.
+function recordReportVisit(p, req) {
+  if (!p) return;
+  // Mail scanners fetch links to check them. A hit with no browser-shaped user
+  // agent is not a person, and counting it would flip prospects to "clicked"
+  // the moment a corporate filter looked at the mail.
+  const ua = String((req && req.headers && req.headers['user-agent']) || '');
+  if (!/Mozilla|Chrome|Safari|Firefox|Edg/i.test(ua)) return;
+  const now = new Date().toISOString();
+  let changed = false;
+  if (!p.viewed_at) { p.viewed_at = now; changed = true; }
+  if (!p.clicked_at) { p.clicked_at = now; changed = true; }
+  if (p.status === 'sent') { p.status = 'clicked'; changed = true; }
+  if (changed) {
+    p.updated_at = now;
+    events.push({ type: 'click', ref: p.id, ts: now });
+    try { saveMetrics(); } catch {}
+    try { save(prospects); } catch {}
+    console.log('[attribution] report read by', p.business || p.email, '->', p.status);
+  }
+}
+
 app.get('/go', (req, res) => {
-  res.send(renderLandingPage(req.query.ref, req.query.t));
+  const ref = req.query.ref;
+  if (ref) {
+    const p = prospects.find(x => x.id === ref);
+    if (p && reportToken(p.id) === req.query.t) recordReportVisit(p, req);
+  }
+  res.send(renderLandingPage(ref, req.query.t));
 });
 
 // Every prospect report is a public URL carrying a frank, named assessment of somebody else's
@@ -2952,7 +2986,19 @@ app.post('/api/sendgrid-events', async (req, res) => {
           p.notes.push({ ts: now, by: null, text: 'Unsubscribed via SendGrid.' });
         }
         break;
-      default: break;                          // processed, open, deferred and the rest are noise here
+      case 'open':
+        // Weaker signal than a click, but it separates "the subject worked and the
+        // offer did not" from "they never saw it", and those need different copy.
+        if (!p.opened_at) { p.opened_at = now; changed++; }
+        p.open_count = (p.open_count || 0) + 1;
+        if (p.status === 'sent') { p.status = 'opened'; changed++; }
+        break;
+      case 'click':
+        if (!p.clicked_at) { p.clicked_at = now; changed++; }
+        if (!p.viewed_at) p.viewed_at = now;
+        if (p.status === 'sent' || p.status === 'opened') { p.status = 'clicked'; changed++; }
+        break;
+      default: break;                          // processed, deferred and the rest are noise here
     }
   }
   if (changed) { try { save(prospects); } catch (e) { console.error('[sg-events] save failed -', e.message); } }
@@ -3452,6 +3498,10 @@ async function draftFollowup(p, step) {
   const hasReport = !!p.audit_report;
   const seenIt = !!(p.viewed_at || p.clicked_at || p.audited_at || p.status === 'audited');
   const audited = hasReport && seenIt;
+  // Third tier. Someone who opened and did not click is not the same person as
+  // someone who never opened: the subject line worked and the offer did not.
+  // Asking them again to go and click the same link repeats what already failed.
+  const openedOnly = !seenIt && !!(p.opened_at || p.status === 'opened');
   let angles, context = '', length = '2 to 3', linkPurpose = 'the free audit link';
   if (audited) {
     // They ALREADY ran the audit but have not booked. Reference their real results + add education / free value.
@@ -3473,8 +3523,23 @@ async function draftFollowup(p, step) {
         : 'One-line proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their biggest gap in one line, then one sharp one-line CTA to a short call.',
       3: 'Very short. Restate their biggest pain in one line, leave one final quick tip, and a warm door-open close.',
     };
+  } else if (openedOnly) {
+    // They opened and did not click. Put the value IN the email instead of behind
+    // a link, and make the ask smaller than "go run an audit".
+    const rep = p.audit_report || {};
+    const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
+    const topFinding = (rep.findings || [])[0];
+    context = `IMPORTANT: they opened a previous email and did not click anything. The subject line reached them; the offer did not. Do NOT ask again whether they got a chance to run the audit, and do NOT lead with the link. Put the single most useful finding directly in the body so the email is worth reading on its own.`
+      + (weakest ? ` Their weakest scored area is ${weakest.name} at ${weakest.score} out of 100.` : '')
+      + (topFinding ? ` The specific gap is "${topFinding.title}": ${topFinding.detail || ''}` : '');
+    linkPurpose = 'the audit link, mentioned once at the end and never as the main ask';
+    angles = {
+      1: 'State the one finding plainly in the first line, as a number or a fact about their site, not as a teaser. Give the fix in one sentence. Ask nothing except whether they want the rest.',
+      2: 'Different angle from email 1 entirely, because that angle did not land. One short proof point from a comparable local business, then one specific thing you noticed about theirs. Soft, single question close.',
+      3: 'Two lines. Say you will stop here, restate the one number, and leave the door open. No pitch.',
+    };
   } else {
-    // They have not run the audit yet: nudge them to it.
+    // Never opened. The subject line is the thing that failed, not the offer.
     angles = {
       1: 'Circle back gently, one or two short lines. Ask if they got a chance to run their free audit. Warm, low pressure.',
       2: 'Open with one quick proof point (we recently drove about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business). Then invite them to grab their free audit.',
