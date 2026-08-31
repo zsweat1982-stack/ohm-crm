@@ -3502,7 +3502,7 @@ async function draftFollowup(p, step) {
   // someone who never opened: the subject line worked and the offer did not.
   // Asking them again to go and click the same link repeats what already failed.
   const openedOnly = !seenIt && !!(p.opened_at || p.status === 'opened');
-  let angles, context = '', length = '2 to 3', linkPurpose = 'the free audit link';
+  let angles, context = '', length = '2 to 3', linkPurpose = 'the link to the report we already built for them';
   if (audited) {
     // They ALREADY ran the audit but have not booked. Reference their real results + add education / free value.
     const rep = p.audit_report || {};
@@ -3510,7 +3510,7 @@ async function draftFollowup(p, step) {
     const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
     const aio = p.audit_scan?.aio;
     const aiUnknown = !!(aio && aio.visibility && aio.visibility.known === false);
-    context = `IMPORTANT: they have ALREADY run their free audit, so do NOT ask if they ran it. Reference what it showed.`
+    context = `IMPORTANT: they have ALREADY OPENED AND READ the audit we ran on their business and sent them. They did not request it and they did not run anything, so never say "your audit", "you ran", "sign up" or "get your free audit". Speak as the person who did the work: we looked at their site, here is what we found. Reference what it showed.`
       + (topFinding ? ` The biggest gap their audit flagged was "${topFinding.title}": ${topFinding.detail || ''}` : '')
       + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '')
       + (aiUnknown ? ` Their audit tested whether a leading AI model recognises ${p.business} as a ${p.category} in ${p.city}, and it does not. Say "AI assistants" or "AI models" generally. Do NOT claim we queried ChatGPT, Perplexity or Google AI Overviews specifically, and do NOT call it a live search: we tested what the model knows, which is not the same thing. Buyers increasingly ask AI assistants for local recommendations, and a business the model has never heard of is invisible in that channel.` : '');
@@ -3529,7 +3529,7 @@ async function draftFollowup(p, step) {
     const rep = p.audit_report || {};
     const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
     const topFinding = (rep.findings || [])[0];
-    context = `IMPORTANT: they opened a previous email and did not click anything. The subject line reached them; the offer did not. Do NOT ask again whether they got a chance to run the audit, and do NOT lead with the link. Put the single most useful finding directly in the body so the email is worth reading on its own.`
+    context = `IMPORTANT: they opened a previous email and did not click anything. The subject line reached them; the offer did not. They never ran anything: we scanned their site and sent them the result, so never ask whether they ran it or got round to it. Do NOT lead with the link. Put the single most useful finding directly in the body so the email is worth reading on its own.`
       + (weakest ? ` Their weakest scored area is ${weakest.name} at ${weakest.score} out of 100.` : '')
       + (topFinding ? ` The specific gap is "${topFinding.title}": ${topFinding.detail || ''}` : '');
     linkPurpose = 'the audit link, mentioned once at the end and never as the main ask';
@@ -3541,12 +3541,12 @@ async function draftFollowup(p, step) {
   } else {
     // Never opened. The subject line is the thing that failed, not the offer.
     angles = {
-      1: 'Circle back gently, one or two short lines. Ask if they got a chance to run their free audit. Warm, low pressure.',
-      2: 'Open with one quick proof point (we recently drove about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business). Then invite them to grab their free audit.',
-      3: 'Last friendly touch, one or two lines. Say you will leave it here, and the free audit is open anytime if they want it.',
+      1: 'Circle back gently, one or two short lines. The report already exists and is sitting there with their name on it, so say that rather than asking them to run or request anything. Warm, low pressure.',
+      2: 'Open with one quick proof point (we recently drove about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business). Then point them at the report we already ran on their site. Never phrase it as signing up for or requesting one.',
+      3: 'Last friendly touch, one or two lines. Say you will leave it here, and their report stays up if they ever want to look at it. Never say request, sign up or run.',
     };
   }
-  const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Write like a sharp direct-response copywriter: lead with the pain, short punchy sentences, every line earns its place, skimmable, no filler, no long run-ons. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". No em dashes, no exclamation marks, no hype words. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
+  const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Write like a sharp direct-response copywriter: lead with the pain, short punchy sentences, every line earns its place, skimmable, no filler, no long run-ons. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". We ran this audit ourselves and sent it to them unprompted, so never write "your audit", "run your audit", "request", "sign up", "claim" or "get your free audit": the report already exists and already has their name on it. No em dashes, no exclamation marks, no hype words. Lowercase subject under 45 chars. Return ONLY JSON {"subject":"...","body":"..."}`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
