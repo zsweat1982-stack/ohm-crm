@@ -3992,11 +3992,27 @@ async function runDailyCold() {
 
 async function autosendTick(reason) {
   if (!AUTOSEND) return;
-  if (Date.now() - lastAutosendRun() < 20 * 60 * 60 * 1000) return;  // once a day
+  const previous = lastAutosendRun();
+  if (Date.now() - previous < 20 * 60 * 60 * 1000) return;  // once a day
   if (!inSendWindow()) return;
+  // Stamped up front so two ticks cannot overlap on a slow run.
   stampAutosendRun();
   console.log('[autosend] running,', reason);
-  try { await runDailyCold(); } catch (e) { console.error('[autosend] run failed -', e.message); }
+  let result = null;
+  try { result = await runDailyCold(); }
+  catch (e) { console.error('[autosend] run failed -', e.message); }
+
+  // A run that achieved nothing must not consume the day. On 7 Sep the tick fired at 9:22am while
+  // the Anthropic key was out of credit, so every draft threw, nothing was written, nothing was
+  // sent, and the stamp still said the day was done. The next attempt would have been the
+  // following morning: one upstream outage lasting minutes cost a full day of outreach, silently.
+  // Roll the stamp back so the 30 minute interval picks it up again once the cause clears.
+  const didSomething = result && ((result.sent || 0) > 0 || (result.drafted || 0) > 0);
+  const cappedOut = result && result.reason === 'daily cap reached';
+  if (!didSomething && !cappedOut) {
+    try { fs.writeFileSync(AUTOSEND_STAMP, JSON.stringify({ ts: new Date(previous).toISOString() })); } catch {}
+    console.warn('[autosend] run produced nothing, day not consumed, will retry on the next tick');
+  }
 }
 // Same belt and braces as the follow-ups: the interval is the fast path, and the boot check
 // catches a day missed while the instance was idled out or redeploying.
