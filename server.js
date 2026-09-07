@@ -463,6 +463,74 @@ function normalizeUrl(raw) {
   try { return new URL(u).toString(); } catch { return ''; }
 }
 
+// The audit form took anything non-empty as a website. Griffin submitted the SendGrid click
+// tracking link out of one of our own emails, url9899.openheartmediaco.com/ls/click?upn=..., and
+// the scanner dutifully scanned the redirect shell: Tracking & Data came back 0/100 because there
+// was nothing there to find, and every other score was measuring a hop, not a business. A lead who
+// pastes the wrong thing should be told at the form while they are still sitting there, not handed
+// a confident report about a URL that is not theirs.
+const TRACKER_PATTERNS = [
+  /^url\d+\./i, /\/ls\/click/i,                              // SendGrid
+  /(^|\.)list-manage\.com$/i,                                  // Mailchimp
+  /(^|\.)hubspotlinks\.com$/i, /(^|\.)hs-sites\.com$/i,        // HubSpot
+  /(^|\.)klclick\d*\.com$/i, /(^|\.)klaviyomail\.com$/i,      // Klaviyo
+  /(^|\.)rs6\.net$/i,                                          // Constant Contact
+  /^(bit\.ly|t\.co|tinyurl\.com|lnkd\.in|goo\.gl|ow\.ly|buff\.ly|rb\.gy|is\.gd|cutt\.ly)$/i,
+];
+// A profile on somebody else's platform is not a website. We can audit a site; we cannot audit a
+// Facebook page, and pretending otherwise produces a report the owner knows is wrong on sight.
+const NOT_A_WEBSITE = [
+  [/(^|\.)google\.[a-z.]+$/i, 'that is a Google Maps or Google listing link'],
+  [/(^|\.)g\.page$/i, 'that is a Google listing link'],
+  [/(^|\.)facebook\.com$/i, 'that is a Facebook page'],
+  [/(^|\.)instagram\.com$/i, 'that is an Instagram profile'],
+  [/(^|\.)linkedin\.com$/i, 'that is a LinkedIn page'],
+  [/(^|\.)(twitter\.com|x\.com)$/i, 'that is an X profile'],
+  [/(^|\.)tiktok\.com$/i, 'that is a TikTok profile'],
+  [/(^|\.)yelp\.[a-z.]+$/i, 'that is a Yelp listing'],
+  [/(^|\.)nextdoor\.com$/i, 'that is a Nextdoor page'],
+  [/(^|\.)openheartmediaco\.com$/i, 'that is our website, not yours'],
+];
+
+function looksLikeTracker(u) {
+  try {
+    const url = new URL(u);
+    return TRACKER_PATTERNS.some(re => re.test(url.hostname) || re.test(url.pathname));
+  } catch { return false; }
+}
+
+// Returns { url } when it is scannable, or { error } with something the lead can act on.
+async function resolveSiteUrl(raw) {
+  let u = normalizeUrl(raw);
+  if (!u) return { error: 'That does not look like a web address. Enter it like yourbusiness.com' };
+
+  // A tracking link is recoverable: it is a redirect, so follow it and audit where it lands.
+  if (looksLikeTracker(u)) {
+    try {
+      const r = await fetch(u, { redirect: 'follow', signal: AbortSignal.timeout(12000), headers: { 'user-agent': AUDIT_UA } });
+      if (r.url && !looksLikeTracker(r.url)) u = r.url;
+      else return { error: 'That is a link from an email, not a website. Enter your own web address, like yourbusiness.com' };
+    } catch {
+      return { error: 'That is a link from an email, not a website. Enter your own web address, like yourbusiness.com' };
+    }
+  }
+
+  let host;
+  try { host = new URL(u).hostname.replace(/^www\./i, ''); }
+  catch { return { error: 'That does not look like a web address. Enter it like yourbusiness.com' }; }
+
+  if (host === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return { error: 'That is not a public web address. Enter it like yourbusiness.com' };
+  }
+  if (PLACEHOLDER_DOMAINS.has(host)) {
+    return { error: 'That looks like a placeholder address. Enter your real web address, like yourbusiness.com' };
+  }
+  for (const [re, why] of NOT_A_WEBSITE) {
+    if (re.test(host)) return { error: `We can only audit a website, and ${why}. Enter your own web address, like yourbusiness.com` };
+  }
+  return { url: u };
+}
+
 async function scanWebsite(rawUrl) {
   const url = normalizeUrl(rawUrl);
   const out = {
@@ -3149,10 +3217,14 @@ app.post('/api/audit', async (req, res) => {
   if (!firstName || !lastName) return res.status(400).json({ error: 'first and last name required' });
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'valid email required' });
   if (!website || !website.trim()) return res.status(400).json({ error: 'website required' });
+  // Validate before anything is enqueued, so a mistyped or pasted-tracking-link address comes back
+  // to the lead immediately instead of becoming a scan of the wrong thing.
+  const resolved = await resolveSiteUrl(website);
+  if (resolved.error) return res.status(400).json({ error: resolved.error });
   const isTest = test === true || test === 'true';
   const p = !isTest && ref && prospects.find(x => x.id === ref);
   const lookup = isTest && ref && prospects.find(x => x.id === ref); // for test GBP/name only, no writes
-  const site = website || (p && p.website) || (lookup && lookup.website) || '';
+  const site = resolved.url || (p && p.website) || (lookup && lookup.website) || '';
   const bizName = (p && p.business) || (lookup && lookup.business) || null;
   const bizCity = (p && p.city) || (lookup && lookup.city) || null;
   const bizCategory = (p && p.category) || (lookup && lookup.category) || null;
@@ -3761,6 +3833,77 @@ async function followupTick(reason) {
 }
 setInterval(() => followupTick('interval'), 60 * 60 * 1000);
 setTimeout(() => followupTick('boot catch-up'), 90 * 1000);
+
+
+// ---------- Held audit recovery ----------
+// A held audit is the worst lead in the system to lose. They are not cold: they went to the page,
+// typed in their site and their email, and asked for something. The report was withheld because it
+// came back degraded, which in practice has meant one thing every time, the Anthropic key running
+// out of credit. Michelle gets an internal alert, the lead gets nothing, and that is where it ends.
+// Nothing retried them. audit_held was set in the audit job and cleared only if that same person
+// happened to fill the form in a second time. Brad's sat held from 21 Aug and Griffin's from 7 Sep,
+// four hours after the credits ran out, and neither would ever have been picked up by the system.
+// Retry them once the model is answering again. A recovered report goes out through the ordinary
+// path, so the lead receives the same email they would have got at the time.
+const HELD_RETRY_GAP_MS = 6 * 60 * 60 * 1000;
+const HELD_RETRY_MAX = 5;
+async function heldAuditTick(reason) {
+  const now = Date.now();
+  const due = prospects.filter(p =>
+    p.status === 'audit_held'
+    && (p.audit_email || p.email)
+    && p.website
+    && (p.audit_retry_count || 0) < HELD_RETRY_MAX
+    && now - new Date(p.audit_retry_at || 0).getTime() > HELD_RETRY_GAP_MS);
+  if (!due.length) return;
+
+  // The thing that held these is almost always the model being unreachable. Ask it one cheap
+  // question first: if it is still down, every retry would degrade again, burn a full scan each,
+  // and count against the attempt cap for nothing.
+  if (!(await modelIsAnswering())) {
+    console.log(`[held] ${due.length} held audit(s) waiting, model still unavailable, not retrying`);
+    return;
+  }
+
+  // One per tick. These are slow jobs and there is never a queue of them worth rushing.
+  const p = due[0];
+  p.audit_retry_count = (p.audit_retry_count || 0) + 1;
+  p.audit_retry_at = new Date().toISOString();
+  try { save(prospects); } catch {}
+  console.log(`[held] retrying ${p.id} (${p.audit_email || p.email}), attempt ${p.audit_retry_count}, ${reason}`);
+  const jobId = crypto.randomBytes(12).toString('hex');
+  enqueueAudit(jobId, {
+    ref: p.id, email: p.audit_email || p.email, goal: p.audit_goal || null,
+    firstName: p.contact_first || '', lastName: p.contact_last || '',
+    isTest: false, site: p.website, p, lookup: null,
+    bizName: p.business || null, bizCity: p.city || null, bizCategory: p.category || null,
+  });
+  if (p.audit_retry_count >= HELD_RETRY_MAX) {
+    await alertTeam('Held audit giving up', `${esc(p.business || p.id)} (${esc(p.audit_email || p.email || '')}) has been retried ${HELD_RETRY_MAX} times and the report still will not generate cleanly.<br/><br/>This one needs a person. They asked for an audit and have not received it.`).catch(() => {});
+  }
+}
+
+// Cheapest possible liveness check on the model. Costs a handful of tokens and answers the only
+// question that matters before a retry: is it going to degrade again.
+async function modelIsAnswering() {
+  if (!process.env.ANTHROPIC_API_KEY) return false;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'ok' }] }),
+      signal: AbortSignal.timeout(15000),
+    });
+    return r.ok;
+  } catch { return false; }
+}
+
+setInterval(() => heldAuditTick('interval').catch(e => console.error('[held]', e.message)), 60 * 60 * 1000);
+setTimeout(() => heldAuditTick('boot catch-up').catch(e => console.error('[held]', e.message)), 120 * 1000);
 
 
 // ---------- Automatic daily cold send ----------
