@@ -26,7 +26,13 @@ const CSV = path.join(__dirname, '..', 'PROSPECTS_cherokee_LOCAL.csv');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 if (process.env.SENDGRID_API_KEY) sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-const DAILY_CAP = Number(process.env.DAILY_SEND_CAP) || 40;
+// New cold outreach and follow-ups now have SEPARATE daily budgets, so a heavy follow-up day
+// can no longer starve new prospecting. Total daily volume from this domain is the SUM of the
+// two, so raising either one raises the reputation load. COLD_DAILY_CAP falls back to the old
+// DAILY_SEND_CAP so existing deploys keep working.
+const COLD_DAILY_CAP = Number(process.env.COLD_DAILY_CAP || process.env.DAILY_SEND_CAP) || 40;
+const FOLLOWUP_DAILY_CAP = Number(process.env.FOLLOWUP_DAILY_CAP) || 40;
+const DAILY_CAP = COLD_DAILY_CAP;   // kept for anything still reading the old name
 // Transient failures deserve a retry, but not forever.
 const MAX_SEND_ATTEMPTS = Number(process.env.MAX_SEND_ATTEMPTS) || 4;
 
@@ -72,6 +78,32 @@ function seedFromCsv() {
   return rows;
 }
 let prospects = load() || seedFromCsv();
+
+// One-time, idempotent. bounced_at and complained_at did not exist until the September metrics
+// fix, so every send before it has no delivery outcome stamped on it and would read as clean.
+// Recover the real outcomes from the error strings and notes the webhook already wrote.
+// Deliberately narrow: only the three errors that mean the mail actually failed at the mail layer
+// count as bounces. 'On the SendGrid suppression list' does NOT, because that list is also fed by
+// unsubscribes and complaints, and neither is a bounce.
+(function backfillDeliveryOutcomes() {
+  const HARD = /^(Hard bounce|Dropped before sending|Blocked by the receiving server)/i;
+  let b = 0, c = 0;
+  for (const p of prospects) {
+    if (!p.bounced_at && HARD.test(String(p.last_send_error || ''))) {
+      p.bounced_at = p.updated_at || p.sent_at || new Date().toISOString();
+      b++;
+    }
+    if (!p.complained_at && Array.isArray(p.notes)
+        && p.notes.some(n => /Marked this as spam/i.test(String(n && n.text || '')))) {
+      p.complained_at = p.updated_at || p.unsubscribed_at || new Date().toISOString();
+      c++;
+    }
+  }
+  if (b || c) {
+    try { save(prospects); } catch {}
+    console.log(`[backfill] stamped ${b} bounces and ${c} complaints from historical records`);
+  }
+})();
 
 // ---------- Claude draft ----------
 // Lightweight AI-visibility probe: does an AI assistant actually recognize this business? Training-knowledge only, no guessing.
@@ -1539,7 +1571,7 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
 }
 function sentToday() {
   const today = new Date().toISOString().slice(0, 10);
-  return prospects.filter(p => p.status === 'sent' && (p.sent_at || '').slice(0, 10) === today).length;
+  return prospects.filter(p => (p.sent_at || '').slice(0, 10) === today).length;
 }
 
 // ---------- CAN-SPAM compliance ----------
@@ -3013,18 +3045,24 @@ app.post('/api/sendgrid-events', async (req, res) => {
         // being wrong. Only the latter is permanent.
         if (ev.type === 'blocked') {
           p.soft_bounces = (p.soft_bounces || 0) + 1; changed++;
-          if (p.soft_bounces >= 3) park(`Blocked by the receiving server ${p.soft_bounces} times. Parked.`);
+          if (p.soft_bounces >= 3) {
+            p.bounced_at = p.bounced_at || now;
+            park(`Blocked by the receiving server ${p.soft_bounces} times. Parked.`);
+          }
         } else {
+          p.bounced_at = p.bounced_at || now;
           park(`Hard bounce: ${ev.reason || 'address rejected'}`);
         }
         break;
       case 'dropped':
         // SendGrid refused to even attempt it, usually because the address is already suppressed.
+        p.bounced_at = p.bounced_at || now;
         park(`Dropped before sending: ${ev.reason || 'on the suppression list'}`);
         break;
       case 'spamreport':
         // The most expensive event there is. Suppress permanently and tell someone.
         p.unsubscribed_at = p.unsubscribed_at || now;
+        p.complained_at = p.complained_at || now;
         p.status = 'rejected'; p.updated_at = now; changed++;
         if (!Array.isArray(p.notes)) p.notes = [];
         p.notes.push({ ts: now, by: null, text: 'Marked this as spam. Suppressed permanently.' });
@@ -3200,7 +3238,7 @@ Each chapter ends with an honest count of the hours it takes. That part matters 
 
 If you get stuck or you want it run for you, just reply to this email. It comes straight to us.
 
-Zac Sweat
+Michelle Baker
 Open Heart Media
 Canton, GA`;
 }
@@ -3454,9 +3492,24 @@ app.get('/api/metrics', (_, res) => {
   // worse and the rates above it quietly improved.
   const outbound = prospects.filter(p => p.sent_at && (!since || p.sent_at >= since));
   const sent = outbound.length;
-  const bounced = outbound.filter(p => p.status === 'unreachable').length;
-  const complained = outbound.filter(p => p.unsubscribed_at && p.status === 'rejected').length;
-  const delivered = sent - bounced;
+
+  // status === 'unreachable' is NOT a bounce. It is the catch-all for every reason a lead stops
+  // being mailable: a hard bounce, yes, but also a suppression-list sync, a manual quarantine of
+  // guessed addresses, and a prescan failure. Counting it as "bounced" is what put a 78% bounce
+  // rate on this dashboard in September while SendGrid's own number for the same window was 3.5%.
+  // 163 of those were the Sep 2 wrong-domain quarantine, addresses we pulled on purpose, and 63
+  // more were the suppression sweep parking leads on days no mail went out at all.
+  // Count the events SendGrid actually reported instead. bounced_at and complained_at are stamped
+  // by the webhook and never by list hygiene, so they cannot drift the way status does.
+  const bounced = outbound.filter(p => p.bounced_at).length;
+  const complained = outbound.filter(p => p.complained_at).length;
+  const unsubscribed = outbound.filter(p => p.unsubscribed_at && !p.complained_at).length;
+  // Parked for hygiene, never a delivery failure. Reported so the number stays visible, but it
+  // is deliberately kept out of the bounce rate.
+  const parked = outbound.filter(p => p.status === 'unreachable' && !p.bounced_at).length;
+  // Prefer the delivered event. Fall back to subtraction only for sends that predate the webhook.
+  const confirmedDelivered = outbound.filter(p => p.delivered_at).length;
+  const delivered = confirmedDelivered || Math.max(0, sent - bounced);
 
   res.json({
     since,
@@ -3466,6 +3519,9 @@ app.get('/api/metrics', (_, res) => {
       bounced,
       bounceRate: sent ? Math.round((bounced / sent) * 100) : 0,
       complained,
+      complaintRate: delivered ? Number(((complained / delivered) * 100).toFixed(2)) : 0,
+      unsubscribed,
+      parked,
       views: views.length,
       uniqueVisitors: uniqRefsViewed.size,
       clicks: clicks.length,
@@ -3535,7 +3591,7 @@ async function sendApprovedBatch(budget) {
 }
 
 app.post('/api/send-approved', async (req, res) => {
-  const budget = DAILY_CAP - sentToday();
+  const budget = COLD_DAILY_CAP - sentToday();
   if (budget <= 0) return res.json({ sent: 0, reason: 'daily cap reached' });
   res.json(await sendApprovedBatch(budget));
 });
@@ -3618,9 +3674,10 @@ const MIN_FOLLOWUP_GAP_DAYS = 2;
 
 async function runFollowups() {
   const now = Date.now(); let sent = 0, parked = 0;
-  // Follow-ups draw on the same daily budget as cold sends: they land in the same inboxes from the
-  // same domain, and reputation does not care which queue a message came from.
-  let budget = DAILY_CAP - sentToday() - followupsSentToday();
+  // Follow-ups have their own budget so they cannot eat the new-prospecting quota. They still
+  // land in the same inboxes from the same domain, so the two caps together are the real daily
+  // volume and both matter to reputation.
+  let budget = FOLLOWUP_DAILY_CAP - followupsSentToday();
   for (const p of prospects) {
     if (budget <= 0) break;
     if (!p.sent_at || !p.email || !p.email.includes('@')) continue;
@@ -3745,9 +3802,8 @@ function stampAutosendRun() {
 }
 
 async function runDailyCold() {
-  // Follow-ups draw on the same cap. Counting them here is what stops a heavy follow-up day from
-  // pushing the total over the limit that protects the sending domain.
-  let budget = DAILY_CAP - sentToday() - followupsSentToday();
+  // Cold sends now have their own cap, so a heavy follow-up day no longer reduces new outreach.
+  let budget = COLD_DAILY_CAP - sentToday();
   if (budget <= 0) return { sent: 0, drafted: 0, approved: 0, reason: 'daily cap reached' };
 
   // Draft only what is missing, so a queue left over from yesterday is used before writing more.
@@ -3820,9 +3876,12 @@ app.get('/api/autosend-status', (_, res) => {
     window: `${AUTOSEND_HOUR_START}:00 to ${AUTOSEND_HOUR_END}:00 ${AUTOSEND_TZ}, weekdays`,
     localHour: hour, localDay: day, inWindow: inSendWindow(),
     lastRun: lastAutosendRun() ? new Date(lastAutosendRun()).toISOString() : null,
-    dailyCap: DAILY_CAP,
+    coldDailyCap: COLD_DAILY_CAP,
+    followupDailyCap: FOLLOWUP_DAILY_CAP,
+    maxTotalPerDay: COLD_DAILY_CAP + FOLLOWUP_DAILY_CAP,
     sentToday: sentToday(), followupsToday: followupsSentToday(),
-    budgetLeft: Math.max(0, DAILY_CAP - sentToday() - followupsSentToday()),
+    coldBudgetLeft: Math.max(0, COLD_DAILY_CAP - sentToday()),
+    followupBudgetLeft: Math.max(0, FOLLOWUP_DAILY_CAP - followupsSentToday()),
     queue: {
       approved: prospects.filter(p => p.status === 'approved').length,
       drafted: prospects.filter(p => p.status === 'drafted').length,
