@@ -156,18 +156,10 @@ async function draftEmail(p) {
   // have not actually made, fall back to the live AI probe, which is a real check.
   if (!rep || !(rep.findings || []).length) return draftEmailUnscanned(p);
 
-  const angle = pickAngle(p);
-  // Rotate which finding leads, not which subject line: the subject has to be about the same thing
-  // the body is about, and rotating them independently drifted them apart.
-  const fh = crypto.createHash('sha1').update('finding:' + p.id).digest()[0];
-  const top = (rep.findings.length > 1 && (fh & 1)) ? rep.findings[1] : rep.findings[0];
-  const ps = p.audit_scan && p.audit_scan.pagespeed;
-  const facts = [
-    p.rating && p.reviews ? `Google rating ${p.rating} from ${p.reviews} reviews` : null,
-    ps && ps.lcpLabel ? `mobile largest contentful paint ${ps.lcpLabel}` : null,
-    ps && ps.performance != null ? `mobile PageSpeed performance score ${ps.performance} out of 100` : null,
-    angle ? `their weakest area is ${angle.name} at ${angle.score} out of 100` : null,
-  ].filter(Boolean);
+  // The angle, the leading finding and the measured facts used to be assembled here and pushed
+  // into the prompt. They are deliberately gone. Nothing about this prospect's site, profile or
+  // scores may reach the copy, so computing it would only invite someone to wire it back in.
+  // pickAngle and ANGLES are kept because the report page still uses them.
 
   // Rotated in code, not chosen by the model, for the reason above.
   // Naming the cold email disarms it. Pretending it is anything else is the thing that makes people
@@ -193,53 +185,62 @@ async function draftEmail(p) {
   ];
   const closer = CLOSERS[crypto.createHash('sha1').update('close:' + p.id).digest()[0] % CLOSERS.length];
 
-  const subjHints = (angle ? angle.subj : ['what is costing you customers'])
-    .map(t => t.replace('{cat}', (p.category || 'business').toLowerCase())
-               .replace('{city}', (p.city || '').toLowerCase())
-               .replace('{n}', String(p.reviews || '')))
-    .join('" or "');
-
+  // NO FINDINGS IN THE COPY. Not in the subject, not in the body, not as a number, not as a
+  // paraphrase. This used to lead on the single worst finding, and the whole class of failure came
+  // from that: the copy asserted something about a stranger's business and we were not in a
+  // position to be sure. Scott Hessing got "0 Google reviews since 2023" and had 161 of them.
+  //
+  // The review data is the clearest case but not the only one. Google Places returns at most 5
+  // reviews sorted by RELEVANCE and never by date, so "newest we saw is 1,277 days old" never
+  // meant "no review in 3.5 years", it meant the newest of the two Google chose to show us was
+  // that old. Three more businesses got a recency claim built on that, and every one of them was
+  // unsupportable even though it matched our stored data exactly. The conversion signals carry the
+  // same risk: hasForm, hasBooking and hasPhone are raw HTML only, so on a JS-rendered site they
+  // can be wrong the same way the tracking tags were.
+  //
+  // So the email no longer diagnoses. It says we put a breakdown together and here it is. The
+  // findings still exist, they are still good, and the prospect reads them on the report page
+  // where they are shown with their own context and caveats. What we will not do is compress one
+  // of them into a subject line and assert it to someone who knows their own business better
+  // than we do.
   const prompt = `You are Michelle at Open Heart Media in Canton, Georgia. You are writing one cold email to a local business owner.
 
-CRITICAL CONTEXT: we have ALREADY scanned this business. The report is built and waiting at the link. You are NOT offering to run anything, NOT asking permission, NOT inviting them to request an audit. You are telling them one thing you already found. Never use the words "free audit", and never ask them to run, request or start a scan.
+CRITICAL CONTEXT: we have ALREADY put together a breakdown of this business's online presence. It is built and waiting at the link. You are NOT offering to run anything, NOT asking permission, NOT inviting them to request an audit. Never use the words "free audit", and never ask them to run, request or start a scan.
 
 BUSINESS: ${p.business}, a ${p.category} in ${p.city}, GA.
 
-WHAT THE SCAN ACTUALLY FOUND (use ONLY this, invent nothing):
-- Biggest problem: ${top.title}
-- Detail: ${top.detail || ''}
-${facts.length ? '- Real measurements: ' + facts.join('; ') : ''}
-${angle && angle.why ? '- Why that area scored badly: ' + angle.why : ''}
+THE SINGLE MOST IMPORTANT RULE, ABOVE EVERY OTHER RULE BELOW:
+You do not know anything about this business beyond its name, category and city. You have NOT been given their findings and you will NOT be given them. Therefore:
+- State NO fact, problem, gap, weakness, score, measurement or observation about their website, their Google profile, their reviews, their rankings, their speed, their booking, their tracking or their social presence.
+- Use NO numbers about them of any kind. No counts, no scores, no times, no percentages, no dates, no durations.
+- Do NOT guess, imply, hint at or hedge toward a problem. Not "your site might be slow", not "most painters in your area are losing calls", not "there is probably something here".
+- If you catch yourself writing a sentence that could be true or false about their business, delete it.
+The report is what makes the claims. The email exists to hand it over, nothing more.
 
 WRITE:
-1. Subject line. SENTENCE CASE (capital first letter only, everything else lowercase unless it is a proper noun). UNDER 45 CHARACTERS. No exclamation marks, no ALL CAPS, never the words "free" or "audit", never their name.
-   THE SUBJECT MUST BE ABOUT THE SAME PROBLEM AS THE BODY. Both come from "Biggest problem" above. Do not write a subject about one issue and a body about another. For tone, shapes like "${subjHints}" work, but the topic must match the finding.
+1. Subject line. SENTENCE CASE (capital first letter only, everything else lowercase unless a proper noun). UNDER 45 CHARACTERS. No exclamation marks, no ALL CAPS, never the words "free" or "audit", never a number, never a claim about them.
+   It may name their business, their city, or their category, and it may say that something has been written up or put together for them. That is the whole permitted range. Good shapes: "Something we put together for ${p.business}", "A breakdown of ${p.business} online", "We looked at ${p.business}", "Wrote this up for a ${(p.category || 'local business').toLowerCase()} in ${p.city}".
 
-2. Body. THIS IS THE PART THAT MATTERS. UNDER 65 WORDS TOTAL. Structure it as FIVE SHORT BLOCKS separated by blank lines, because a wall of text gets archived unread:
+2. Body. UNDER 55 WORDS TOTAL. FOUR SHORT BLOCKS separated by blank lines:
 
    Line 1: write exactly this opener and nothing else: ${opener}
-   Line 2: the finding, about THEM, second person, one sentence, with ONE real number.
-           Write "Your site takes 9 seconds to load on a phone." NOT "We ran a scan and found that your site is taking 9 seconds to load on mobile, which is the device most people use."
-   Line 3: what it costs them in customers or money, one sentence, plain words. Then, in the SAME block, a short clause that takes the sting out by making clear this is invisible from the inside and not a failure on their part. For example "Nobody ever sees their own site on a bad connection", "It's the kind of thing that only shows up in a test", "Your web guy wouldn't catch this either". Vary the wording to fit the finding.
-   Line 4: one short handoff, for example "Here's what that's costing you:" or "Full breakdown here:"
+   Line 2: say plainly that you looked at how ${p.business} shows up online and wrote up what you found. One sentence. No conclusions from it.
+   Line 3: one short handoff, for example "It's here:" or "Have a look:"
    [LINK]
-   Line 5: write exactly this closing line and nothing else: ${closer}
+   Line 4: write exactly this closing line and nothing else: ${closer}
 
 3. Sign exactly, on three lines:
 Michelle Baker
 Open Heart Media
 openheartmediaco.com
 
-TONE: direct, but human. You are a person in Canton who looked at their business for ten minutes, not a scanner printing a result. Contractions always. Never chatty, never padded, never apologetic. Being brief IS the courtesy here, so do not add warm-up lines, but the close should sound like a person wrote it.
+TONE: direct and human. A person in Canton who spent some time on their business and is handing over the result. Contractions always. Never chatty, never padded, never apologetic. Brevity is the courtesy.
 
 HARD RULES:
-- Under 65 words. Count them. Shorter always wins.
-- NEVER make them feel stupid. They built this business and are proud of it. The finding is a fact about a machine, not a verdict on them. No "unfortunately", no "sadly", no "you should have", no lecturing, and never imply carelessness.
-- Dry wit is welcome in the phrasing. Smugness is not. If a line would make them wince rather than smile, cut it.
-- NEVER open with "We ran a scan", "We scanned", "I ran your site through", or anything about our process. They do not care what we did, only what is true about them. State the finding directly.
-- NO third-party statistics, no "Google's own data shows", no research citations, no percentages that are not about THEIR business. That is education, and nobody clicks because they learned something. They click because something of theirs is broken.
-- One finding only. A second one means neither lands.
-- Do not explain how to fix it. The fix is the product.
+- Under 55 words. Shorter always wins.
+- NEVER make them feel stupid, judged or behind. You are not telling them anything is wrong, because you are not telling them anything at all.
+- Dry wit in the phrasing is welcome. Smugness is not.
+- NO third-party statistics, no research citations, no percentages.
 - Do not mention video, social or web design as services.
 
 BANNED WORDS AND PHRASES: em dashes and any dash used as punctuation, exclamation marks, "hope this finds you well", "quick question", "I wanted to reach out", "leverage", "unlock", "scale", "solutions", "circle back", "synergy", "in today's digital landscape".
@@ -255,17 +256,29 @@ Return ONLY JSON: {"subject": "...", "body": "..."}`;
 // Fallback for a lead with no stored report: the live AI-visibility probe is a real observation,
 // so it is honest to lead with it.
 async function draftEmailUnscanned(p) {
-  const ai = await aiVisibilityProbe(p.business, p.city, p.category);
-  const invisible = !!(ai && ai.known === false);
-  const prompt = `You are Michelle at Open Heart Media in Canton, Georgia, writing one cold email to ${p.business}, a ${p.category} in ${p.city}, GA${p.rating && p.reviews ? `, rated ${p.rating} from ${p.reviews} Google reviews` : ''}.
+  // This used to lead on the live AI visibility probe, or on their review numbers when the probe
+  // came back clean. Both are claims about the prospect and both are out for the same reason as
+  // everywhere else: the probe tells us what one model happens to know, which is not the same as
+  // what a buyer sees, and the review numbers cannot carry the weight the copy put on them.
+  // A lead with no stored breakdown gets the plainest possible version. There is nothing to say
+  // yet, so the email does not pretend otherwise.
+  const OPENERS = [
+    "Cold email, I know. This one's short.",
+    "Cold email. I'll be quick.",
+    "Cold outreach, so I'll get straight to it.",
+  ];
+  const opener = OPENERS[crypto.createHash('sha1').update('open:' + p.id).digest()[0] % OPENERS.length];
+  const prompt = `You are Michelle at Open Heart Media in Canton, Georgia, writing one cold email to ${p.business}, a ${p.category} in ${p.city}, GA.
 
-${invisible
-  ? `TRUE AND JUST CHECKED: we asked an AI assistant to recommend a ${p.category} in ${p.city} and ${p.business} did not come up. Lead with that, stated flatly. Then one line on what it costs: more buyers now ask AI assistants for a local ${p.category}, so whoever it does name gets the call.`
-  : `Lead with one specific, genuine observation about their standing as a ${p.category} in ${p.city}, using their real review numbers. Then one line: a business this good is losing customers who never find or book them.`}
+THE SINGLE MOST IMPORTANT RULE: you know nothing about this business except its name, category and city. State NO fact, problem, gap, score or observation about their website, Google profile, reviews, rankings, speed, booking, tracking or social presence. Use NO numbers about them. Do not guess at a problem or hint at one. If a sentence could be either true or false about their business, delete it.
 
-Then the token [LINK] alone on its own line, introduced as a breakdown you put together for them. Then one short, warm closing line, varied rather than the same every time. Sign exactly on three lines: Michelle Baker / Open Heart Media / openheartmediaco.com
+WRITE:
+Line 1: exactly this opener and nothing else: ${opener}
+Line 2: say you work with local businesses around ${p.city} and you can put together a breakdown of how ${p.business} shows up online, covering the site, search and how easy they are to contact. One sentence. Offer it, do not claim anything about them.
+Line 3: one short line asking if they want it. Then the token [LINK] alone on its own line.
+Then sign exactly on three lines: Michelle Baker / Open Heart Media / openheartmediaco.com
 
-RULES: subject in SENTENCE CASE (capital first letter only) and UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never their name. Body UNDER 50 WORDS in four short blocks separated by blank lines, plain words, contractions. Never open with "we ran a scan" or anything about our process, state the finding directly about them. No third-party statistics. The first body line must not repeat the subject. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
+RULES: subject in SENTENCE CASE, UNDER 45 CHARACTERS, no exclamation marks, never the words "free" or "audit", never a number, never a claim about them. Body UNDER 50 WORDS, plain words, contractions. BANNED: em dashes and dashes as punctuation, exclamation marks, "hope this finds you well", "leverage", "unlock", "scale", "solutions". Invent no numbers.
 
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
@@ -3702,10 +3715,29 @@ function reviewClaimProblem(text, p) {
   return null;
 }
 
+// The copy is not allowed to make ANY claim about the prospect any more, and the cleanest way to
+// enforce that mechanically is to ban the thing every such claim needs: a number about them.
+// "0 Google reviews since 2023", "your last review is 3.5 years old", "your site takes 9 seconds",
+// "your weakest area scored 43" all die here regardless of how the prompt drifts.
+// The one permitted number is our own proof point, which is a fact about Open Heart Media rather
+// than about them.
+const ALLOWED_NUMBERS = /\b(?:90x|2\.34m|\$2\.34m)\b/gi;
+function numericClaimProblem(text, { isBody }) {
+  let t = String(text || '');
+  if (isBody) {
+    // Links carry digits and the signature block is fixed, so neither is a claim.
+    t = t.split('\n').filter(l => !/https?:\/\//i.test(l) && !/openheartmediaco\.com/i.test(l)).join('\n');
+  }
+  t = t.replace(ALLOWED_NUMBERS, ' ');
+  const hit = t.match(/\b\d[\d,.]*\b/);
+  return hit ? `contains a number about the prospect (${hit[0]}), which the copy is not allowed to assert` : null;
+}
+
 // Throws rather than returning, so a caller that forgets to check cannot send the draft anyway.
 function assertGrounded(o, p, where) {
   for (const [field, text] of [['subject', o && o.subject], ['body', o && o.body]]) {
-    const problem = reviewClaimProblem(text, p);
+    const problem = reviewClaimProblem(text, p)
+      || numericClaimProblem(text, { isBody: field === 'body' });
     if (problem) {
       const e = new Error(`${where} ${field} ${problem}`);
       e.ungrounded = true;
@@ -3728,71 +3760,43 @@ async function draftFollowup(p, step) {
   // someone who never opened: the subject line worked and the offer did not.
   // Asking them again to go and click the same link repeats what already failed.
   const openedOnly = !seenIt && !!(p.opened_at || p.status === 'opened');
-  let angles, context = '', length = '2 to 3', linkPurpose = 'the link to the report we already built for them';
+  // Same rule as the cold email: NO FINDINGS IN THE COPY. Every branch below used to inject the
+  // top finding, the weakest category and its score straight into the prompt, and the never-opened
+  // branch injected nothing at all while still demanding a specific finding, which is what
+  // produced "0 Google reviews since 2023" for a business with 161 reviews. Neither version is
+  // acceptable: one asserts things we cannot stand behind, the other invents them. The follow-ups
+  // now differ by INTENT, not by which fact about the prospect they recite.
+  let angles, context = '', length = '2 to 3', linkPurpose = 'the link to the breakdown we already put together for them';
+  const NOCLAIMS = ' ABSOLUTE RULE: you have not been told anything about this business beyond its name, category and city, and you will not be. State no fact, problem, gap, score, measurement or observation about their website, Google profile, reviews, rankings, speed, booking, tracking or social presence. Use no numbers about them of any kind. Do not guess at a problem or hint at one. If a sentence you are writing could be either true or false about their business, delete it. The breakdown makes the claims; this email only points at it.';
+
   if (audited) {
-    // They ALREADY ran the audit but have not booked. Reference their real results + add education / free value.
-    const rep = p.audit_report || {};
-    const topFinding = (rep.findings || [])[0];
-    const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
-    const aio = p.audit_scan?.aio;
-    const aiUnknown = !!(aio && aio.visibility && aio.visibility.known === false);
-    context = `IMPORTANT: they have ALREADY OPENED AND READ the audit we ran on their business and sent them. They did not request it and they did not run anything, so never say "your audit", "you ran", "sign up" or "get your free audit". Speak as the person who did the work: we looked at their site, here is what we found. Reference what it showed.`
-      + (topFinding ? ` The biggest gap their audit flagged was "${topFinding.title}": ${topFinding.detail || ''}` : '')
-      + (weakest ? ` Their weakest scored area was ${weakest.name} at ${weakest.score} out of 100.` : '')
-      + (aiUnknown ? ` Their audit tested whether a leading AI model recognises ${p.business} as a ${p.category} in ${p.city}, and it does not. Say "AI assistants" or "AI models" generally. Do NOT claim we queried ChatGPT, Perplexity or Google AI Overviews specifically, and do NOT call it a live search: we tested what the model knows, which is not the same thing. Buyers increasingly ask AI assistants for local recommendations, and a business the model has never heard of is invisible in that channel.` : '');
+    // They have READ the breakdown and not booked. They already have the detail, so repeating it
+    // was never the job anyway. Answer the objection instead.
+    context = 'IMPORTANT: they have ALREADY OPENED AND READ the breakdown we put together on their business and sent them. They did not request it and they did not run anything, so never say "your audit", "you ran", "sign up" or "get your free audit". Speak as the person who did the work. THEY HAVE READ IT AND HAVE NOT BOOKED. They are not short of information. What is stopping them is doubt that it is worth a call, or not knowing what fixing any of it actually involves. Do not re-explain anything it said, and do not summarise it.' + NOCLAIMS;
     length = '3 to 4 SHORT sentences, tight and skimmable, no long paragraphs or run-on sentences';
-    linkPurpose = 'the discovery call link (they can also revisit their audit there)';
-    context += ' THEY HAVE READ THE REPORT AND HAVE NOT BOOKED. They are not short of information, they have the findings. What is stopping them is doubt that it is worth a call, or not knowing what fixing it actually involves. Do not re-explain the findings they already read. Answer the objection instead.';
+    linkPurpose = 'the discovery call link (they can also revisit the breakdown there)';
     angles = {
-      1: 'They read it and did nothing, so name that lightly and without guilt: they saw the number, and nothing has changed since. Then do the thing nobody does, tell them exactly what the first fix would be and roughly how long it takes, for free, whether or not they hire you. End with the smallest possible ask, fifteen minutes, no deck.',
-      2: aiUnknown
-        ? `Lead with the AI-search shift: more buyers now ask AI assistants for a ${p.category}, and their audit found that AI models do not recognise ${p.business} yet, so they are invisible in that channel. Say "AI assistants" generally, never name ChatGPT or Perplexity as something we queried, and never call it a live search. One line on what that costs them. One sharp one-line CTA to a short call.`
-        : 'One-line proof point (about 90x return on ad spend, $2.34M in tracked revenue, for a local home services business), tie it to their biggest gap in one line, then one sharp one-line CTA to a short call.',
-      3: 'Short and human. Say plainly you are going to stop emailing. One line that the number in their report does not go away because the emails did. Leave the door open in a way that costs them nothing, and mean it. No pitch, no urgency, no final offer.',
+      1: 'They read it and did nothing, so name that lightly and without guilt: they had a look, and nothing has changed since. Then make the ask smaller than they expect. Fifteen minutes, no deck, and you will talk through where you would start. End there.',
+      2: 'One line of proof about OUR results, not theirs: about 90x return on ad spend and $2.34M in tracked revenue for a local home services business. That number is about us and is the only number permitted in this email. Then one sharp one-line CTA to a short call.',
+      3: 'Short and human. Say plainly you are going to stop emailing. Leave the door open in a way that costs them nothing, and mean it. No pitch, no urgency, no final offer.',
     };
   } else if (openedOnly) {
-    // They opened and did not click. Put the value IN the email instead of behind
-    // a link, and make the ask smaller than "go run an audit".
-    const rep = p.audit_report || {};
-    const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
-    const topFinding = (rep.findings || [])[0];
-    context = `IMPORTANT: they opened a previous email and did not click anything. The subject line reached them; the offer did not. They never ran anything: we scanned their site and sent them the result, so never ask whether they ran it or got round to it. Do NOT lead with the link. Put the single most useful finding directly in the body so the email is worth reading on its own.`
-      + (weakest ? ` Their weakest scored area is ${weakest.name} at ${weakest.score} out of 100.` : '')
-      + (topFinding ? ` The specific gap is "${topFinding.title}": ${topFinding.detail || ''}` : '');
-    linkPurpose = 'the audit link, mentioned once at the end and never as the main ask';
+    // Opened, did not click. The offer failed, not the subject. Make the ask smaller.
+    context = 'IMPORTANT: they opened a previous email and did not click anything. The subject line reached them; the offer did not. They never ran anything: we looked at their business and wrote it up unprompted, so never ask whether they ran it or got round to it. Do not lead with the link.' + NOCLAIMS;
+    linkPurpose = 'the link, mentioned once at the end and never as the main ask';
     angles = {
-      1: 'Write the whole email as if the link does not exist. Put the actual finding in the body, the real number, in the first line. Then the fix, specifically, in one or two sentences, given away free. The only question at the end is whether they want the other things you found. Nothing to click, nothing to book.',
-      2: 'They ignored the first angle so do not repeat it. Come at the same business from a different direction: what a competitor down the road is doing that they are not, or what a customer trying to reach them at 8pm actually runs into. One concrete thing, plainly. One short question.',
-      3: 'Three lines, dry and human. You have written twice, they are busy, you get it. Restate the single number. Say you will leave it, and that they can keep the fix either way.',
+      1: 'The link did not work on them, so stop pushing it. Say in one line what the breakdown actually covers, as CATEGORIES only and never as findings: how fast the site is, how they turn up in search, whether it is easy to contact them. Then ask if they want it walked through instead of read. Nothing to book.',
+      2: 'They ignored the first angle so do not repeat it. Come at it from the other side: offer fifteen minutes where you tell them what you would do first, whether or not they hire you. One short question.',
+      3: 'Three lines, dry and human. You have written twice, they are busy, you get it. Say you will leave it there and the breakdown stays up either way.',
     };
   } else {
-    // Never opened. The subject line is the thing that failed, not the offer.
-    //
-    // This branch used to pass NO findings while instructing the model to "take a DIFFERENT
-    // finding from their report". Told to name something specific and handed nothing, it invented.
-    // United Home Restoration got "0 Google reviews since 2023" and replied "that's not true I got
-    // a review like a week ago". Their stored record said rating 5, 161 reviews, newest one Google
-    // exposed 63 days old, and not one finding about reviews. Every word of that email was made up.
-    // Worse, open tracking cannot fire on a plain text email, so opened_at is never set and the
-    // openedOnly branch above is unreachable: EVERY follow-up to a non-clicker came through here.
-    const rep = p.audit_report || {};
-    const all = rep.findings || [];
-    // The first email led on findings[0] or findings[1] (see draftEmail). Give this one the rest,
-    // so "a different finding" is an instruction it can actually follow from real data.
-    const fh = crypto.createHash('sha1').update('finding:' + p.id).digest()[0];
-    const usedIdx = (all.length > 1 && (fh & 1)) ? 1 : 0;
-    const spare = all.filter((_, i) => i !== usedIdx);
-    const pickFor = spare.length ? spare[(step - 1) % spare.length] : null;
-    const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
-    context = 'IMPORTANT: they have NEVER opened any email from us. Do not reference a previous email, do not say "following up", "circling back" or "reaching out again", because from where they sit this is the first one. The subject line is what failed, not the offer, so lead with a different finding from their report than the first email used.'
-      + (pickFor ? ` The finding to lead with, and the ONLY one you may describe, is "${pickFor.title}": ${pickFor.detail || ''}` : '')
-      + (weakest ? ` Their weakest scored area is ${weakest.name} at ${weakest.score} out of 100.` : '')
-      + (p.rating && p.reviews ? ` For context only, do not build the email around this: their Google rating is ${p.rating} from ${p.reviews} reviews.` : '')
-      + ' You have been given every fact you are allowed to use. If a detail is not written above, you do not know it and you must not state it. Never assert anything about how many reviews they have, when their last review was, or how long it has been, under any circumstances.';
+    // Never opened. The subject line failed, not the offer. Nothing else can be inferred, and
+    // critically, nothing about their business may be asserted to make the new subject land.
+    context = 'IMPORTANT: they have NEVER opened any email from us. Do not reference a previous email, do not say "following up", "circling back" or "reaching out again", because from where they sit this is the first one. The subject line is what failed, so it must be genuinely different from a standard one, but it must still make no claim about their business.' + NOCLAIMS;
     angles = {
-      1: 'Treat this as a first email, because to them it is. Take a DIFFERENT finding from their report than the one used before, and open with it as a flat observation about their business. No preamble, no introduction. One sentence on what it costs them. One short line that the rest is written down and waiting.',
-      2: 'Still a cold open. Lead with the proof point as a fact about somebody else, about 90x return on ad spend and $2.34M tracked for a local home services business, then land it on the specific thing their own site is doing wrong. Concrete, not boastful. One line pointing at the report that already has their name on it.',
-      3: 'Last one. Two or three lines. Say you have written a few times and they have not landed, which usually means the timing is wrong rather than the problem is. Restate the single sharpest number from their report. Say the report stays up and you will stop writing. Never say request, sign up or run.',
+      1: 'Treat this as a first email, because to them it is. Open by naming what you did, plainly: you spent some time on how their business shows up online and wrote it up. No preamble, no introduction, no diagnosis. One line that it is written down and waiting.',
+      2: 'Still a cold open. Lead with the proof point as a fact about somebody else, about 90x return on ad spend and $2.34M tracked for a local home services business. That number is about us and is the only number permitted here. Then say the same kind of write-up already exists with their name on it.',
+      3: 'Last one. Two or three lines. Say you have written a few times and they have not landed, which usually means the timing is wrong rather than the interest. Say the breakdown stays up and you will stop writing. Never say request, sign up or run.',
     };
   }
   const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Voice: a sharp operator who already did the work and is telling them what he found, not a marketer selling a service. Plain, direct, a little dry. Confident enough to give the fix away. Lead with the specific thing, short sentences, every line earns its place, skimmable, no filler. Never use hype, urgency, flattery, "I hope this finds you well", "just following up", "I wanted to reach out", "circling back", "synergy", "leverage", "unlock" or "game changer". Write like a person who has looked at 400 of these sites and is mildly, specifically annoyed on their behalf. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". We ran this audit ourselves and sent it to them unprompted, so never write "your audit", "run your audit", "request", "sign up", "claim" or "get your free audit": the report already exists and already has their name on it. No em dashes, no exclamation marks, no hype words. SUBJECT LINE, same discipline as the first email and this is not optional: sentence case, UNDER 45 CHARACTERS, and it must name something SPECIFIC about THEIR business, a number from their report, their city, their category or what they will lose. NEVER the words "free", "audit", "check in", "checking in", "circle back", "following up", "touching base", "just wanted to", or any form of "did you get a chance". Those went out for months and were opened zero times. If the subject would still make sense sent to a different business, it is wrong and you must rewrite it. Return ONLY JSON {"subject":"...","body":"..."}`;
@@ -3831,6 +3835,13 @@ async function runFollowups() {
       const msg = await draftFollowup(p, step);
       await sendMail(p, msg.subject, msg.body, { kind: 'followup' + step });
       p.followup_step = step; p.last_followup_at = new Date().toISOString(); p.updated_at = p.last_followup_at;
+      // Keep what actually went out. Only followup_step and a timestamp were recorded before, so
+      // when a lead wrote back to say an email was wrong about his business there was no way to
+      // see what we had said to him, or to anyone else. Working that out needed SendGrid's
+      // activity API, which only retains a partial window, so some of what we sent is gone for
+      // good. The copy is cheap to keep and the alternative is not being able to answer for it.
+      if (!Array.isArray(p.followups_sent)) p.followups_sent = [];
+      p.followups_sent.push({ step, at: p.last_followup_at, subject: msg.subject, body: msg.body });
       p.followup_attempts = 0;
       save(prospects); sent++; budget--;
       await new Promise(r => setTimeout(r, 800));
