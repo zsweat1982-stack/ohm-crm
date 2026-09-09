@@ -326,7 +326,9 @@ function finishDraft(r, p) {
   // reasonable, and the answer is giving them something checkable, not a shorter URL.
   if (!/openheartmediaco\.com\s*$/i.test(out.body)) out.body = out.body.replace(/\s*$/, '') + '\nopenheartmediaco.com';
   out.body = out.body.replace(/^Michelle,?\s*$/m, 'Michelle Baker');
-  return out;
+  // Same grounding check the follow-ups get. Function declarations hoist, so this resolves even
+  // though assertGrounded is defined further down the file.
+  return assertGrounded(out, p, 'cold email');
 }
 
 // Origin of the public site, derived from LANDING_URL so there is one place to change it.
@@ -3669,6 +3671,50 @@ app.post('/api/send-approved', async (req, res) => {
 });
 
 // ---------- 3 / 7 / 10 day follow-up sequence ----------
+// Prose instructions did not hold. The audit prompt already carried an explicit order never to
+// imply a business had received no reviews, and "0 Google reviews since 2023" went out anyway to a
+// business with 161 of them. So this is enforced in code instead, on the generated copy, before it
+// can reach a send.
+//
+// Review claims are the specific trap. Google Places returns at most 5 reviews chosen by RELEVANCE,
+// never by date, so the newest review we can see is a LOWER BOUND and nothing more. No recency or
+// absence claim can ever be supported by it, no matter how the data looks. The rule is therefore
+// absolute rather than a threshold: the copy may state the review COUNT and the RATING, both of
+// which Google gives us directly, and nothing else about reviews at all.
+const REVIEW_NEGATION = /\b(no|zero|none|not|never|without|hasn'?t|haven'?t|lack(?:ing|s)?|missing|stopped|dry|drought)\b/i;
+const REVIEW_TIMEFRAME = /\b(since|last|latest|newest|recent|recently|stale|ago|over a year|in a year|months?|years?|weeks?|days?|20\d\d)\b/i;
+
+function reviewClaimProblem(text, p) {
+  const truth = String(p && p.reviews != null ? p.reviews : '').trim();
+  const rating = String(p && p.rating != null ? p.rating : '').trim();
+  for (const raw of String(text || '').split(/(?<=[.!?])\s+|\n+/)) {
+    const sentence = raw.trim();
+    if (!/review/i.test(sentence)) continue;
+    if (REVIEW_NEGATION.test(sentence)) return `states an absence of reviews: "${sentence.slice(0, 120)}"`;
+    if (REVIEW_TIMEFRAME.test(sentence)) return `makes a review recency claim, which our data can never support: "${sentence.slice(0, 120)}"`;
+    for (const n of sentence.match(/\b\d[\d,.]*\b/g) || []) {
+      const clean = n.replace(/[,.]$/, '');
+      if (clean !== truth && clean !== rating) {
+        return `cites a review figure (${clean}) that is not their real count (${truth || 'unknown'}): "${sentence.slice(0, 120)}"`;
+      }
+    }
+  }
+  return null;
+}
+
+// Throws rather than returning, so a caller that forgets to check cannot send the draft anyway.
+function assertGrounded(o, p, where) {
+  for (const [field, text] of [['subject', o && o.subject], ['body', o && o.body]]) {
+    const problem = reviewClaimProblem(text, p);
+    if (problem) {
+      const e = new Error(`${where} ${field} ${problem}`);
+      e.ungrounded = true;
+      throw e;
+    }
+  }
+  return o;
+}
+
 async function draftFollowup(p, step) {
   const link = reportUrl(p);
   // A pre-scanned lead has a report but no audited_at: we built it, they did not request it.
@@ -3721,7 +3767,28 @@ async function draftFollowup(p, step) {
     };
   } else {
     // Never opened. The subject line is the thing that failed, not the offer.
-    context = 'IMPORTANT: they have NEVER opened any email from us. Do not reference a previous email, do not say "following up", "circling back" or "reaching out again", because from where they sit this is the first one. The subject line is what failed, not the offer, so lead with a different finding from their report than the first email used.';
+    //
+    // This branch used to pass NO findings while instructing the model to "take a DIFFERENT
+    // finding from their report". Told to name something specific and handed nothing, it invented.
+    // United Home Restoration got "0 Google reviews since 2023" and replied "that's not true I got
+    // a review like a week ago". Their stored record said rating 5, 161 reviews, newest one Google
+    // exposed 63 days old, and not one finding about reviews. Every word of that email was made up.
+    // Worse, open tracking cannot fire on a plain text email, so opened_at is never set and the
+    // openedOnly branch above is unreachable: EVERY follow-up to a non-clicker came through here.
+    const rep = p.audit_report || {};
+    const all = rep.findings || [];
+    // The first email led on findings[0] or findings[1] (see draftEmail). Give this one the rest,
+    // so "a different finding" is an instruction it can actually follow from real data.
+    const fh = crypto.createHash('sha1').update('finding:' + p.id).digest()[0];
+    const usedIdx = (all.length > 1 && (fh & 1)) ? 1 : 0;
+    const spare = all.filter((_, i) => i !== usedIdx);
+    const pickFor = spare.length ? spare[(step - 1) % spare.length] : null;
+    const weakest = (rep.categories || []).slice().sort((a, b) => (a.score || 0) - (b.score || 0))[0];
+    context = 'IMPORTANT: they have NEVER opened any email from us. Do not reference a previous email, do not say "following up", "circling back" or "reaching out again", because from where they sit this is the first one. The subject line is what failed, not the offer, so lead with a different finding from their report than the first email used.'
+      + (pickFor ? ` The finding to lead with, and the ONLY one you may describe, is "${pickFor.title}": ${pickFor.detail || ''}` : '')
+      + (weakest ? ` Their weakest scored area is ${weakest.name} at ${weakest.score} out of 100.` : '')
+      + (p.rating && p.reviews ? ` For context only, do not build the email around this: their Google rating is ${p.rating} from ${p.reviews} reviews.` : '')
+      + ' You have been given every fact you are allowed to use. If a detail is not written above, you do not know it and you must not state it. Never assert anything about how many reviews they have, when their last review was, or how long it has been, under any circumstances.';
     angles = {
       1: 'Treat this as a first email, because to them it is. Take a DIFFERENT finding from their report than the one used before, and open with it as a flat observation about their business. No preamble, no introduction. One sentence on what it costs them. One short line that the rest is written down and waiting.',
       2: 'Still a cold open. Lead with the proof point as a fact about somebody else, about 90x return on ad spend and $2.34M tracked for a local home services business, then land it on the specific thing their own site is doing wrong. Concrete, not boastful. One line pointing at the report that already has their name on it.',
@@ -3737,7 +3804,7 @@ async function draftFollowup(p, step) {
   const deDash = s => typeof s === 'string' ? s.replace(/\s*[—–]\s*/g, ', ').replace(/\s+--\s+/g, ', ').replace(/--/g, ', ') : s;
   o.subject = deDash(o.subject); o.body = deDash(o.body);
   if (o.body) o.body = o.body.includes('[LINK]') ? o.body.replace('[LINK]', link) : o.body + '\n\n' + link;
-  return o;
+  return assertGrounded(o, p, `followup ${step}`);
 }
 const FOLLOWUP_DAYS = { 1: 3, 2: 7, 3: 10 };
 // Minimum spacing between two touches to the same lead, whatever the step maths says. Without it
@@ -3826,6 +3893,7 @@ function stampFollowupRun() {
   try { fs.writeFileSync(FOLLOWUP_STAMP, JSON.stringify({ ts: new Date().toISOString() })); } catch {}
 }
 async function followupTick(reason) {
+  if (sendingPaused()) return;
   if (Date.now() - lastFollowupRun() < 20 * 60 * 60 * 1000) return;   // already ran within the day
   stampFollowupRun();
   console.log('[followups] running,', reason);
@@ -3991,7 +4059,7 @@ async function runDailyCold() {
 }
 
 async function autosendTick(reason) {
-  if (!AUTOSEND) return;
+  if (!AUTOSEND || sendingPaused()) return;
   const previous = lastAutosendRun();
   if (Date.now() - previous < 20 * 60 * 60 * 1000) return;  // once a day
   if (!inSendWindow()) return;
@@ -4021,7 +4089,26 @@ setTimeout(() => autosendTick('boot catch-up'), 120 * 1000);
 
 // Manual trigger, for testing and for a day you want it to go early. Ignores the window and the
 // once-a-day stamp on purpose, but still respects the cap.
+// AUTOSEND is read from the environment once at boot, so the only way to stop sending was to
+// change a Render env var and wait for a redeploy. That is a slow switch to reach for when copy is
+// going out that should not be. This is the fast one: it holds in the data directory, so it also
+// survives the restart that a redeploy causes.
+const PAUSE_FILE = path.join(DATA_DIR, 'autosend_paused.json');
+function sendingPaused() {
+  try { return !!JSON.parse(fs.readFileSync(PAUSE_FILE, 'utf8')).paused; } catch { return false; }
+}
+app.post('/api/autosend-pause', (req, res) => {
+  const paused = req.body?.paused !== false;
+  const reason = String(req.body?.reason || '').slice(0, 500);
+  try {
+    fs.writeFileSync(PAUSE_FILE, JSON.stringify({ paused, reason, at: new Date().toISOString() }));
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+  console.warn(`[autosend] ${paused ? 'PAUSED' : 'resumed'}${reason ? ' - ' + reason : ''}`);
+  res.json({ paused, reason });
+});
+
 app.post('/api/run-autosend', async (_, res) => {
+  if (sendingPaused()) return res.status(409).json({ error: 'sending is paused, POST /api/autosend-pause {"paused":false} to resume' });
   try {
     stampAutosendRun();
     res.json(await runDailyCold());
