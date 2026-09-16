@@ -1828,7 +1828,7 @@ setInterval(() => { refreshSuppressions().catch(e => console.error('[suppression
 
 async function sendMail(p, subject, body, { kind = 'outreach', attachments = null } = {}) {
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
-  if (!looksLikeEmail(p.email)) throw Object.assign(new Error('no valid email'), { permanent: true });
+  if (!isMailableBusiness(p.email)) throw Object.assign(new Error('not a mailable business address'), { permanent: true });
   if (isSuppressed(p.email)) {
     throw Object.assign(new Error('SendGrid already suppresses this address, it would be dropped'), { permanent: true });
   }
@@ -3684,6 +3684,42 @@ function looksLikeEmail(addr) {
   return true;
 }
 
+// Not every address the scraper found belongs to a business we are allowed to pitch.
+// Three kinds turned up on the current list and none of them should ever receive cold
+// outreach:
+//
+//   .edu / .gov / .mil  - five emory.edu addresses were queued. A university is not a
+//                         local business and mailing one is how a domain ends up on a
+//                         blocklist that is very hard to get off.
+//   mysite.com          - Wix's placeholder. It is what a site shows when the owner
+//                         never replaced the template, so it is nobody's inbox.
+//   vendor platforms    - addresses belonging to the software behind the website
+//                         rather than the business in front of it.
+//
+// Deliberately narrow. A shared domain across several locations of one brand is a real
+// prospect with one decision maker, and the duplicate guard already handles that by
+// mailing it once. This list only covers addresses that are not a prospect at all.
+const NOT_A_BUSINESS_DOMAIN = new Set([
+  'mysite.com',        // Wix placeholder
+  'locmaps.com',       // listings vendor
+  'vagaro.com',        // salon booking platform, scraped off client sites
+  'iboostweb.com',     // web agency that built the site
+  'moatable.com',      // software vendor
+  'wixpress.com', 'squarespace.com', 'godaddy.com', 'example.com', 'domain.com',
+  'sentry.io', 'sentry.wixpress.com',
+]);
+function isMailableBusiness(addr) {
+  const e = normEmail(addr);
+  if (!looksLikeEmail(e)) return false;
+  const domain = e.split('@')[1];
+  const tld = domain.split('.').pop();
+  if (tld === 'edu' || tld === 'gov' || tld === 'mil') return false;
+  if (NOT_A_BUSINESS_DOMAIN.has(domain)) return false;
+  if (e.startsWith('noreply@') || e.startsWith('no-reply@') || e.startsWith('donotreply@')) return false;
+  if (e.startsWith('abuse@') || e.startsWith('postmaster@')) return false;
+  return true;
+}
+
 // An address is spoken for once any record carrying it has been mailed, parked after
 // failing, or replied. Queue states are included by the callers that need them.
 function claimedAddresses(alsoCountQueued) {
@@ -3700,7 +3736,7 @@ function claimedAddresses(alsoCountQueued) {
 
 async function sendApprovedBatch(budget) {
   const queue = prospects.filter(p =>
-    p.status === 'approved' && !p.unsubscribed_at && looksLikeEmail(p.email));
+    p.status === 'approved' && !p.unsubscribed_at && isMailableBusiness(p.email));
   // Last line of defence. Two approved records can still share an address, so the set
   // grows as we go and the second one is parked rather than mailed.
   const alreadyMailed = claimedAddresses(false);
@@ -4111,7 +4147,7 @@ async function runDailyCold() {
     const todo = [];
     for (const p of prospects) {
       if (todo.length >= need) break;
-      if (p.status !== 'new' || !looksLikeEmail(p.email) || p.unsubscribed_at) continue;
+      if (p.status !== 'new' || !isMailableBusiness(p.email) || p.unsubscribed_at) continue;
       const addr = normEmail(p.email);
       if (spokenFor.has(addr)) continue;
       spokenFor.add(addr);   // so a second record for the same address is skipped in this run too
@@ -4137,7 +4173,7 @@ async function runDailyCold() {
     if (approved >= budget) break;
     if (p.status !== 'drafted') continue;
     if (!p.subject || !p.body || p.body.trim().length < 120) continue;
-    if (p.unsubscribed_at || !looksLikeEmail(p.email)) continue;
+    if (p.unsubscribed_at || !isMailableBusiness(p.email)) continue;
     p.status = 'approved';
     p.approved_by = 'auto';
     p.updated_at = new Date().toISOString();
