@@ -100,6 +100,7 @@
 <div class="bar">
   <button class="primary" onclick="generateAll()">✍️ Draft next 25 with AI</button>
   <button class="green" onclick="sendApproved()">📤 Send approved</button>
+  <button id="autosendBtn" onclick="toggleAutosend()" title="Automatic daily sending">⏳ checking…</button>
   <div class="search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     <input id="q" placeholder="Search business, city, email, category…" oninput="render()"/>
@@ -157,8 +158,47 @@ function when(iso){ if(!iso) return ''; return new Date(iso).toLocaleString([], 
 
 async function load() {
   state = await api('/api/prospects');
-  renderStats(); render(); loadMetrics();
+  renderStats(); render(); loadMetrics(); loadAutosend();
   if (openId) { const p = state.prospects.find(x=>x.id===openId); if(p) renderDrawer(p); }
+}
+// Automatic sending had two switches and no display. AUTOSEND is an environment
+// variable read once at boot, so changing it means a Render visit and a redeploy. The
+// pause file is the fast one and survives restarts, but nothing showed it, so the only
+// honest answer to "is this sending tomorrow?" was to read the server logs. This puts
+// the real state on the screen and makes the fast switch clickable.
+let autosendState = null;
+async function loadAutosend() {
+  const b = document.getElementById('autosendBtn');
+  try {
+    const s = await api('/api/autosend-status');
+    autosendState = s;
+    if (!s.enabled) {
+      b.textContent = '🚫 Autosend off (Render)';
+      b.title = 'AUTOSEND is not set to 1 in the environment. Set it there to allow sending at all.';
+      b.disabled = true;
+    } else if (s.paused) {
+      b.textContent = '⏸️ Paused — click to resume';
+      b.title = (s.pausedReason ? 'Reason: ' + s.pausedReason + '\n' : '') + 'Sending is held. Click to resume.';
+      b.disabled = false;
+    } else {
+      b.textContent = '▶️ Sending daily — click to pause';
+      b.title = 'Sends ' + s.window + '. Cold left today: ' + s.coldBudgetLeft + '.';
+      b.disabled = false;
+    }
+  } catch (e) { b.textContent = '⚠️ Autosend unknown'; b.disabled = true; }
+}
+async function toggleAutosend() {
+  if (!autosendState || !autosendState.enabled) return;
+  const pausing = !autosendState.paused;
+  let reason = '';
+  if (pausing) {
+    reason = prompt('Pause automatic sending. Why? (shows in the log)', '') || '';
+  } else if (!confirm('Resume automatic daily sending?')) return;
+  try {
+    await api('/api/autosend-pause', 'POST', { paused: pausing, reason });
+    await loadAutosend();
+    toast(pausing ? 'Automatic sending paused' : 'Automatic sending resumed');
+  } catch (e) { toast(e.message); }
 }
 async function loadMetrics() {
   try {

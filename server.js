@@ -4245,8 +4245,18 @@ app.post('/api/run-autosend', async (_, res) => {
 
 app.get('/api/autosend-status', (_, res) => {
   const { hour, day } = localNow();
+  // The pause switch lives on disk and survives a redeploy, but nothing reported it,
+  // so the dashboard could not tell you whether tomorrow morning was going to send.
+  // `enabled` is the environment variable read once at boot; `paused` is the fast
+  // switch; `sending` is the only one of the three that answers the actual question.
+  let pause = {};
+  try { pause = JSON.parse(fs.readFileSync(PAUSE_FILE, 'utf8')); } catch {}
   res.json({
     enabled: AUTOSEND,
+    paused: !!pause.paused,
+    sending: AUTOSEND && !pause.paused,
+    pausedReason: pause.reason || null,
+    pausedAt: pause.at || null,
     window: `${AUTOSEND_HOUR_START}:00 to ${AUTOSEND_HOUR_END}:00 ${AUTOSEND_TZ}, weekdays`,
     localHour: hour, localDay: day, inWindow: inSendWindow(),
     lastRun: lastAutosendRun() ? new Date(lastAutosendRun()).toISOString() : null,
