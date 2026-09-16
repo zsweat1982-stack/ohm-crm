@@ -423,17 +423,36 @@ function pageSignals(html) {
     (/(type=["'](email|tel)["']|<textarea|name=["'][^"']*(email|e-mail|phone|message|comment|fullname|contact)[^"']*["'])/i.test(f))
     && !/(role=["']search["']|type=["']search["']|id=["'][^"']*search|name=["'](search|q|query|s)["']|action=["'][^"']*search)/i.test(f));
   const hasBooking = /(book (now|online|an?\s+appointment)|schedule (an?\s+|your\s+)?(appointment|consultation|visit|call|service)|calendly\.com|acuityscheduling|squareup\.com\/appointments|setmore|book(sy|ing)\.|vagaro|mindbodyonline|housecallpro|request (an?\s+|your\s+)?(appointment|quote|estimate))/i.test(html);
-  const hasNewsletter = (/(subscribe|sign\s?up|join)[^<>]{0,45}(newsletter|email list|mailing list|our email|updates)/i.test(text) || /(join our (email|mailing) list|get (our )?newsletter)/i.test(text)) && /<input[^>]+type=["']email["']/i.test(html);
+  // This used to demand the words "subscribe", "sign up" or "join" near "newsletter".
+  // Our own form says "Send me the guide" and was reported as no email capture at all.
+  // A visible email input that is not a login or a search box is email capture,
+  // whatever the button happens to say. The vocabulary match is kept as a second
+  // route in, not as a requirement.
+  const emailInput = /<input[^>]+type=["']email["']/i.test(html);
+  const looksLikeLogin = /<input[^>]+type=["']password["']/i.test(html);
+  const newsletterWords = /(subscribe|sign\s?up|join)[^<>]{0,45}(newsletter|email list|mailing list|our email|updates)/i.test(text)
+    || /(join our (email|mailing) list|get (our )?newsletter)/i.test(text)
+    || /(send me|get) (the |your |our )?(guide|checklist|playbook|report|free)/i.test(text);
+  const hasNewsletter = emailInput && !looksLikeLogin && (newsletterWords || /<form/i.test(html));
   const hasLiveChat = /(intercom|drift\.com|tawk\.to|zendesk|tidio|crisp\.chat|hubspot[^"']*conversations|livechatinc|customerchat|messenger[^"']*chat|gorgias|podium|chatwoot|olark|liveperson)/i.test(html);
   const hasCta = /(get (a |your )?(free )?(quote|estimate|consultation|demo|assessment|inspection|pricing)|request (a |your )?(free )?(quote|estimate|consultation|callback|appointment)|book (a |your |now|online|an appointment)|schedule (a |your |an? |now|online)|call now|claim your|get started|start (your|a) )/i.test(html);
   const hasPhone = /href=["']tel:\+?[0-9]/i.test(html);
   const hasEmailLink = /href=["']mailto:[^"']+@/i.test(html);
-  const napAddress = /\b\d{1,6}\s+([A-Za-z0-9.'\-]+\s){1,4}(street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|boulevard|drive|dr\.?|lane|ln\.?|way|court|ct\.?|suite|ste\.?|hwy|highway|pkwy|parkway|place|pl\.?|circle|cir\.?|trail|terrace)\b/i.test(text) && /\b(GA|Georgia)\b/.test(text)
-    || /\b[A-Za-z.\s]{2,25},\s*GA\s+3\d{4}\b/.test(text);
+  // The scanner strips <script> before building `text`, which removes JSON-LD, so an
+  // address that lives only in structured data read as no address at all. On our own
+  // site that produced "no physical address on the site" while 225 Reformation Pkwy
+  // sat in the LocalBusiness schema. Check both, and keep them apart: an address in
+  // schema only is a real finding, but it is a different finding from having none.
+  const streetRe = /\b\d{1,6}\s+([A-Za-z0-9.'\-]+\s){1,4}(street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|boulevard|drive|dr\.?|lane|ln\.?|way|court|ct\.?|suite|ste\.?|hwy|highway|pkwy|parkway|place|pl\.?|circle|cir\.?|trail|terrace)\b/i;
+  const cityStateZip = /\b[A-Za-z.\s]{2,25},\s*GA\s+3\d{4}\b/;
+  const napVisible = (streetRe.test(text) && /\b(GA|Georgia)\b/.test(text)) || cityStateZip.test(text);
+  const napInSchema = /"streetAddress"\s*:\s*"[^"]{4,}"/i.test(html)
+    || /itemprop=["']streetAddress["']/i.test(html);
+  const napAddress = napVisible || napInSchema;
   const schemaLocalBusiness = /("@type"\s*:\s*"?(LocalBusiness|Dentist|MedicalBusiness|MedicalClinic|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|GeneralContractor|Contractor|MovingCompany|ProfessionalService|Store|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|AutoRepair|RealEstateAgent|Physician|Dentistry)"?|itemtype=["'][^"']*schema\.org\/(LocalBusiness|[A-Za-z]*Business))/i.test(html);
   const faqSchema = /("@type"\s*:\s*"?(FAQPage|Question)"?)/i.test(html);
   const sameAs = /"sameAs"\s*:/i.test(html);
-  return { text, hasForm, hasBooking, hasNewsletter, hasLiveChat, hasCta, hasPhone, hasEmailLink, napAddress, schemaLocalBusiness, faqSchema, sameAs };
+  return { text, hasForm, hasBooking, hasNewsletter, hasLiveChat, hasCta, hasPhone, hasEmailLink, napAddress, napVisible, napInSchema, schemaLocalBusiness, faqSchema, sameAs };
 }
 
 // Which named AI crawlers are explicitly blocked in robots.txt (ignores wildcard-only rules to avoid false alarms).
@@ -555,7 +574,7 @@ async function scanWebsite(rawUrl) {
     mobileViewport: false, favicon: false, ogTitle: false, ogImage: false, schemaLocalBusiness: false, faqSchema: false, sameAs: false, canonical: false,
     // conversion
     hasPhone: false, hasEmailLink: false, hasForm: false, hasBooking: false, hasNewsletter: false,
-    hasLiveChat: false, hasCta: false, napAddress: false,
+    hasLiveChat: false, hasCta: false, napAddress: false, napVisible: false, napInSchema: false,
     // tracking / data
     analytics: false, analyticsType: null, fbPixel: false, googleAdsTag: false,
     // media / trust
@@ -620,7 +639,13 @@ async function scanWebsite(rawUrl) {
   // ----- media / trust (homepage) -----
   const imgs = html.match(/<img[^>]*>/gi) || [];
   out.imgCount = imgs.length;
-  out.imgMissingAlt = imgs.filter(t => !/alt=["'][^"']+["']/i.test(t)).length;
+  // alt="" is the correct markup for a decorative image, not a defect. The old test
+  // required one or more characters inside the quotes, so every properly marked
+  // decorative image was counted as a fault. On our own site that reported "6 of 8
+  // images have no alt text" when all eight had the attribute and none were wrong.
+  // Count only images with no alt attribute at all.
+  out.imgMissingAlt = imgs.filter(t => !/\salt\s*=/i.test(t)).length;
+  out.imgDecorative = imgs.filter(t => /\salt\s*=\s*["']\s*["']/i.test(t)).length;
   out.hasVideo = /(<video[\s>]|youtube\.com\/embed|player\.vimeo\.com|wistia|\.mp4["']|<iframe[^>]+(youtube|vimeo))/i.test(html);
   out.mixedContent = out.https && /(src|href)=["']http:\/\/(?!localhost|127\.)/i.test(html);
   out.copyrightYear = (html.match(/(?:©|&copy;|copyright)\s*(?:\d{4}\s*[-–]\s*)?(20\d{2})/i) || [])[1] || null;
@@ -1027,7 +1052,7 @@ WHAT THEY WANT MORE OF: ${answers.goal || 'more customers'}  (weave this in natu
 
 FULL TECHNICAL + MARKETING SCAN (real, just run):
 GOOGLE PAGESPEED (mobile): ${ps ? JSON.stringify({ performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, bestPractices: ps.bestPractices, LCP: ps.lcpLabel, CLS: ps.clsLabel, TBT: ps.tbtLabel }) : 'NOT MEASURED on this run. You do NOT have a speed number for this site. Do not state one, do not estimate one, and do not imply the site is fast or slow.'}
-SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileViewport: scan.mobileViewport, title: scan.title, titleLen: scan.titleLen, metaDescription: scan.description ? 'present (' + scan.descriptionLen + ' chars)' : 'MISSING', h1Count: scan.h1Count, wordCount: scan.wordCount, schemaLocalBusiness: scan.schemaLocalBusiness, canonical: scan.canonical, hasPhone: scan.hasPhone, hasForm: scan.hasForm, hasBooking: scan.hasBooking, hasCta: scan.hasCta, hasLiveChat: scan.hasLiveChat, hasNewsletter: scan.hasNewsletter, napAddress: scan.napAddress, analytics: scan.analyticsType || false, facebookPixel: scan.fbPixel, googleAdsTag: scan.googleAdsTag, hasVideo: scan.hasVideo, images: scan.imgCount, imagesMissingAlt: scan.imgMissingAlt, ogShareTags: scan.ogTitle && scan.ogImage, mixedContent: scan.mixedContent })}
+SITE SIGNALS: ${JSON.stringify({ reachable: scan.reachable, https: scan.https, mobileViewport: scan.mobileViewport, title: scan.title, titleLen: scan.titleLen, metaDescription: scan.description ? 'present (' + scan.descriptionLen + ' chars)' : 'MISSING', h1Count: scan.h1Count, wordCount: scan.wordCount, schemaLocalBusiness: scan.schemaLocalBusiness, canonical: scan.canonical, hasPhone: scan.hasPhone, hasForm: scan.hasForm, hasBooking: scan.hasBooking, hasCta: scan.hasCta, hasLiveChat: scan.hasLiveChat, hasNewsletter: scan.hasNewsletter, napAddress: scan.napAddress, addressVisibleOnPage: scan.napVisible, addressInStructuredDataOnly: !!(scan.napInSchema && !scan.napVisible), analytics: scan.analyticsType || false, facebookPixel: scan.fbPixel, googleAdsTag: scan.googleAdsTag, hasVideo: scan.hasVideo, images: scan.imgCount, imagesMissingAlt: scan.imgMissingAlt, ogShareTags: scan.ogTitle && scan.ogImage, mixedContent: scan.mixedContent })}
 GOOGLE BUSINESS PROFILE (live from Google Places): ${gbp && gbp.found ? JSON.stringify({ rating: gbp.rating, reviews: gbp.reviews, latestReviewDaysAgo: gbp.latestReviewDays, hoursListed: gbp.hasHours, websiteLinked: gbp.websiteOnGbp, phoneListed: gbp.phoneOnGbp, photos: gbp.photos, descriptionFilled: gbp.hasDescription, primaryCategory: gbp.primaryCategory, status: gbp.status }) : (gbp && gbp.found === false ? 'NO GOOGLE BUSINESS PROFILE FOUND (major local visibility gap)' : 'not checked')}
 SOCIAL PROFILES LINKED FROM SITE: ${Object.keys(scan.socials).length ? Object.keys(scan.socials).join(', ') : 'NONE detected'}
 PAGES ACTUALLY SCANNED (not just homepage): ${(scan.pagesScanned || ['/']).join(', ')}  (conversion, contact, and trust signals were merged across all of these pages, so if a signal is FAIL it is genuinely missing site-wide, not just off the homepage)
