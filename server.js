@@ -1828,7 +1828,7 @@ setInterval(() => { refreshSuppressions().catch(e => console.error('[suppression
 
 async function sendMail(p, subject, body, { kind = 'outreach', attachments = null } = {}) {
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
-  if (!p.email || !p.email.includes('@')) throw Object.assign(new Error('no valid email'), { permanent: true });
+  if (!looksLikeEmail(p.email)) throw Object.assign(new Error('no valid email'), { permanent: true });
   if (isSuppressed(p.email)) {
     throw Object.assign(new Error('SendGrid already suppresses this address, it would be dropped'), { permanent: true });
   }
@@ -3626,7 +3626,7 @@ app.get('/api/metrics', (_, res) => {
 app.post('/api/prospects/:id/send', async (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  if (!p.email || !p.email.includes('@')) return res.status(400).json({ error: 'no valid email' });
+  if (!looksLikeEmail(p.email)) return res.status(400).json({ error: 'no valid email' });
   if (p.status !== 'approved') return res.status(400).json({ error: 'must be approved first' });
   if (p.unsubscribed_at) return res.status(400).json({ error: 'lead has unsubscribed' });
   try {
@@ -3657,6 +3657,33 @@ app.post('/api/prospects/:id/send', async (req, res) => {
 // kind of thing nobody notices until a recipient says something.
 function normEmail(addr) { return String(addr || '').toLowerCase().trim(); }
 
+// The only address check anywhere was `.includes('@')`, which is not a check. The
+// scraper writes fragments of Google Maps URLs into the email field when it cannot
+// find a real one, and every single one of them contains an @ because that is how
+// Maps encodes coordinates:
+//
+//   //www.google.com/maps/place/shiloh+veterinary+hospital/@34.0448402
+//   +llc/@34.10254
+//
+// Twenty-three of those are on the current list. They pass `.includes('@')`, go to
+// SendGrid, and come back invalid, and invalid recipients are charged against the
+// sending reputation of the domain the real outreach depends on. Structure only,
+// deliberately: whether a well-formed address actually receives mail is SendGrid's
+// question to answer, not something to guess at here.
+function looksLikeEmail(addr) {
+  const e = normEmail(addr);
+  if (!e || e.length > 254 || /\s/.test(e)) return false;
+  const m = e.match(/^[^@\s]+@([^@\s]+)$/);          // exactly one @
+  if (!m) return false;
+  const domain = m[1];
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) return false;
+  if (domain.includes('..')) return false;
+  const tld = domain.split('.').pop();
+  if (tld.length < 2 || /^\d+$/.test(tld)) return false;   // ".10254" is a coordinate
+  if (e.includes('/')) return false;                        // a path, not an address
+  return true;
+}
+
 // An address is spoken for once any record carrying it has been mailed, parked after
 // failing, or replied. Queue states are included by the callers that need them.
 function claimedAddresses(alsoCountQueued) {
@@ -3673,7 +3700,7 @@ function claimedAddresses(alsoCountQueued) {
 
 async function sendApprovedBatch(budget) {
   const queue = prospects.filter(p =>
-    p.status === 'approved' && !p.unsubscribed_at && p.email && p.email.includes('@'));
+    p.status === 'approved' && !p.unsubscribed_at && looksLikeEmail(p.email));
   // Last line of defence. Two approved records can still share an address, so the set
   // grows as we go and the second one is parked rather than mailed.
   const alreadyMailed = claimedAddresses(false);
@@ -3862,7 +3889,7 @@ async function runFollowups() {
   let budget = FOLLOWUP_DAILY_CAP - followupsSentToday();
   for (const p of prospects) {
     if (budget <= 0) break;
-    if (!p.sent_at || !p.email || !p.email.includes('@')) continue;
+    if (!p.sent_at || !looksLikeEmail(p.email)) continue;
     if (p.unsubscribed_at) continue;
     if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable'].includes(p.status)) continue;
     const step = (p.followup_step || 0) + 1;
@@ -4084,7 +4111,7 @@ async function runDailyCold() {
     const todo = [];
     for (const p of prospects) {
       if (todo.length >= need) break;
-      if (p.status !== 'new' || !p.email || !p.email.includes('@') || p.unsubscribed_at) continue;
+      if (p.status !== 'new' || !looksLikeEmail(p.email) || p.unsubscribed_at) continue;
       const addr = normEmail(p.email);
       if (spokenFor.has(addr)) continue;
       spokenFor.add(addr);   // so a second record for the same address is skipped in this run too
@@ -4110,7 +4137,7 @@ async function runDailyCold() {
     if (approved >= budget) break;
     if (p.status !== 'drafted') continue;
     if (!p.subject || !p.body || p.body.trim().length < 120) continue;
-    if (p.unsubscribed_at || !p.email || !p.email.includes('@')) continue;
+    if (p.unsubscribed_at || !looksLikeEmail(p.email)) continue;
     p.status = 'approved';
     p.approved_by = 'auto';
     p.updated_at = new Date().toISOString();
