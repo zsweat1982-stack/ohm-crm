@@ -3645,14 +3645,53 @@ app.post('/api/prospects/:id/send', async (req, res) => {
 // Extracted from the route so the scheduler below and the button in the dashboard run the exact
 // same code. Two implementations of "send the approved ones" would drift, and the one that drifts
 // is the one nobody is watching.
+// One inbox, one email. The same address sits on more than one record all the time:
+// an owner running three businesses, a franchise sharing a head-office inbox, or a
+// scraper that picked up the vendor behind the website instead of the business in
+// front of it. On the current list 61 addresses are spread across 153 records, and
+// acworth@ptsolutions.com appears eighteen times.
+//
+// Nothing in the selection looked at that. Each record was independently 'new', so
+// each would be drafted and mailed on its own day. Eighteen cold emails to one inbox
+// is not outreach, it is how a sending domain gets blocked, and it is exactly the
+// kind of thing nobody notices until a recipient says something.
+function normEmail(addr) { return String(addr || '').toLowerCase().trim(); }
+
+// An address is spoken for once any record carrying it has been mailed, parked after
+// failing, or replied. Queue states are included by the callers that need them.
+function claimedAddresses(alsoCountQueued) {
+  const claimed = new Set();
+  for (const p of prospects) {
+    if (!p.email) continue;
+    const done = p.sent_at || p.status === 'sent' || p.status === 'unreachable'
+      || p.status === 'opened' || p.status === 'booked' || p.status === 'won' || p.status === 'lost';
+    const queued = alsoCountQueued && (p.status === 'drafted' || p.status === 'approved');
+    if (done || queued) claimed.add(normEmail(p.email));
+  }
+  return claimed;
+}
+
 async function sendApprovedBatch(budget) {
   const queue = prospects.filter(p =>
     p.status === 'approved' && !p.unsubscribed_at && p.email && p.email.includes('@'));
-  let sent = 0; const errors = []; let parked = 0;
+  // Last line of defence. Two approved records can still share an address, so the set
+  // grows as we go and the second one is parked rather than mailed.
+  const alreadyMailed = claimedAddresses(false);
+  let sent = 0; const errors = []; let parked = 0; let deduped = 0;
   for (const p of queue) {
     if (budget <= 0) break;
+    const addr = normEmail(p.email);
+    if (alreadyMailed.has(addr)) {
+      p.status = 'duplicate';
+      p.duplicate_of_email = addr;
+      p.updated_at = new Date().toISOString();
+      deduped++; save(prospects);
+      console.log('[send] skipped duplicate address', addr, 'record', p.id);
+      continue;
+    }
     try {
       const r = await sendMail(p, p.subject, p.body, { kind: 'cold' });
+      alreadyMailed.add(addr);
       p.status = 'sent'; p.sent_at = new Date().toISOString(); p.updated_at = p.sent_at;
       p.provider_id = r.headers['x-message-id'] || null;
       p.send_attempts = 0;
@@ -3674,7 +3713,7 @@ async function sendApprovedBatch(budget) {
       errors.push({ id: p.id, error: msg, parked: p.status === 'unreachable' });
     }
   }
-  return { sent, parked, remainingBudget: budget, errors };
+  return { sent, parked, deduped, remainingBudget: budget, errors };
 }
 
 app.post('/api/send-approved', async (req, res) => {
@@ -3995,7 +4034,12 @@ setTimeout(() => heldAuditTick('boot catch-up').catch(e => console.error('[held]
 // Everything that gated a manual send still gates this one. sendMail refuses an unsubscribed
 // lead, checks the address is deliverable before spending the sending domain on it, and parks a
 // lead as unreachable after a permanent failure instead of retrying it forever.
-const AUTOSEND = process.env.AUTOSEND !== '0';        // kill switch, no deploy needed
+// Opt IN, not opt out. This used to read `!== '0'`, which meant an unset variable
+// turned automatic sending ON. A cleared dashboard value, a new environment, or a
+// restored service would all start mailing strangers with nobody having decided
+// that it should. The failure is silent and it is outbound, which is the worst
+// combination. Now it sends only when AUTOSEND is explicitly '1'.
+const AUTOSEND = process.env.AUTOSEND === '1';        // kill switch, no deploy needed
 const AUTOSEND_HOUR_START = Number(process.env.AUTOSEND_HOUR_START || 9);
 const AUTOSEND_HOUR_END = Number(process.env.AUTOSEND_HOUR_END || 16);
 const AUTOSEND_TZ = process.env.AUTOSEND_TZ || 'America/New_York';
@@ -4033,9 +4077,19 @@ async function runDailyCold() {
   let drafted = 0;
   const need = budget - readyNow;
   if (need > 0) {
-    const todo = prospects
-      .filter(p => p.status === 'new' && p.email && p.email.includes('@') && !p.unsubscribed_at)
-      .slice(0, need);
+    // Skip addresses another record has already claimed, queued ones included. Drafting
+    // for a duplicate costs an Anthropic call to produce copy that the send guard will
+    // throw away, and on a list with 153 duplicate records that is real money.
+    const spokenFor = claimedAddresses(true);
+    const todo = [];
+    for (const p of prospects) {
+      if (todo.length >= need) break;
+      if (p.status !== 'new' || !p.email || !p.email.includes('@') || p.unsubscribed_at) continue;
+      const addr = normEmail(p.email);
+      if (spokenFor.has(addr)) continue;
+      spokenFor.add(addr);   // so a second record for the same address is skipped in this run too
+      todo.push(p);
+    }
     for (const p of todo) {
       try {
         const d = await draftEmail(p);
