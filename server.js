@@ -437,6 +437,15 @@ function pageSignals(html) {
   const hasLiveChat = /(intercom|drift\.com|tawk\.to|zendesk|tidio|crisp\.chat|hubspot[^"']*conversations|livechatinc|customerchat|messenger[^"']*chat|gorgias|podium|chatwoot|olark|liveperson)/i.test(html);
   const hasCta = /(get (a |your )?(free )?(quote|estimate|consultation|demo|assessment|inspection|pricing)|request (a |your )?(free )?(quote|estimate|consultation|callback|appointment)|book (a |your |now|online|an appointment)|schedule (a |your |an? |now|online)|call now|claim your|get started|start (your|a) )/i.test(html);
   const hasPhone = /href=["']tel:\+?[0-9]/i.test(html);
+  // A published number that is not wrapped in a tel: link is still a phone number.
+  // Reporting "no phone number" to a business whose number is printed on their own
+  // homepage is the single most credibility-destroying thing this audit can do, and
+  // it happened. Click-to-call stays the strict check, because that is what the item
+  // claims to measure, but we now also record whether a number is visible at all so
+  // the written report can say "your number is there but it is not tappable" instead
+  // of "you have no phone number".
+  const phoneTextRe = /(\(\d{3}\)\s*|\b\d{3}[.\-\s])\d{3}[.\-\s]\d{4}\b/;
+  const phoneVisible = hasPhone || phoneTextRe.test(text);
   const hasEmailLink = /href=["']mailto:[^"']+@/i.test(html);
   // The scanner strips <script> before building `text`, which removes JSON-LD, so an
   // address that lives only in structured data read as no address at all. On our own
@@ -444,15 +453,23 @@ function pageSignals(html) {
   // sat in the LocalBusiness schema. Check both, and keep them apart: an address in
   // schema only is a real finding, but it is a different finding from having none.
   const streetRe = /\b\d{1,6}\s+([A-Za-z0-9.'\-]+\s){1,4}(street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|boulevard|drive|dr\.?|lane|ln\.?|way|court|ct\.?|suite|ste\.?|hwy|highway|pkwy|parkway|place|pl\.?|circle|cir\.?|trail|terrace)\b/i;
-  const cityStateZip = /\b[A-Za-z.\s]{2,25},\s*GA\s+3\d{4}\b/;
-  const napVisible = (streetRe.test(text) && /\b(GA|Georgia)\b/.test(text)) || cityStateZip.test(text);
+  // This was hardcoded to Georgia: it required the literal "GA" and a 3xxxx ZIP. Any
+  // business outside Georgia was told it had no address on its site, no matter how
+  // plainly the address was printed. A Hilton Head SC practice with "1 Row Boat Rd,
+  // Hilton Head Island, SC 29928" on its contact page scored a flat zero for local
+  // trust because of this line. The audit runs on out-of-state leads now, so match any
+  // US state, and accept a street line plus any ZIP as the general case.
+  const US_STATE = "A[LKSZR]|C[AOT]|D[EC]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|P[AR]|RI|S[CD]|T[NX]|UT|V[AIT]|W[AIVY]";
+  const cityStateZip = new RegExp("\\b[A-Za-z.'\\-\\s]{2,28},\\s*(?:" + US_STATE + ")\\.?\\s+\\d{5}(?:-\\d{4})?\\b");
+  const zipAnywhere = /\b\d{5}(?:-\d{4})?\b/;
+  const napVisible = cityStateZip.test(text) || (streetRe.test(text) && zipAnywhere.test(text));
   const napInSchema = /"streetAddress"\s*:\s*"[^"]{4,}"/i.test(html)
     || /itemprop=["']streetAddress["']/i.test(html);
   const napAddress = napVisible || napInSchema;
   const schemaLocalBusiness = /("@type"\s*:\s*"?(LocalBusiness|Dentist|MedicalBusiness|MedicalClinic|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|GeneralContractor|Contractor|MovingCompany|ProfessionalService|Store|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|AutoRepair|RealEstateAgent|Physician|Dentistry)"?|itemtype=["'][^"']*schema\.org\/(LocalBusiness|[A-Za-z]*Business))/i.test(html);
   const faqSchema = /("@type"\s*:\s*"?(FAQPage|Question)"?)/i.test(html);
   const sameAs = /"sameAs"\s*:/i.test(html);
-  return { text, hasForm, hasBooking, hasNewsletter, hasLiveChat, hasCta, hasPhone, hasEmailLink, napAddress, napVisible, napInSchema, schemaLocalBusiness, faqSchema, sameAs };
+  return { text, hasForm, hasBooking, hasNewsletter, hasLiveChat, hasCta, hasPhone, phoneVisible, hasEmailLink, napAddress, napVisible, napInSchema, schemaLocalBusiness, faqSchema, sameAs };
 }
 
 // Which named AI crawlers are explicitly blocked in robots.txt (ignores wildcard-only rules to avoid false alarms).
@@ -573,7 +590,7 @@ async function scanWebsite(rawUrl) {
     title: null, titleLen: 0, description: null, descriptionLen: 0, h1Count: 0, wordCount: 0,
     mobileViewport: false, favicon: false, ogTitle: false, ogImage: false, schemaLocalBusiness: false, faqSchema: false, sameAs: false, canonical: false,
     // conversion
-    hasPhone: false, hasEmailLink: false, hasForm: false, hasBooking: false, hasNewsletter: false,
+    hasPhone: false, phoneVisible: false, hasEmailLink: false, hasForm: false, hasBooking: false, hasNewsletter: false,
     hasLiveChat: false, hasCta: false, napAddress: false, napVisible: false, napInSchema: false,
     // tracking / data
     analytics: false, analyticsType: null, fbPixel: false, googleAdsTag: false,
@@ -655,6 +672,7 @@ async function scanWebsite(rawUrl) {
     const s = pageSignals(h);
     out.hasForm ||= s.hasForm; out.hasBooking ||= s.hasBooking; out.hasNewsletter ||= s.hasNewsletter;
     out.hasLiveChat ||= s.hasLiveChat; out.hasCta ||= s.hasCta; out.hasPhone ||= s.hasPhone;
+    out.phoneVisible ||= s.phoneVisible;
     out.hasEmailLink ||= s.hasEmailLink; out.napAddress ||= s.napAddress;
     out.schemaLocalBusiness ||= s.schemaLocalBusiness; out.faqSchema ||= s.faqSchema; out.sameAs ||= s.sameAs;
     Object.assign(out.socials, extractSocials(h));
@@ -666,17 +684,29 @@ async function scanWebsite(rawUrl) {
 
   if (origin && out.host) {
     // discover up to 4 key internal pages (contact / about / services / booking) on the same host
-    const links = [...html.matchAll(/<a[^>]+href=["']([^"'#\s]+)["']/gi)].map(m => m[1]);
-    const want = /(contact|about|service|book|appointment|quote|schedule|team|location|review|faq|pricing|gallery|portfolio|menu)/i;
+    // Match on the LINK TEXT as well as the URL, and keep a fallback.
+    // The old version tested keywords against the URL only, against a short list. A real
+    // site crawled on Sep 18 had /our-story, /recipes, /shop, /rum-and-reason and
+    // /responsibility-and-legal. Not one matched, so the scanner never left the homepage
+    // and then reported no phone, no address, no form and no CTA for a business that
+    // publishes all four. Absence of a crawl is not absence of the thing.
+    const anchors = [...html.matchAll(/<a[^>]+href=["']([^"'#\s]+)["'][^>]*>([\s\S]{0,120}?)<\/a>/gi)]
+      .map(m => ({ href: m[1], label: stripText(m[2] || '') }));
+    const want = /(contact|about|service|book|appointment|quote|schedule|team|staff|location|hour|review|testimonial|faq|pricing|price|rate|gallery|portfolio|menu|shop|store|product|work|project|story|who-we-are|get-in-touch|reach|visit|our-)/i;
+    const skip = /\.(pdf|jpe?g|png|gif|svg|webp|zip|mp4|mov|doc|xls)$|^(mailto:|tel:|javascript:)|\/(cart|checkout|account|login|signin|register|privacy|terms|legal|sitemap)(\/|$)/i;
     const seen = new Set([out.finalUrl]);
-    const targets = [];
-    for (const href of links) {
-      if (targets.length >= 8) break;
-      let abs; try { abs = new URL(href, out.finalUrl).href.split('#')[0]; } catch { continue; }
+    const targets = [], spare = [];
+    for (const a of anchors) {
+      let abs; try { abs = new URL(a.href, out.finalUrl).href.split('#')[0]; } catch { continue; }
       try { if (new URL(abs).host.replace(/^www\./, '') !== out.host) continue; } catch { continue; }
-      if (seen.has(abs) || !want.test(abs) || /\.(pdf|jpg|png|zip|mp4)$/i.test(abs)) continue;
-      seen.add(abs); targets.push(abs);
+      if (seen.has(abs) || skip.test(abs) || skip.test(a.href)) continue;
+      seen.add(abs);
+      if (want.test(abs) || want.test(a.label)) { if (targets.length < 8) targets.push(abs); }
+      else if (spare.length < 8) spare.push(abs);
     }
+    // Never stay stuck on the homepage. If nothing matched the vocabulary, walk the first
+    // few internal pages anyway, because a site we did not read is not a site with nothing on it.
+    while (targets.length < 5 && spare.length) targets.push(spare.shift());
     const pages = await Promise.all(targets.map(u => fetchPage(u, 9000)));
     for (let i = 0; i < pages.length; i++) {
       if (pages[i].ok && pages[i].html) {
@@ -913,6 +943,18 @@ function buildChecklist(scan, ps, gbp, aio) {
   const lim = !!scan.limited;
   const L = v => (lim ? null : v);
   const LN = note => (lim ? 'not checked, the site refused our scanner' : note);
+  // A page whose raw HTML carries almost no text is a JavaScript shell: the markup we
+  // read is a loader, and the real content arrives after execution. Our fetcher does not
+  // execute anything. Calling a form, a phone link or an address "missing" on that
+  // evidence is a guess presented as a finding, which is exactly the complaint that
+  // started this. Same tri-state rule the tracking tags already use: true when we saw
+  // it, false only when we genuinely read a real page and it was not there, null when
+  // we could not honestly look.
+  const jsShell = !lim && scan.reachable === true && (scan.wordCount || 0) < 60;
+  const C = v => (lim ? null : (v ? true : (jsShell ? null : false)));
+  const CN = note => lim ? 'not checked, the site refused our scanner'
+    : jsShell ? 'could not verify, this page builds its content with JavaScript'
+    : note;
   // Rendered-DOM fallbacks: if the raw HTML missed it but Lighthouse (real Chrome) saw it, trust
   // Lighthouse. Tri-state on purpose. Lighthouse returns a null score for an audit it did not run,
   // and azerplumb.com came back with exactly that for viewport, which the old boolean collapsed
@@ -989,20 +1031,20 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'Page title present and sized right', ok: scan.title ? (scan.titleLen >= 15 && scan.titleLen <= 65) : hasTitle, note: scan.title ? scan.titleLen + ' chars' : (hasTitle === true ? 'present, seen in the rendered page' : hasTitle === null ? 'not checked' : 'missing') },
       { label: 'Meta description present and sized right', ok: scan.description ? (scan.descriptionLen >= 70 && scan.descriptionLen <= 165) : hasMetaDesc, note: scan.description ? scan.descriptionLen + ' chars' : (hasMetaDesc === true ? 'present, seen in the rendered page' : hasMetaDesc === null ? 'not checked' : 'missing') },
       { label: 'Single clear H1 headline', ok: L(scan.h1Count === 1), note: LN(scan.h1Count + ' found') },
-      { label: 'Local business schema markup', ok: L(scan.schemaLocalBusiness), note: LN('') },
+      { label: 'Local business schema markup', ok: C(scan.schemaLocalBusiness), note: CN('') },
       { label: 'Canonical tag set', ok: L(scan.canonical), note: LN('') },
       { label: 'Enough content on the page', ok: L(scan.wordCount >= 300), note: LN(scan.wordCount + ' words') },
     ]},
     ...(gbpGroup ? [gbpGroup] : []),
     ...(aioGroup ? [aioGroup] : []),
     { group: 'Turning Visitors Into Leads', items: [
-      { label: 'Click to call phone number', ok: L(scan.hasPhone), note: LN('') },
-      { label: 'Lead capture form', ok: L(scan.hasForm), note: LN('') },
-      { label: 'Online booking / scheduling', ok: L(scan.hasBooking), note: LN('') },
-      { label: 'Clear call to action', ok: L(scan.hasCta), note: LN('') },
+      { label: 'Click to call phone number', ok: C(scan.hasPhone), note: scan.hasPhone ? '' : (scan.phoneVisible ? 'a phone number is shown but it is not a tappable tel: link' : CN('')) },
+      { label: 'Lead capture form', ok: C(scan.hasForm), note: CN('') },
+      { label: 'Online booking / scheduling', ok: C(scan.hasBooking), note: CN('') },
+      { label: 'Clear call to action', ok: C(scan.hasCta), note: CN('') },
       { label: 'Live chat', ok: tagOk(scan.hasLiveChat), note: tagNote(scan.hasLiveChat) },
-      { label: 'Email / newsletter capture', ok: L(scan.hasNewsletter), note: LN('') },
-      { label: 'Address listed (local trust)', ok: L(scan.napAddress), note: LN('') },
+      { label: 'Email / newsletter capture', ok: C(scan.hasNewsletter), note: CN('') },
+      { label: 'Address listed (local trust)', ok: C(scan.napAddress), note: CN('') },
     ]},
     { group: 'Tracking & Ad Readiness', items: [
       { label: 'Website analytics installed', ok: tagOk(scan.analytics), note: scan.analytics ? (scan.analyticsType || '') : tagNote(scan.analytics) },
@@ -1010,12 +1052,12 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'Google Ads conversion tag', ok: tagOk(scan.googleAdsTag), note: tagNote(scan.googleAdsTag) },
     ]},
     { group: 'Content, Media & Social', items: [
-      { label: 'Video on site', ok: L(scan.hasVideo), note: LN('') },
+      { label: 'Video on site', ok: C(scan.hasVideo), note: CN('') },
       { label: 'Images have alt text', ok: lim ? null : (scan.imgCount ? scan.imgMissingAlt === 0 : null), note: LN(scan.imgCount ? (scan.imgCount - scan.imgMissingAlt) + '/' + scan.imgCount : 'none') },
       { label: 'Social share preview (Open Graph)', ok: L(scan.ogTitle && scan.ogImage), note: LN('') },
-      { label: 'Facebook linked', ok: L(socials.includes('facebook')), note: LN('') },
-      { label: 'Instagram linked', ok: L(socials.includes('instagram')), note: LN('') },
-      { label: 'YouTube linked', ok: L(socials.includes('youtube')), note: LN('') },
+      { label: 'Facebook linked', ok: C(socials.includes('facebook')), note: CN('') },
+      { label: 'Instagram linked', ok: C(socials.includes('instagram')), note: CN('') },
+      { label: 'YouTube linked', ok: C(socials.includes('youtube')), note: CN('') },
       { label: 'TikTok linked', ok: L(socials.includes('tiktok')), note: LN('') },
     ]},
   ];
