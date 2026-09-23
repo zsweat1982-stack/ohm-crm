@@ -3775,6 +3775,13 @@ const NOT_A_BUSINESS_DOMAIN = new Set([
   'wixpress.com', 'squarespace.com', 'godaddy.com', 'example.com', 'domain.com',
   'sentry.io', 'sentry.wixpress.com',
 ]);
+const ROLE_LOCALPARTS = new Set([
+  'info', 'contact', 'contactus', 'hello', 'admin', 'office', 'mail', 'email',
+  'support', 'help', 'service', 'services', 'sales', 'inquiries', 'enquiries',
+  'scheduling', 'schedule', 'appointments', 'booking', 'bookings', 'frontdesk',
+  'reception', 'team', 'general', 'webmaster', 'billing', 'accounts', 'accounting',
+]);
+
 function isMailableBusiness(addr) {
   const e = normEmail(addr);
   if (!looksLikeEmail(e)) return false;
@@ -3784,6 +3791,14 @@ function isMailableBusiness(addr) {
   if (NOT_A_BUSINESS_DOMAIN.has(domain)) return false;
   if (e.startsWith('noreply@') || e.startsWith('no-reply@') || e.startsWith('donotreply@')) return false;
   if (e.startsWith('abuse@') || e.startsWith('postmaster@')) return false;
+  // Guessed role addresses. The scraper synthesised info@<their-domain> whenever it could not
+  // find a published address, and a triage of all 1,447 records found 599 of them, 41% of the
+  // list. That share matches the 53% bounce rate almost exactly: these mailboxes mostly do not
+  // exist. Mailing them is the fastest way to lose the sending domain, and no amount of subject
+  // line work fixes an address that was invented. A real published info@ is rare enough that
+  // excluding the whole shape is the right trade.
+  const local = e.split('@')[0];
+  if (ROLE_LOCALPARTS.has(local)) return false;
   return true;
 }
 
