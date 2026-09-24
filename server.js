@@ -3448,8 +3448,13 @@ app.post('/api/subscribe', async (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
-  let row = prospects.find(x => (x.email || '').toLowerCase() === email
-    || (x.audit_email || '').toLowerCase() === email);
+  // Match on the mailbox itself and nothing else. This used to also match audit_email, so a
+  // person typing their own address here could be matched to a DIFFERENT prospect who had once
+  // been audited on their behalf, and the guide was then sent to that prospect's address instead
+  // of to the person who asked for it. One record had email=rome@hartmanlawfirm.com with
+  // audit_email=zac@openheartmediaco.com, so every internal test of this form delivered a guide
+  // to a law firm. Whoever typed the address is who gets the email.
+  let row = prospects.find(x => (x.email || '').toLowerCase() === email);
 
   if (row) {
     // Already known, possibly from the cold list. An inbound request is a much warmer signal than
@@ -3605,8 +3610,9 @@ app.post('/api/qualify', async (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
-  let row = prospects.find(x => (x.email || '').toLowerCase() === d.email
-    || (x.audit_email || '').toLowerCase() === d.email);
+  // Same rule as the guide form: the address they typed is the address we answer. Matching
+  // audit_email here would send the acknowledgement to somebody else entirely.
+  let row = prospects.find(x => (x.email || '').toLowerCase() === d.email);
 
   if (row) {
     // Known already, usually from the cold list. Somebody filling in a qualifying form is a far
