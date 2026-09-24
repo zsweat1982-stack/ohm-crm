@@ -57,6 +57,34 @@
   .handled { font-size:11px; color:var(--green); font-weight:600; }
   .toast { position:fixed; bottom:20px; right:20px; background:var(--navy); color:#fff; border:1px solid var(--navy); padding:12px 16px; border-radius:9px; opacity:0; transition:.3s; box-shadow:0 8px 24px rgba(15,26,48,.2); z-index:100; }
   .toast.show { opacity:1; }
+
+  /* ===== Pipeline board ===== */
+  .viewtabs{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+  .viewtabs button{border:0;border-radius:0;padding:8px 15px;font-size:13px;font-weight:600;color:var(--mut);background:#fff}
+  .viewtabs button.on{background:var(--navy);color:#fff}
+  .viewtabs button+button{border-left:1px solid var(--line)}
+  .deadbar{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:10px 24px;background:#eef2f8;border-bottom:1px solid var(--line);font-size:12px;color:var(--mut)}
+  .deadbar b{color:var(--navy);font-weight:700}
+  .deadbar .dchip{background:#fff;border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer}
+  .deadbar .dchip:hover{border-color:var(--accent)}
+  .board{display:flex;gap:14px;overflow-x:auto;padding:18px 24px 40px;align-items:flex-start}
+  .col{flex:0 0 274px;background:#eaeef5;border-radius:12px;padding:10px;max-height:calc(100vh - 250px);display:flex;flex-direction:column}
+  .col.inbound{background:#fdeceb;box-shadow:inset 0 3px 0 var(--red)}
+  .colhead{display:flex;align-items:center;gap:8px;padding:4px 6px 10px}
+  .colhead .ct{font-size:13px;font-weight:700;color:var(--navy);letter-spacing:.2px}
+  .colhead .cn{margin-left:auto;background:#fff;border:1px solid var(--line);border-radius:20px;font-size:11px;font-weight:700;color:var(--mut);padding:2px 9px}
+  .col.inbound .cn{border-color:#f3b8b5;color:var(--red)}
+  .colhint{font-size:11px;color:var(--mut);padding:0 6px 8px;margin-top:-6px}
+  .colbody{overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer;transition:.12s}
+  .card:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,26,48,.09)}
+  .card .cb{font-weight:700;color:var(--navy);font-size:13.5px;line-height:1.3}
+  .card .cs{font-size:11.5px;color:var(--mut);margin-top:3px}
+  .card .cf{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .src{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:#fdeceb;color:var(--red)}
+  .card .cv{margin-left:auto;font-weight:700;color:var(--navy);font-size:12px}
+  .card .cage{font-size:11px;color:var(--mut)}
+  .colempty{font-size:12px;color:var(--mut);padding:10px 6px;font-style:italic}
   /* drawer */
   .scrim { position:fixed; inset:0; background:rgba(15,26,48,.4); opacity:0; pointer-events:none; transition:.25s; z-index:40; }
   .scrim.open { opacity:1; pointer-events:auto; }
@@ -126,10 +154,13 @@
       <option value="needsemail">Missing email</option>
     </select>
   </label>
+  <span class="viewtabs"><button id="tabBoard" class="on" onclick="setView('board')">Pipeline</button><button id="tabTable" onclick="setView('table')">Table</button></span>
   <span class="muted" id="capnote"></span>
 </div>
+<div class="deadbar" id="deadbar"></div>
 <div class="metrics" id="metrics"></div>
-<div class="wrap">
+<div class="board" id="board"></div>
+<div class="wrap" id="tablewrap" style="display:none">
   <table>
     <thead><tr><th>Business</th><th>Email</th><th>Status</th><th>On it</th><th>Value</th><th>Updated</th></tr></thead>
     <tbody id="rows"></tbody>
@@ -225,6 +256,96 @@ function renderStats() {
   document.getElementById('capnote').textContent = `Sent today ${state.sentToday}/${state.dailyCap}. ${Math.max(0,state.dailyCap-state.sentToday)} sends left.`;
 }
 function needsResponse(p){ return p.status==='replied' || (p.status==='booked' && !p.handled_by); }
+/* ---------- Pipeline board ---------- */
+let view = 'board';
+function setView(v){
+  view = v;
+  document.getElementById('tabBoard').classList.toggle('on', v==='board');
+  document.getElementById('tabTable').classList.toggle('on', v==='table');
+  document.getElementById('board').style.display = v==='board' ? 'flex' : 'none';
+  document.getElementById('tablewrap').style.display = v==='table' ? 'block' : 'none';
+  document.getElementById('deadbar').style.display = v==='board' ? 'flex' : 'none';
+  render();
+}
+// Somebody who came to us, and who we have never cold emailed. Both halves matter: a cold
+// prospect who later got audited is still a cold prospect, and our own team testing is neither.
+function isInbound(p){
+  if (p.internal || p.status==='test') return false;
+  if (p.sent_at) return false;
+  return ['guide','website-form','self_serve'].includes(p.source)
+      || ['subscriber','lead','audit_requested','audited'].includes(p.status);
+}
+const COLS = [
+  {k:'inbound', label:'Inbound',   hint:'They came to you'},
+  {k:'queue',   label:'Queue',     hint:'Drafted and approved'},
+  {k:'sent',    label:'Contacted', hint:'Cold email out'},
+  {k:'engaged', label:'Engaged',   hint:'Opened or clicked'},
+  {k:'replied', label:'Replied',   hint:'Waiting on you'},
+  {k:'booked',  label:'Booked',    hint:'Call on the calendar'},
+  {k:'won',     label:'Won',       hint:''},
+];
+function stageOf(p){
+  if (p.internal || p.status==='test') return null;
+  if (isInbound(p)) return 'inbound';
+  const st = p.status;
+  if (st==='drafted' || st==='approved') return 'queue';
+  if (st==='sent') return 'sent';
+  if (st==='clicked' || st==='opened' || st==='audited') return 'engaged';
+  if (st==='replied') return 'replied';
+  if (st==='booked') return 'booked';
+  if (st==='won') return 'won';
+  return null;                       // new, unreachable, rejected, lost: counted, not shown
+}
+function srcLabel(p){
+  if (p.source==='guide') return 'guide';
+  if (p.source==='website-form') return 'form';
+  if (p.source==='self_serve') return 'audit';
+  if (p.status==='subscriber') return 'guide';
+  if (p.status==='lead') return 'form';
+  return 'audit';
+}
+function cardHtml(p){
+  const inb = isInbound(p);
+  const flag = needsResponse(p) ? '\u{1F525} ' : '';
+  const sub = [p.category, p.city].filter(Boolean).join(' \u00b7 ');
+  return `<div class="card" onclick="openDrawer('${p.id}')">
+    <div class="cb">${flag}${esc(p.business) || esc(p.email) || 'No name'}</div>
+    <div class="cs">${esc(sub) || esc(p.email)}</div>
+    <div class="cf">${inb?`<span class="src">${srcLabel(p)}</span>`:''}<span class="cage">${ago(p.updated_at)}</span><span class="cv">${money(p.deal_value)}</span></div>
+  </div>`;
+}
+function renderBoard(list){
+  const by = {}; COLS.forEach(c=>by[c.k]=[]);
+  const dead = {'new':0,'unreachable':0,'rejected':0,'lost':0,'internal':0};
+  for (const p of state.prospects){
+    if (p.internal || p.status==='test') { dead.internal++; continue; }
+    const st = stageOf(p);
+    if (st) { if (by[st]) by[st].push(p); }
+    else if (dead[p.status]!==undefined) dead[p.status]++;
+  }
+  const show = new Set(list.map(p=>p.id));
+  document.getElementById('board').innerHTML = COLS.map(c=>{
+    let items = by[c.k].filter(p=>show.has(p.id));
+    items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
+    return `<div class="col${c.k==='inbound'?' inbound':''}">
+      <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
+      ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
+      <div class="colbody">${items.slice(0,120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('deadbar').innerHTML =
+      `<span>Not on the board:</span>`
+    + `<span class="dchip" onclick="jump('new')">Un-worked queue <b>${dead['new']}</b></span>`
+    + `<span class="dchip" onclick="jump('unreachable')">Bounced / unreachable <b>${dead.unreachable}</b></span>`
+    + `<span class="dchip" onclick="jump('rejected')">Rejected <b>${dead.rejected}</b></span>`
+    + `<span class="dchip" onclick="jump('lost')">Lost <b>${dead.lost}</b></span>`
+    + `<span style="margin-left:auto">${dead.internal} internal test rows excluded</span>`;
+}
+function jump(status){
+  document.getElementById('filter').value = status;
+  setView('table');
+}
+
 function render() {
   const f = document.getElementById('filter').value;
   const q = document.getElementById('q').value.trim().toLowerCase();
@@ -235,6 +356,7 @@ function render() {
   if (q) list = list.filter(p => [p.business,p.city,p.category,p.email].some(v=>(v||'').toLowerCase().includes(q)));
   // sort: needs-response first, then most recently updated
   list.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
+  if (view==='board') renderBoard(list);
   document.getElementById('rows').innerHTML = list.slice(0,400).map(rowHtml).join('') || '<tr><td colspan=6 class="muted">No leads in this view.</td></tr>';
   document.getElementById('capnote').setAttribute('title', list.length+' matching');
 }
