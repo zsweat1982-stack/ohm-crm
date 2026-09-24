@@ -2112,6 +2112,40 @@ app.post('/api/prospects/:id/rerun-audit', (req, res) => {
 
 // Removing leads is irreversible, so it defaults to telling you what it WOULD remove and writes a
 // timestamped backup of the whole file before it touches anything.
+// Bulk import of a scraped list. Deduped on the address itself and on the domain, because the
+// old list carried 153 duplicate records and drafting for a duplicate burns an Anthropic call to
+// produce copy the send guard then throws away.
+app.post('/api/prospects/import', (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length) return res.status(400).json({ error: 'send { rows: [...] }' });
+  const seenEmail = new Set(prospects.map(p => normEmail(p.email)).filter(Boolean));
+  const seenDomain = new Set(prospects.map(p => normEmail(p.email).split('@')[1]).filter(Boolean));
+  let added = 0, dupeEmail = 0, dupeDomain = 0, bad = 0;
+  const nowIso = new Date().toISOString();
+  for (const r of rows) {
+    const email = normEmail(r.email);
+    if (!looksLikeEmail(email)) { bad++; continue; }
+    if (seenEmail.has(email)) { dupeEmail++; continue; }
+    const dom = email.split('@')[1];
+    if (seenDomain.has(dom)) { dupeDomain++; continue; }
+    prospects.push({
+      id: 'B' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+      business: String(r.business || '').slice(0, 120),
+      category: String(r.trade || r.category || '').slice(0, 60),
+      city: String(r.city || '').slice(0, 60),
+      phone: String(r.phone || ''), website: String(r.website || ''),
+      rating: String(r.rating || ''), reviews: String(r.reviews || ''),
+      email, subject: '', body: '', notes: [], handled_by: '', deal_value: '',
+      contact_first: '', contact_name: '',
+      status: 'new', source: String(req.body.source || 'import'),
+      created_at: nowIso, updated_at: nowIso,
+    });
+    seenEmail.add(email); seenDomain.add(dom); added++;
+  }
+  if (added) save(prospects);
+  res.json({ added, dupeEmail, dupeDomain, bad, total: prospects.length });
+});
+
 app.post('/api/prospects/purge', (req, res) => {
   const { reason = 'unreachable', confirm = false } = req.body || {};
   const match = p => {
@@ -3541,6 +3575,14 @@ app.post('/api/subscribe', async (req, res) => {
     // lead magnet must not eat a cold send from the day's budget.
     row.guide_sent_at = new Date().toISOString();
     row.updated_at = row.guide_sent_at;
+    // They asked us for something and gave us an address to send it to, which is the cleanest
+    // opt-in this business gets. Best effort: a Mailchimp outage must never fail the download.
+    if (!row.internal) {
+      try {
+        await mailchimpUpsert(email, { first, tags: ['guide-download'] });
+        row.mailchimp_at = row.guide_sent_at;
+      } catch (e) { console.error('[mailchimp] guide push failed -', email, e.message); }
+    }
     try { save(prospects); } catch (e) { console.error('[subscribe] save failed -', e.message); }
     return res.json({ ok: true, sent: true, url: GUIDE_URL });
   } catch (e) {
@@ -3757,6 +3799,12 @@ app.post('/api/qualify', async (req, res) => {
     } catch (e) {
       console.error('[qualify] ack to lead failed -', d.email, e.message);
     }
+    try {
+      const nameBits = String(d.name || '').trim().split(/\s+/);
+      await mailchimpUpsert(d.email, { first: nameBits[0] || '', last: nameBits.slice(1).join(' '), tags: ['contact-form'] });
+      row.mailchimp_at = new Date().toISOString();
+      try { save(prospects); } catch {}
+    } catch (e) { console.error('[mailchimp] form push failed -', d.email, e.message); }
   } else {
     console.log('[qualify] no auto-reply:', d.email, ownTeam ? '(our own team)' : '(' + pitch.why.join(', ') + ')');
   }
@@ -4394,6 +4442,41 @@ setTimeout(() => heldAuditTick('boot catch-up').catch(e => console.error('[held]
 // that it should. The failure is silent and it is outbound, which is the worst
 // combination. Now it sends only when AUTOSEND is explicitly '1'.
 const AUTOSEND = process.env.AUTOSEND === '1';        // kill switch, no deploy needed
+
+// ---------- Mailchimp ----------
+// SendGrid does cold outreach and transactional mail; newsletters live in Mailchimp, which sends
+// from its own infrastructure so a rough prospecting week cannot push client mail into spam.
+// The only missing piece was the bridge: somebody downloads the guide and nothing carries them
+// across, so the audience never grows. Idempotent by design (PUT on the subscriber hash), and a
+// complete no-op until the two env vars are set, so it can ship before the key exists.
+const MC_KEY = process.env.MAILCHIMP_API_KEY || '';
+const MC_LIST = process.env.MAILCHIMP_LIST_ID || '';
+const MC_DC = MC_KEY.includes('-') ? MC_KEY.split('-').pop() : '';
+
+async function mailchimpUpsert(email, { first = '', last = '', tags = [] } = {}) {
+  if (!MC_KEY || !MC_LIST || !MC_DC) return { skipped: 'mailchimp not configured' };
+  const addr = String(email || '').trim().toLowerCase();
+  if (!looksLikeEmail(addr)) return { skipped: 'not an address' };
+  // Mailchimp addresses a member by the md5 of the lowercased email, so PUT is an upsert and a
+  // second guide download does not come back as "Member Exists".
+  const hash = crypto.createHash('md5').update(addr).digest('hex');
+  const r = await fetch(`https://${MC_DC}.api.mailchimp.com/3.0/lists/${MC_LIST}/members/${hash}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Basic ' + Buffer.from('key:' + MC_KEY).toString('base64'),
+               'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email_address: addr,
+      status_if_new: 'subscribed',          // never re-subscribe somebody who already opted out
+      merge_fields: { FNAME: first || '', LNAME: last || '' },
+      tags,
+    }),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`mailchimp ${r.status}: ${body.slice(0, 160)}`);
+  }
+  return { ok: true };
+}
 
 // ---------- Deliverability governor ----------
 // Volume is not the constraint, reputation is. A domain that keeps sending through a rising
