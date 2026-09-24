@@ -4488,6 +4488,21 @@ async function mailchimpUpsert(email, { first = '', last = '', tags = [] } = {})
   return { ok: true };
 }
 
+// Diagnostic: ask Mailchimp which audiences the key can see, and whether the configured
+// list id is one of them. Cheaper than hunting the Audience ID through the UI, and it says
+// plainly whether a 404 is a wrong list or a wrong key.
+app.get('/api/mailchimp/lists', async (_, res) => {
+  if (!MC_KEY || !MC_DC) return res.status(400).json({ error: 'MAILCHIMP_API_KEY not set or has no datacentre suffix' });
+  try {
+    const r = await fetch(`https://${MC_DC}.api.mailchimp.com/3.0/lists?count=50&fields=lists.id,lists.name,lists.stats.member_count`,
+      { headers: { Authorization: 'Basic ' + Buffer.from('key:' + MC_KEY).toString('base64') } });
+    const body = await r.json();
+    if (!r.ok) return res.status(r.status).json({ error: body.detail || body.title || 'mailchimp error', status: r.status });
+    const lists = (body.lists || []).map(l => ({ id: l.id, name: l.name, members: l.stats?.member_count }));
+    res.json({ dc: MC_DC, configured: MC_LIST || null, matches: lists.some(l => l.id === MC_LIST), lists });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ---------- Deliverability governor ----------
 // Volume is not the constraint, reputation is. A domain that keeps sending through a rising
 // bounce rate stops reaching anybody, and that damage takes months to undo rather than days.
