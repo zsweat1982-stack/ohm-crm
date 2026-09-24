@@ -278,7 +278,7 @@ function isInbound(p){
 const COLS = [
   {k:'inbound', label:'Inbound',   hint:'They came to you'},
   {k:'queue',   label:'Queue',     hint:'Drafted and approved'},
-  {k:'sent',    label:'Contacted', hint:'Cold email out'},
+  {k:'sent',    label:'Awaiting reply', hint:'Emailed, nothing back yet'},
   {k:'engaged', label:'Engaged',   hint:'Opened or clicked'},
   {k:'replied', label:'Replied',   hint:'Waiting on you'},
   {k:'booked',  label:'Booked',    hint:'Call on the calendar'},
@@ -333,8 +333,14 @@ function renderBoard(list){
       <div class="colbody">${items.slice(0,120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
     </div>`;
   }).join('');
+  const contactedEver = state.prospects.filter(p=>p.sent_at).length;
+  const fups = state.prospects.reduce((n,p)=>n+(p.followup_step||0),0);
   document.getElementById('deadbar').innerHTML =
-      `<span>Not on the board:</span>`
+      `<span title="Board columns are live stages. These are all-time totals.">`
+    + `<b>${contactedEver}</b> contacted all time \u00b7 <b>${contactedEver+fups}</b> emails out \u00b7 `
+    + `<b>${state.prospects.filter(p=>p.status==='sent').length}</b> still awaiting a reply</span>`
+    + `<span style="width:1px;height:18px;background:#d6dde8"></span>`
+    + `<span>Not on the board:</span>`
     + `<span class="dchip" onclick="jump('new')">Un-worked queue <b>${dead['new']}</b></span>`
     + `<span class="dchip" onclick="jump('unreachable')">Bounced / unreachable <b>${dead.unreachable}</b></span>`
     + `<span class="dchip" onclick="jump('rejected')">Rejected <b>${dead.rejected}</b></span>`
