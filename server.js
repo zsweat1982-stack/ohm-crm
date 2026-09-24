@@ -4499,7 +4499,10 @@ app.get('/api/mailchimp/lists', async (_, res) => {
     const body = await r.json();
     if (!r.ok) return res.status(r.status).json({ error: body.detail || body.title || 'mailchimp error', status: r.status });
     const lists = (body.lists || []).map(l => ({ id: l.id, name: l.name, members: l.stats?.member_count }));
-    res.json({ dc: MC_DC, configured: MC_LIST || null, matches: lists.some(l => l.id === MC_LIST), lists });
+    // Never echo the configured value: it is whatever was pasted into the env var, and if that
+    // was the API key by mistake then printing it back leaks the key into whoever is looking.
+    res.json({ dc: MC_DC, configuredLooksLikeAKey: MC_LIST.length > 20 || MC_LIST.includes('-'),
+               matches: lists.some(l => l.id === MC_LIST), lists });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
