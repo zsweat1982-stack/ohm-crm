@@ -1731,6 +1731,15 @@ function sentToday() {
 // address. The model was asked to include these in the drafted copy and did so unreliably, so
 // they are appended in code instead: the copy path can never drop them.
 const COMPANY = process.env.COMPANY_NAME || 'Open Heart Media';
+// Anything submitted from one of our own mailboxes is a test of the form, not a lead. It still
+// gets saved and still gets its email so the test is a real test, but it never raises an alert,
+// never enters the follow-up sequence and never shows up in a count of inbound demand. Twelve of
+// the eighteen "stranded leads" found on 24 Sep were our own team trying the audit tool.
+const OWN_DOMAIN = (process.env.OWN_DOMAIN || 'openheartmediaco.com').toLowerCase();
+function isOwnTeam(addr) {
+  const e = String(addr || '').toLowerCase().trim();
+  return e.endsWith('@' + OWN_DOMAIN);
+}
 const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS
   || '225 Reformation Pkwy, Suite 200 Office #28, Canton, GA 30114';
 const PUBLIC_URL = (process.env.PUBLIC_URL || LANDING_URL.replace(/\/go\/?$/, '')).replace(/\/$/, '');
@@ -3505,6 +3514,7 @@ app.post('/api/subscribe', async (req, res) => {
       status: 'subscriber', source: 'guide',
       guide_requested_at: nowIso, updated_at: nowIso,
       // CAN-SPAM wants to know where consent came from if it is ever questioned.
+      internal: isOwnTeam(email) || undefined,
       consent: { at: nowIso, ip, source: 'free-guide-modal', page: String(body.page || '').slice(0, 200) },
     };
     prospects.push(row);
@@ -3571,6 +3581,39 @@ const QUALIFY_FIELDS = ['business', 'website', 'name', 'role', 'email', 'phone',
 
 // What the lead gets back, immediately. Plain text, no pitch, and it answers the only two
 // questions they have: did that go through, and when does someone get in touch.
+// Scores a contact form submission for "this is somebody selling TO us". Three of the first four
+// real submissions were outbound pitches using the form as a channel, and each would now trigger
+// an automatic promise to call them back. This only ever gates the AUTO-REPLY: the row is still
+// saved and the team is still alerted, so a false positive costs a courtesy email, never a lead.
+const PITCH_PHRASES = [
+  /\bi'?m from\b/i, /\bi am from\b/i, /\bwe help\b/i, /\bwe solve\b/i, /\bwe speciali[sz]e\b/i,
+  /\bwe offer\b/i, /\bour (system|team|company|service)\b/i, /\bwould you be open\b/i,
+  /\bis this something you\b/i, /\bno.{0,3}obligation\b/i, /\breaching out\b/i,
+  /\bfree,? (no.{0,3}obligation )?(assessment|quote|consultation|audit)\b/i,
+  /\bhope this (e.?mail )?finds you\b/i, /\blet me know if (you'?re )?interested\b/i,
+];
+function pitchScore(d) {
+  const norm = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const goal = String(d.goal || ''), tried = String(d.tried || '');
+  const both = goal + '\n' + tried;
+  const g = norm(goal), t = norm(tried);
+  let score = 0; const why = [];
+  // The same block pasted into both boxes is a script, not two answers.
+  if (g && t && g.length > 60 && (g === t || g.slice(0, 120) === t.slice(0, 120))) { score += 2; why.push('same text in both fields'); }
+  let hits = 0;
+  for (const re of PITCH_PHRASES) if (re.test(both)) hits++;
+  if (hits) { score += Math.min(2, hits); why.push(hits + ' selling phrase' + (hits > 1 ? 's' : '')); }
+  // Addressed to us by name reads as outbound mail, not as someone describing their own business.
+  if (new RegExp('\\b' + COMPANY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(both)) { score += 2; why.push('addressed to us by name'); }
+  if (d.email && both.toLowerCase().includes(String(d.email).toLowerCase())) { score += 1; why.push('signature block'); }
+  const site = norm(d.website).replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+  // Weighted light on purpose: a business with NO website is exactly who we want to hear from,
+  // so an empty or dashed website box must never be enough on its own to flag anyone.
+  if (/^(google|facebook|instagram|example)\.com$/.test(site)) { score += 2; why.push('bogus website'); }
+  else if (!site || site === '-' || !site.includes('.')) { score += 1; why.push('no real website'); }
+  return { score, why, pitch: score >= 3 };
+}
+
 function qualifyAckBody(first, d) {
   const digits = String(d.phone || '').replace(/\D/g, '').slice(-10);
   const pretty = digits.length === 10
@@ -3670,19 +3713,31 @@ app.post('/api/qualify', async (req, res) => {
   }
   row.qualify = { at: nowIso, ...d };
   row.updated_at = nowIso;
+  // Classify before anything goes out. Our own team testing the form is not demand, and somebody
+  // using the form as an outbound channel must not be promised a call back.
+  const ownTeam = isOwnTeam(d.email);
+  const pitch = ownTeam ? { pitch: false, why: [] } : pitchScore(d);
+  if (ownTeam) { row.internal = true; row.status = 'test'; }
+  else if (pitch.pitch) {
+    row.status = 'rejected';
+    row.notes = Array.isArray(row.notes) ? row.notes : [];
+    row.notes.push({ ts: nowIso, by: null, text: 'Looks like an outbound pitch at us, not a lead: ' + pitch.why.join(', ') + '. No auto-reply sent.' });
+  }
   try { save(prospects); } catch (e) { console.error('[qualify] save failed -', e.message); }
 
   // The lead is on disk before anything else can fail. The notification is best effort: if
   // SendGrid is down the lead is still captured and still in the CRM.
   try {
-    if (process.env.SENDGRID_API_KEY && SALES.length) {
+    if (process.env.SENDGRID_API_KEY && SALES.length && !ownTeam) {
       await sgMail.sendMultiple({
         to: SALES,
         from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
         replyTo: d.email,
         // Shouted on purpose. This lands in two busy inboxes and it is the hottest signal the
         // business gets, so it must not read like one more notification.
-        subject: `LEAD FOLLOW UP IMMEDIATELY: ${d.business}${d.timing ? ' (' + d.timing + ')' : ''}`,
+        subject: pitch.pitch
+          ? `Probably a pitch, not a lead: ${d.business}`
+          : `LEAD FOLLOW UP IMMEDIATELY: ${d.business}${d.timing ? ' (' + d.timing + ')' : ''}`,
         text: qualifyEmailBody(d, row),
       });
     } else {
@@ -3695,11 +3750,15 @@ app.post('/api/qualify', async (req, res) => {
   // Answer the person. They handed over a phone number and got nothing back, which is the opposite
   // of what the form is for. Sent after the internal alert so a failure here can never stop the
   // team being told, and marked transactional because they asked us to contact them.
-  try {
-    const firstName = String(d.name || '').trim().split(/\s+/)[0] || '';
-    await sendMail(row, 'We got your details', qualifyAckBody(firstName, d), { kind: 'form-ack', transactional: true });
-  } catch (e) {
-    console.error('[qualify] ack to lead failed -', d.email, e.message);
+  if (!ownTeam && !pitch.pitch) {
+    try {
+      const firstName = String(d.name || '').trim().split(/\s+/)[0] || '';
+      await sendMail(row, 'We got your details', qualifyAckBody(firstName, d), { kind: 'form-ack', transactional: true });
+    } catch (e) {
+      console.error('[qualify] ack to lead failed -', d.email, e.message);
+    }
+  } else {
+    console.log('[qualify] no auto-reply:', d.email, ownTeam ? '(our own team)' : '(' + pitch.why.join(', ') + ')');
   }
 
   return res.json({ ok: true, id: row.id });
@@ -4015,6 +4074,11 @@ function numericClaimProblem(text, { isBody }) {
 
 // Throws rather than returning, so a caller that forgets to check cannot send the draft anyway.
 function assertGrounded(o, p, where) {
+  // The subject is a format, not a generated line. "Their Company/Open Heart Media" reads as a
+  // note between two businesses rather than a pitch, it cannot drift, and it cannot assert
+  // anything about them that we would then have to stand behind. Applied here because every
+  // drafter, cold and follow-up alike, returns through this function.
+  if (p && p.business) o.subject = `${p.business}/${COMPANY}`;
   for (const [field, text] of [['subject', o && o.subject], ['body', o && o.body]]) {
     const problem = reviewClaimProblem(text, p)
       || numericClaimProblem(text, { isBody: field === 'body' });
@@ -4058,7 +4122,9 @@ async function draftFollowup(p, step) {
     angles = {
       1: 'They read it and did nothing, so name that lightly and without guilt: they had a look, and nothing has changed since. Then make the ask smaller than they expect. Fifteen minutes, no deck, and you will talk through where you would start. End there.',
       2: 'One line of proof about OUR results, not theirs: about 90x return on ad spend and $2.34M in tracked revenue for a local home services business. That number is about us and is the only number permitted in this email. Then one sharp one-line CTA to a short call.',
-      3: 'Short and human. Say plainly you are going to stop emailing. Leave the door open in a way that costs them nothing, and mean it. No pitch, no urgency, no final offer.',
+      3: 'Neither ask landed, so stop asking and handle the objection directly. Name the most likely reason they have not replied: it is not the right quarter, or they are not sure what changing any of it would actually involve. Ask what would need to be true for it to be worth a conversation. One question, no offer.',
+      4: 'Three weeks out. Give something away with no ask attached at all. One concrete thing they can do themselves this week, specific enough to be worth doing, and explicitly say you are not asking for anything back. End with a single open line they can reply to or ignore.',
+      5: 'The last one. Short and human. Say plainly you are going to stop emailing. Leave the door open in a way that costs them nothing, and mean it. No pitch, no urgency, no final offer.',
     };
   } else if (openedOnly) {
     // Opened, did not click. The offer failed, not the subject. Make the ask smaller.
@@ -4067,7 +4133,9 @@ async function draftFollowup(p, step) {
     angles = {
       1: 'The link did not work on them, so stop pushing it. Say in one line what the breakdown actually covers, as CATEGORIES only and never as findings: how fast the site is, how they turn up in search, whether it is easy to contact them. Then ask if they want it walked through instead of read. Nothing to book.',
       2: 'They ignored the first angle so do not repeat it. Come at it from the other side: offer fifteen minutes where you tell them what you would do first, whether or not they hire you. One short question.',
-      3: 'Three lines, dry and human. You have written twice, they are busy, you get it. Say you will leave it there and the breakdown stays up either way.',
+      3: 'They still have not clicked, so the format is wrong, not the timing. Offer it in a different shape: you will walk them through what you found on a short call, or write the three things back in the email itself so they never have to click anything. Let them pick.',
+      4: 'Three weeks out and nothing has landed. One proof point about US, about 90x return on ad spend and $2.34M in tracked revenue for a local home services business, which is the only number permitted here. Then one short question and nothing else.',
+      5: 'Three lines, dry and human. You have written a few times, they are busy, you get it. Say you will leave it there and the breakdown stays up either way.',
     };
   } else {
     // Never opened. The subject line failed, not the offer. Nothing else can be inferred, and
@@ -4076,10 +4144,12 @@ async function draftFollowup(p, step) {
     angles = {
       1: 'Treat this as a first email, because to them it is. Open by naming what you did, plainly: you spent some time on how their business shows up online and wrote it up. No preamble, no introduction, no diagnosis. One line that it is written down and waiting.',
       2: 'Still a cold open. Lead with the proof point as a fact about somebody else, about 90x return on ad spend and $2.34M tracked for a local home services business. That number is about us and is the only number permitted here. Then say the same kind of write-up already exists with their name on it.',
-      3: 'Last one. Two or three lines. Say you have written a few times and they have not landed, which usually means the timing is wrong rather than the interest. Say the breakdown stays up and you will stop writing. Never say request, sign up or run.',
+      3: 'Still a cold open, and the first two subjects failed. Come at it from the plainest angle available: say in one line what you actually do for businesses in their category in their county, with no claim about them at all. One short question at the end.',
+      4: 'Three weeks in and nothing has been opened. Two lines, no more. Say the write-up on their business is still sitting there and nobody has read it. No pitch, no question, just the fact and the link.',
+      5: 'Last one. Two or three lines. Say you have written a few times and they have not landed, which usually means the timing is wrong rather than the interest. Say the breakdown stays up and you will stop writing. Never say request, sign up or run.',
     };
   }
-  const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 3. ${context} ${angles[step]} Voice: a sharp operator who already did the work and is telling them what he found, not a marketer selling a service. Plain, direct, a little dry. Confident enough to give the fix away. Lead with the specific thing, short sentences, every line earns its place, skimmable, no filler. Never use hype, urgency, flattery, "I hope this finds you well", "just following up", "I wanted to reach out", "circling back", "synergy", "leverage", "unlock" or "game changer". Write like a person who has looked at 400 of these sites and is mildly, specifically annoyed on their behalf. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". We ran this audit ourselves and sent it to them unprompted, so never write "your audit", "run your audit", "request", "sign up", "claim" or "get your free audit": the report already exists and already has their name on it. No em dashes, no exclamation marks, no hype words. SUBJECT LINE, same discipline as the first email and this is not optional: sentence case, UNDER 45 CHARACTERS, and it must name something SPECIFIC about THEIR business, a number from their report, their city, their category or what they will lose. NEVER the words "free", "audit", "check in", "checking in", "circle back", "following up", "touching base", "just wanted to", or any form of "did you get a chance". Those went out for months and were opened zero times. If the subject would still make sense sent to a different business, it is wrong and you must rewrite it. Return ONLY JSON {"subject":"...","body":"..."}`;
+  const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 5. ${context} ${angles[step]} Voice: a sharp operator who already did the work and is telling them what he found, not a marketer selling a service. Plain, direct, a little dry. Confident enough to give the fix away. Lead with the specific thing, short sentences, every line earns its place, skimmable, no filler. Never use hype, urgency, flattery, "I hope this finds you well", "just following up", "I wanted to reach out", "circling back", "synergy", "leverage", "unlock" or "game changer". Write like a person who has looked at 400 of these sites and is mildly, specifically annoyed on their behalf. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". We ran this audit ourselves and sent it to them unprompted, so never write "your audit", "run your audit", "request", "sign up", "claim" or "get your free audit": the report already exists and already has their name on it. No em dashes, no exclamation marks, no hype words. SUBJECT LINE, same discipline as the first email and this is not optional: sentence case, UNDER 45 CHARACTERS, and it must name something SPECIFIC about THEIR business, a number from their report, their city, their category or what they will lose. NEVER the words "free", "audit", "check in", "checking in", "circle back", "following up", "touching base", "just wanted to", or any form of "did you get a chance". Those went out for months and were opened zero times. If the subject would still make sense sent to a different business, it is wrong and you must rewrite it. Return ONLY JSON {"subject":"...","body":"..."}`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
@@ -4090,7 +4160,7 @@ async function draftFollowup(p, step) {
   if (o.body) o.body = o.body.includes('[LINK]') ? o.body.replace('[LINK]', link) : o.body + '\n\n' + link;
   return assertGrounded(o, p, `followup ${step}`);
 }
-const FOLLOWUP_DAYS = { 1: 3, 2: 7, 3: 10 };
+const FOLLOWUP_DAYS = { 1: 3, 2: 7, 3: 10, 4: 21, 5: 35 };
 // Minimum spacing between two touches to the same lead, whatever the step maths says. Without it
 // a lead whose first email went out late can receive steps back to back on the same day.
 const MIN_FOLLOWUP_GAP_DAYS = 2;
@@ -4108,9 +4178,10 @@ async function runFollowups() {
     const anchor = p.seq_anchor_at || p.sent_at;
     if (!anchor || !looksLikeEmail(p.email)) continue;
     if (p.unsubscribed_at) continue;
-    if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable'].includes(p.status)) continue;
+    if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable', 'test'].includes(p.status)) continue;
+    if (p.internal) continue;                                  // our own team testing the forms
     const step = (p.followup_step || 0) + 1;
-    if (step > 3) continue;
+    if (step > 5) continue;
     const days = (now - new Date(anchor).getTime()) / 86400000;
     if (days < FOLLOWUP_DAYS[step]) continue;
     if (p.last_followup_at && (now - new Date(p.last_followup_at).getTime()) / 86400000 < MIN_FOLLOWUP_GAP_DAYS) continue;
