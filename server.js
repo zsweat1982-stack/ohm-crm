@@ -1344,9 +1344,11 @@ function loadSite() {
   const defaults = {
     videoEmbed: process.env.HYPE_VIDEO_EMBED || '',
     cases: [
-      { stat: '+38%', label: 'more booked leads in 90 days (home services client)' },
-      { stat: '3.1x', label: 'return on ad + content spend (local clinic)' },
-      { stat: '+52', label: 'new monthly inbound calls (service business)' },
+      // Fallback only, used if data/site.json is unreadable. Kept identical to site.json and to
+      // the website so a missing file can never put invented proof points on the page.
+      { stat: '~90x', label: 'return on ad spend. $2.34M tracked revenue on $26K, home services' },
+      { stat: '$312.5K', label: 'best sales month in 23 months, in the first 30 days, e-commerce' },
+      { stat: '+96%', label: 'more traffic. Beat an entire prior year in 6 months, home healthcare' },
     ],
   };
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SITE_FILE, 'utf8')) }; } catch { return defaults; }
@@ -1603,7 +1605,7 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
       <div class="blk reveal"><h4>What we did</h4><p>Built a growth system, not a campaign. Google Search plus Performance Max on high intent buyers, every call and text tracked to the dollar, and monthly optimization.</p></div>
       <div class="blk reveal"><h4>The result</h4><p>Twenty months of compounding growth. Average monthly revenue climbed from $68K to over $111K, with April 2026 the best month on record at $157,970.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">~90x</b><span>Return on ad spend</span></div><div class="m"><b>$0.39</b><span>Avg cost per click</span></div><div class="m"><b>2.91M</b><span>Impressions</span></div><div class="m"><b>67,100</b><span>Clicks, all traced to revenue</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">$2.34M</b><span>Tracked revenue on $26K in ad spend</span></div><div class="m"><b>~90x</b><span>Return on ad spend</span></div><div class="m"><b>$0.39</b><span>Average cost per click</span></div><div class="m"><b>67,100</b><span>Clicks, all traced to revenue</span></div></div>
   </div>
 </section>
 
@@ -1616,7 +1618,7 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
       <div class="blk reveal"><h4>What we did</h4><p>One owner, one strategy, every channel aligned. Google, Meta, Amazon, organic social and email all reinforcing the same offer and audience insight.</p></div>
       <div class="blk reveal"><h4>The result</h4><p>Growth reaccelerated inside 30 days. Traffic stayed roughly flat, but every visitor was simply worth more. Best sales month in nearly two years.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">+62%</b><span>Month over month growth</span></div><div class="m"><b>$401</b><span>Avg order value, 2-year high</span></div><div class="m"><b>$5.81</b><span>Revenue per session, best on record</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">~$900K</b><span>Across 2,198 orders in 110 days</span></div><div class="m"><b>$401</b><span>Average order value, held above $400 every month</span></div><div class="m"><b>+62%</b><span>Month over month growth</span></div></div>
   </div>
 </section>
 
@@ -1629,7 +1631,7 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
       <div class="blk reveal"><h4>What we did</h4><p>One fully tracked channel. Consolidated budget into Performance Max, made the phone call the primary action, and tracked every call, form and contact-page visit.</p></div>
       <div class="blk reveal"><h4>The result</h4><p>$203,450 in internet and social sales through June, versus $196,052 for all of the prior year. Monthly pace more than doubled, now traceable to the dollar.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">15%</b><span>Conversion rate, ~3x benchmark</span></div><div class="m"><b>229</b><span>Tracked conversions in one quarter</span></div><div class="m"><b>$1.74</b><span>Avg cost per click</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">15.04%</b><span>Conversion rate, healthcare client, ~3x benchmark</span></div><div class="m"><b>229</b><span>Tracked conversions in one quarter</span></div><div class="m"><b>$1.74</b><span>Avg cost per click</span></div></div>
   </div>
 </section>
 
