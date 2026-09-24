@@ -1773,6 +1773,26 @@ function unsubUrl(id) {
 // Used for direct answers to an inbound request. CAN-SPAM's opt-out requirement covers
 // commercial mail, not a reply to someone who just handed us their number, and putting an
 // unsubscribe link on an acknowledgement is how a hot lead accidentally suppresses itself.
+// SendGrid click tracking rewrites every URL it finds. In a text-only email that rewritten
+// URL is what the reader SEES: a 300 character tracking string wrapping over three lines, twice,
+// which is enough for Gmail to clip the message. Sending an HTML part fixes it without giving up
+// click data, because tracking replaces the href and leaves the anchor text alone.
+function htmlEscape(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function textToHtml(text) {
+  const parts = String(text).split(/(https?:\/\/[^\s<>()]+)/g);
+  const body = parts.map((chunk, i) => {
+    if (i % 2 === 0) return htmlEscape(chunk).replace(/\n/g, '<br>');
+    const shown = htmlEscape(chunk.replace(/^https?:\/\//, '').replace(/\/$/, ''));
+    return `<a href="${htmlEscape(chunk)}" style="color:#1a4fa0">${shown}</a>`;
+  }).join('');
+  return '<!doctype html><html><body style="margin:0;padding:0;background:#ffffff">'
+    + '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;'
+    + 'font-size:15px;line-height:1.6;color:#111111;max-width:600px;padding:8px 0">'
+    + body + '</div></body></html>';
+}
+
 function transactionalFooter() {
   return `\n\n\n${COMPANY} \u00b7 ${COMPANY_ADDRESS}`;
 }
@@ -1911,11 +1931,13 @@ async function sendMail(p, subject, body, { kind = 'outreach', attachments = nul
   }
   const problem = await addressProblem(p.email);
   if (problem) throw Object.assign(new Error(problem), { permanent: true });
+  const fullText = body + (transactional ? transactionalFooter() : complianceFooter(p));
   const msg = {
     to: p.email,
     from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
     subject,
-    text: body + (transactional ? transactionalFooter() : complianceFooter(p)),
+    text: fullText,
+    html: textToHtml(fullText),
     trackingSettings: { subscriptionTracking: { enable: false } },
     customArgs: { prospect_id: String(p.id), kind },
   };
