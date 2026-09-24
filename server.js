@@ -3579,9 +3579,15 @@ app.post('/api/subscribe', async (req, res) => {
     // opt-in this business gets. Best effort: a Mailchimp outage must never fail the download.
     if (!row.internal) {
       try {
-        await mailchimpUpsert(email, { first, tags: ['guide-download'] });
-        row.mailchimp_at = row.guide_sent_at;
-      } catch (e) { console.error('[mailchimp] guide push failed -', email, e.message); }
+        const mc = await mailchimpUpsert(email, { first, tags: ['guide-download'] });
+        if (mc.ok) { row.mailchimp_at = row.guide_sent_at; delete row.mailchimp_error; }
+        else { row.mailchimp_error = mc.skipped; }
+      } catch (e) {
+        // Recorded on the row, not just the log. A silent catch here is how you end up staring
+        // at a subscriber that never reached the audience with nothing on screen saying why.
+        row.mailchimp_error = e.message.slice(0, 200);
+        console.error('[mailchimp] guide push failed -', email, e.message);
+      }
     }
     try { save(prospects); } catch (e) { console.error('[subscribe] save failed -', e.message); }
     return res.json({ ok: true, sent: true, url: GUIDE_URL });
@@ -3804,7 +3810,11 @@ app.post('/api/qualify', async (req, res) => {
       await mailchimpUpsert(d.email, { first: nameBits[0] || '', last: nameBits.slice(1).join(' '), tags: ['contact-form'] });
       row.mailchimp_at = new Date().toISOString();
       try { save(prospects); } catch {}
-    } catch (e) { console.error('[mailchimp] form push failed -', d.email, e.message); }
+    } catch (e) {
+      row.mailchimp_error = e.message.slice(0, 200);
+      try { save(prospects); } catch {}
+      console.error('[mailchimp] form push failed -', d.email, e.message);
+    }
   } else {
     console.log('[qualify] no auto-reply:', d.email, ownTeam ? '(our own team)' : '(' + pitch.why.join(', ') + ')');
   }
@@ -4695,6 +4705,9 @@ app.get('/api/autosend-status', (_, res) => {
     localHour: hour, localDay: day, inWindow: inSendWindow(),
     lastRun: lastAutosendRun() ? new Date(lastAutosendRun()).toISOString() : null,
     coldDailyCap: COLD_DAILY_CAP,
+    mailchimp: { key: !!MC_KEY, list: !!MC_LIST, dc: MC_DC || null },
+    followupDays: FOLLOWUP_DAYS,
+    model: 'claude-sonnet-5',
     health: healthCache.data || null,
     followupDailyCap: FOLLOWUP_DAILY_CAP,
     maxTotalPerDay: COLD_DAILY_CAP + FOLLOWUP_DAILY_CAP,
