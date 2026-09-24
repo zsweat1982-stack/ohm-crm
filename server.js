@@ -3418,22 +3418,22 @@ function subscribeRateLimited(ip) {
 
 function guideEmail(first) {
   const hi = first ? `Hi ${first},` : 'Hi,';
+  // They asked for a guide. Hand them the guide. Everything this used to say about page counts,
+  // which chapter to read and how the hours add up is already in the document, and stacking it
+  // in front of the download turns a two second job into something to get through.
   return `${hi}
 
-Here is the guide, attached. It is also here if the attachment does not come through:
+Your guide is attached.
+
+If the attachment does not come through, you can download it here:
 ${GUIDE_URL}
 
-It is sixteen pages and it holds nothing back. Every step we run for paying clients, in the order we run them, with the tools named.
+Start with chapter one. It is about your website, and every other layer sits on top of it.
 
-Read chapter one first. It is about your website, and it is the layer everything else depends on. There is one fix in there that takes ten minutes and beats everything else in the document for most local businesses.
-
-Each chapter ends with an honest count of the hours it takes. That part matters more than the steps.
-
-If you get stuck or you want it run for you, just reply to this email. It comes straight to us.
+If you want it ran for you instead, just reply. This comes straight to us.
 
 Michelle Baker
-Open Heart Media
-Canton, GA`;
+Open Heart Media`;
 }
 
 app.options('/api/subscribe', (req, res) => {
