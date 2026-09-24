@@ -4355,6 +4355,58 @@ setTimeout(() => heldAuditTick('boot catch-up').catch(e => console.error('[held]
 // that it should. The failure is silent and it is outbound, which is the worst
 // combination. Now it sends only when AUTOSEND is explicitly '1'.
 const AUTOSEND = process.env.AUTOSEND === '1';        // kill switch, no deploy needed
+
+// ---------- Deliverability governor ----------
+// Volume is not the constraint, reputation is. A domain that keeps sending through a rising
+// bounce rate stops reaching anybody, and that damage takes months to undo rather than days.
+// So the day's cold cap is read off the last seven days of real SendGrid numbers instead of
+// being a constant somebody picked once: a clean week earns more volume, a bad week loses it
+// before the sending domain does, and a genuinely bad week stops the run entirely.
+const COLD_FLOOR = Number(process.env.COLD_FLOOR || 20);
+const COLD_CEILING = Number(process.env.COLD_CEILING || 90);
+let healthCache = { at: 0, data: null };
+
+async function sendingHealth() {
+  const steady = { ok: true, cap: COLD_DAILY_CAP, why: 'stats unavailable, holding at the configured cap' };
+  if (healthCache.data && Date.now() - healthCache.at < 3 * 60 * 60 * 1000) return healthCache.data;
+  if (!process.env.SENDGRID_API_KEY) return steady;
+  try {
+    const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const r = await fetch(`https://api.sendgrid.com/v3/stats?start_date=${since}&aggregated_by=day`,
+      { headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}` } });
+    if (!r.ok) return steady;
+    const T = {};
+    for (const day of await r.json())
+      for (const st of (day.stats || []))
+        for (const [k, v] of Object.entries(st.metrics || {})) T[k] = (T[k] || 0) + v;
+
+    const req = T.requests || 0;
+    if (req < 100) return { ok: true, cap: COLD_DAILY_CAP, why: `only ${req} sends in 7 days, too few to judge` };
+    const delivered = T.delivered || 0;
+    const deliveredPct = 100 * delivered / req;
+    const bouncePct = 100 * ((T.bounces || 0) + (T.bounce_drops || 0) + (T.blocks || 0)) / req;
+    // Complaints are measured against what actually arrived, which is the ratio mailbox
+    // providers themselves watch. 0.1% is the line where Google and Microsoft start filtering.
+    const spamPct = 100 * (T.spam_reports || 0) / Math.max(1, delivered);
+
+    let h;
+    if (bouncePct >= 8 || spamPct >= 0.3) {
+      h = { ok: false, cap: 0, why: `halted: hard failures ${bouncePct.toFixed(2)}%, complaints ${spamPct.toFixed(3)}%` };
+    } else if (bouncePct >= 4 || spamPct >= 0.1 || deliveredPct < 90) {
+      h = { ok: true, cap: COLD_FLOOR, why: `throttled to ${COLD_FLOOR}: delivered ${deliveredPct.toFixed(1)}%, hard failures ${bouncePct.toFixed(2)}%, complaints ${spamPct.toFixed(3)}%` };
+    } else if (deliveredPct >= 95 && bouncePct < 2 && spamPct < 0.05) {
+      h = { ok: true, cap: Math.min(COLD_CEILING, COLD_DAILY_CAP + 10), why: `healthy at ${deliveredPct.toFixed(1)}% delivered, stepping up` };
+    } else {
+      h = { ok: true, cap: COLD_DAILY_CAP, why: `steady: delivered ${deliveredPct.toFixed(1)}%, hard failures ${bouncePct.toFixed(2)}%` };
+    }
+    h.stats = { requests: req, deliveredPct: +deliveredPct.toFixed(1), bouncePct: +bouncePct.toFixed(2), spamPct: +spamPct.toFixed(3) };
+    healthCache = { at: Date.now(), data: h };
+    return h;
+  } catch (e) {
+    console.error('[health] could not read SendGrid stats -', e.message);
+    return steady;
+  }
+}
 const AUTOSEND_HOUR_START = Number(process.env.AUTOSEND_HOUR_START || 9);
 const AUTOSEND_HOUR_END = Number(process.env.AUTOSEND_HOUR_END || 16);
 const AUTOSEND_TZ = process.env.AUTOSEND_TZ || 'America/New_York';
@@ -4384,7 +4436,15 @@ function stampAutosendRun() {
 
 async function runDailyCold() {
   // Cold sends now have their own cap, so a heavy follow-up day no longer reduces new outreach.
-  let budget = COLD_DAILY_CAP - sentToday();
+  // The cap itself is set by measured deliverability rather than by a constant, so a good week
+  // earns more volume and a bad one loses it before the domain does.
+  const health = await sendingHealth();
+  if (!health.ok) {
+    console.error('[autosend] not sending today -', health.why);
+    return { sent: 0, drafted: 0, approved: 0, reason: health.why };
+  }
+  if (health.cap !== COLD_DAILY_CAP) console.log('[autosend] cap', health.cap, '-', health.why);
+  let budget = health.cap - sentToday();
   if (budget <= 0) return { sent: 0, drafted: 0, approved: 0, reason: 'daily cap reached' };
 
   // Draft only what is missing, so a queue left over from yesterday is used before writing more.
@@ -4513,6 +4573,7 @@ app.get('/api/autosend-status', (_, res) => {
     localHour: hour, localDay: day, inWindow: inSendWindow(),
     lastRun: lastAutosendRun() ? new Date(lastAutosendRun()).toISOString() : null,
     coldDailyCap: COLD_DAILY_CAP,
+    health: healthCache.data || null,
     followupDailyCap: FOLLOWUP_DAILY_CAP,
     maxTotalPerDay: COLD_DAILY_CAP + FOLLOWUP_DAILY_CAP,
     sentToday: sentToday(), followupsToday: followupsSentToday(),
