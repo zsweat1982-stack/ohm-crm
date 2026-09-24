@@ -1770,6 +1770,13 @@ function unsubToken(id) {
 function unsubUrl(id) {
   return `${PUBLIC_URL}/unsubscribe?id=${encodeURIComponent(id)}&t=${unsubToken(id)}`;
 }
+// Used for direct answers to an inbound request. CAN-SPAM's opt-out requirement covers
+// commercial mail, not a reply to someone who just handed us their number, and putting an
+// unsubscribe link on an acknowledgement is how a hot lead accidentally suppresses itself.
+function transactionalFooter() {
+  return `\n\n\n${COMPANY} \u00b7 ${COMPANY_ADDRESS}`;
+}
+
 function complianceFooter(p) {
   return '\n\n\n'
     + `You are receiving this because ${COMPANY} works with local businesses in your area.\n`
@@ -1893,9 +1900,12 @@ function isSuppressed(email) {
 setTimeout(() => { refreshSuppressions().catch(e => console.error('[suppression]', e.message)); }, 20 * 1000);
 setInterval(() => { refreshSuppressions().catch(e => console.error('[suppression]', e.message)); }, 6 * 60 * 60 * 1000);
 
-async function sendMail(p, subject, body, { kind = 'outreach', attachments = null } = {}) {
+async function sendMail(p, subject, body, { kind = 'outreach', attachments = null, transactional = false } = {}) {
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
-  if (!isMailableBusiness(p.email)) throw Object.assign(new Error('not a mailable business address'), { permanent: true });
+  // The role-address filter exists to stop us COLD-mailing info@ and sales@. When someone fills in
+  // our own form and asks us to contact them, refusing to answer because they typed a shared
+  // mailbox is the wrong call. Opt-out, suppression and bounce checks still apply to everything.
+  if (!transactional && !isMailableBusiness(p.email)) throw Object.assign(new Error('not a mailable business address'), { permanent: true });
   if (isSuppressed(p.email)) {
     throw Object.assign(new Error('SendGrid already suppresses this address, it would be dropped'), { permanent: true });
   }
@@ -1905,12 +1915,19 @@ async function sendMail(p, subject, body, { kind = 'outreach', attachments = nul
     to: p.email,
     from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
     subject,
-    text: body + complianceFooter(p),
+    text: body + (transactional ? transactionalFooter() : complianceFooter(p)),
     trackingSettings: { subscriptionTracking: { enable: false } },
     customArgs: { prospect_id: String(p.id), kind },
   };
   if (attachments && attachments.length) msg.attachments = attachments;
   const [r] = await sgMail.send(msg);
+  // Every outbound email stamps these, whatever path it came from. seq_anchor_at is the first
+  // touch and is what the follow-up sequence counts from; sent_at keeps doing only what it did
+  // before, marking a cold send against the daily cap. Using one field for both jobs is what
+  // left every inbound lead outside the sequence: a guide download, an audit report and a form
+  // reply are all real touches, and none of them set sent_at.
+  p.last_touch_at = new Date().toISOString();
+  if (!p.seq_anchor_at) p.seq_anchor_at = p.sent_at || p.last_touch_at;
   return r;
 }
 
@@ -3072,12 +3089,12 @@ const FREEMAIL = /^(gmail|yahoo|hotmail|outlook|live|aol|icloud|me|msn|comcast|b
 function prospectForSender(addr) {
   const email = String(addr || '').toLowerCase().trim();
   if (!email.includes('@')) return null;
-  const exact = prospects.find(p => p.sent_at && (p.email || '').toLowerCase().trim() === email);
+  const exact = prospects.find(p => (p.sent_at || p.seq_anchor_at) && (p.email || '').toLowerCase().trim() === email);
   if (exact) return exact;
   const dom = email.split('@')[1];
   if (!dom || FREEMAIL.test(dom)) return null;
   return prospects.find(p => {
-    if (!p.sent_at) return false;
+    if (!p.sent_at && !p.seq_anchor_at) return false;
     const pd = (p.email || '').toLowerCase().split('@')[1];
     return pd && pd === dom;
   }) || null;
@@ -3441,7 +3458,14 @@ app.post('/api/subscribe', async (req, res) => {
     row.contact_name = row.contact_name || first;
     row.guide_requested_at = nowIso;
     row.updated_at = nowIso;
-    if (['new', 'drafted', 'approved', 'unreachable', 'rejected'].includes(row.status)) row.status = 'subscriber';
+    // Never paint over an opt-out. The status used to jump straight back to subscriber while
+    // unsubscribed_at stayed set, so the dashboard showed a healthy lead that every send path
+    // refuses, with nothing on screen saying why. Leave the opt-out visible instead.
+    if (row.unsubscribed_at) {
+      row.guide_error = `opted out ${row.unsubscribed_at.slice(0, 10)}, not mailed`;
+    } else if (['new', 'drafted', 'approved', 'unreachable', 'rejected'].includes(row.status)) {
+      row.status = 'subscriber';
+    }
   } else {
     row = {
       id: 'G' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
@@ -3516,6 +3540,29 @@ const QUALIFY_FIELDS = ['business', 'website', 'name', 'role', 'email', 'phone',
   'source', 'page', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
   'gclid', 'fbclid', 'src'];
 
+// What the lead gets back, immediately. Plain text, no pitch, and it answers the only two
+// questions they have: did that go through, and when does someone get in touch.
+function qualifyAckBody(first, d) {
+  const digits = String(d.phone || '').replace(/\D/g, '').slice(-10);
+  const pretty = digits.length === 10
+    ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+    : String(d.phone || '');
+  return `${first ? 'Hi ' + first + ',' : 'Hi,'}
+
+Got it. Your details are in front of us now.
+
+${pretty ? 'Someone will call you on ' + pretty + ' within one business day.' : 'Someone will be in touch within one business day.'} If you would rather pick the time yourself, here is the calendar:
+
+${CALENDLY}
+
+Nothing else is needed from you right now. If anything changes before we speak, just reply to this email. It comes straight to us.
+
+Michelle Baker
+Open Heart Media
+Canton, GA
+404-491-1466`;
+}
+
 function qualifyEmailBody(d, row) {
   const line = (k, v) => (v ? `${k}: ${v}\n` : '');
   return `New lead from ${d.source || 'the website'}.
@@ -3570,7 +3617,14 @@ app.post('/api/qualify', async (req, res) => {
     row.phone = row.phone || d.phone;
     row.contact_name = row.contact_name || d.name;
     row.contact_first = row.contact_first || d.name.split(' ')[0];
-    if (['new', 'drafted', 'approved', 'unreachable', 'rejected', 'subscriber'].includes(row.status)) row.status = 'lead';
+    if (row.unsubscribed_at) {
+      // They opted out of email but just asked us to call them. Keep the opt-out, flag the row.
+      row.notes = Array.isArray(row.notes) ? row.notes : [];
+      row.notes.push({ ts: nowIso, by: null, text: 'Submitted the contact form while unsubscribed. Email suppressed, call them.' });
+      row.status = 'lead';
+    } else if (['new', 'drafted', 'approved', 'unreachable', 'rejected', 'subscriber'].includes(row.status)) {
+      row.status = 'lead';
+    }
   } else {
     row = {
       id: 'L' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
@@ -3596,7 +3650,9 @@ app.post('/api/qualify', async (req, res) => {
         to: SALES,
         from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
         replyTo: d.email,
-        subject: `New lead: ${d.business}${d.timing ? ' (' + d.timing + ')' : ''}`,
+        // Shouted on purpose. This lands in two busy inboxes and it is the hottest signal the
+        // business gets, so it must not read like one more notification.
+        subject: `LEAD FOLLOW UP IMMEDIATELY: ${d.business}${d.timing ? ' (' + d.timing + ')' : ''}`,
         text: qualifyEmailBody(d, row),
       });
     } else {
@@ -3604,6 +3660,16 @@ app.post('/api/qualify', async (req, res) => {
     }
   } catch (e) {
     console.error('[qualify] notify failed -', e.message);
+  }
+
+  // Answer the person. They handed over a phone number and got nothing back, which is the opposite
+  // of what the form is for. Sent after the internal alert so a failure here can never stop the
+  // team being told, and marked transactional because they asked us to contact them.
+  try {
+    const firstName = String(d.name || '').trim().split(/\s+/)[0] || '';
+    await sendMail(row, 'We got your details', qualifyAckBody(firstName, d), { kind: 'form-ack', transactional: true });
+  } catch (e) {
+    console.error('[qualify] ack to lead failed -', d.email, e.message);
   }
 
   return res.json({ ok: true, id: row.id });
@@ -4007,12 +4073,15 @@ async function runFollowups() {
   let budget = FOLLOWUP_DAILY_CAP - followupsSentToday();
   for (const p of prospects) {
     if (budget <= 0) break;
-    if (!p.sent_at || !looksLikeEmail(p.email)) continue;
+    // Anchored on the first touch of any kind, not just a cold send, so a guide download, an
+    // audit report or a form reply all start the sequence the same way.
+    const anchor = p.seq_anchor_at || p.sent_at;
+    if (!anchor || !looksLikeEmail(p.email)) continue;
     if (p.unsubscribed_at) continue;
     if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable'].includes(p.status)) continue;
     const step = (p.followup_step || 0) + 1;
     if (step > 3) continue;
-    const days = (now - new Date(p.sent_at).getTime()) / 86400000;
+    const days = (now - new Date(anchor).getTime()) / 86400000;
     if (days < FOLLOWUP_DAYS[step]) continue;
     if (p.last_followup_at && (now - new Date(p.last_followup_at).getTime()) / 86400000 < MIN_FOLLOWUP_GAP_DAYS) continue;
     try {
