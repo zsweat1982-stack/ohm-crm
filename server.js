@@ -113,7 +113,7 @@ async function aiVisibilityProbe(business, city, category) {
     const probe = `You are testing whether AI assistants recognize a specific local business. Answer ONLY from your own training knowledge. Do NOT guess, infer, or invent. If you do not genuinely and specifically recognize this exact business, set known to false.
 Business: "${business}"${city ? ', in ' + city + ', GA' : ''}${category ? ' - a ' + category : ''}.
 Return ONLY JSON: {"known": true|false, "confidence": "high|medium|low", "wouldRecommend": true|false, "competitorsKnown": true|false, "whatAiKnows": "one honest sentence"}`;
-    const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 300, messages: [{ role: 'user', content: probe }] });
+    const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 300, messages: [{ role: 'user', content: probe }] });
     let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null;
   } catch { return null; }
@@ -248,7 +248,7 @@ BANNED WORDS AND PHRASES: em dashes and any dash used as punctuation, exclamatio
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
   const r = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6', max_tokens: 600, messages: [{ role: 'user', content: prompt }],
+    model: 'claude-sonnet-5', max_tokens: 600, messages: [{ role: 'user', content: prompt }],
   });
   return finishDraft(r, p);
 }
@@ -283,7 +283,7 @@ RULES: subject in SENTENCE CASE, UNDER 45 CHARACTERS, no exclamation marks, neve
 Return ONLY JSON: {"subject": "...", "body": "..."}`;
 
   const r = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6', max_tokens: 600, messages: [{ role: 'user', content: prompt }],
+    model: 'claude-sonnet-5', max_tokens: 600, messages: [{ role: 'user', content: prompt }],
   });
   return finishDraft(r, p);
 }
@@ -1130,7 +1130,7 @@ Return ONLY JSON:
  "estimate": "one line on the realistic leads/revenue upside of closing these gaps"
 }
 Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype words like leverage, unlock, synergy, supercharge. Specific to THIS scan, never generic.`;
-  const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
+  const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
   let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/); if (m) txt = m[0];
   const report = JSON.parse(txt);
@@ -4150,7 +4150,7 @@ async function draftFollowup(p, step) {
     };
   }
   const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 5. ${context} ${angles[step]} Voice: a sharp operator who already did the work and is telling them what he found, not a marketer selling a service. Plain, direct, a little dry. Confident enough to give the fix away. Lead with the specific thing, short sentences, every line earns its place, skimmable, no filler. Never use hype, urgency, flattery, "I hope this finds you well", "just following up", "I wanted to reach out", "circling back", "synergy", "leverage", "unlock" or "game changer". Write like a person who has looked at 400 of these sites and is mildly, specifically annoyed on their behalf. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". We ran this audit ourselves and sent it to them unprompted, so never write "your audit", "run your audit", "request", "sign up", "claim" or "get your free audit": the report already exists and already has their name on it. No em dashes, no exclamation marks, no hype words. SUBJECT LINE, same discipline as the first email and this is not optional: sentence case, UNDER 45 CHARACTERS, and it must name something SPECIFIC about THEIR business, a number from their report, their city, their category or what they will lose. NEVER the words "free", "audit", "check in", "checking in", "circle back", "following up", "touching base", "just wanted to", or any form of "did you get a chance". Those went out for months and were opened zero times. If the subject would still make sense sent to a different business, it is wrong and you must rewrite it. Return ONLY JSON {"subject":"...","body":"..."}`;
-  const r = await anthropic.messages.create({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
+  const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
   let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
   const o = JSON.parse(t);
@@ -4164,6 +4164,26 @@ const FOLLOWUP_DAYS = { 1: 3, 2: 7, 3: 10, 4: 21, 5: 35 };
 // Minimum spacing between two touches to the same lead, whatever the step maths says. Without it
 // a lead whose first email went out late can receive steps back to back on the same day.
 const MIN_FOLLOWUP_GAP_DAYS = 2;
+
+// One-time repair for rows created before the sequence learned about inbound leads. Cold
+// prospects already work off sent_at and are left alone. Two things get fixed: rows from our own
+// mailboxes are marked internal so they stop counting as demand, and an inbound lead that really
+// did receive something gets its sequence anchored to the day it received it, so the follow-up
+// engine can finally see it. Runs once at boot and is a no-op afterwards.
+function backfillSequenceAnchors() {
+  let flagged = 0, anchored = 0;
+  for (const p of prospects) {
+    if (!p.internal && isOwnTeam(p.email)) { p.internal = true; flagged++; }
+    if (p.internal || p.seq_anchor_at || p.sent_at) continue;
+    const touch = [p.guide_sent_at, p.audited_at, p.delivered_at].filter(Boolean).sort()[0];
+    if (touch) { p.seq_anchor_at = touch; anchored++; }
+  }
+  if (flagged || anchored) {
+    save(prospects);
+    console.log('[backfill] marked', flagged, 'internal,', anchored, 'inbound leads anchored into the sequence');
+  }
+}
+try { backfillSequenceAnchors(); } catch (e) { console.error('[backfill] failed -', e.message); }
 
 async function runFollowups() {
   const now = Date.now(); let sent = 0, parked = 0;
