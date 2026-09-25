@@ -1983,7 +1983,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/qualify', '/guide'];
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/qualify', '/guide', '/onboarding', '/api/onboarding'];
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
@@ -3602,6 +3602,228 @@ app.post('/api/subscribe', async (req, res) => {
   }
 });
 
+
+// ---------- Client onboarding form ----------
+// Replaces the Google Form, which asked clients to type their Facebook, LinkedIn, YouTube,
+// TikTok and Twitter passwords into a spreadsheet. Every one of those platforms supports adding
+// an agency as a delegated admin, so this form never has a password field and never will. It
+// also covers the whole engagement rather than social alone, and drops the two questions the old
+// form asked twice.
+const ONBOARDING_FILE = path.join(DATA_DIR, 'onboarding.json');
+function loadOnboarding() { try { return JSON.parse(fs.readFileSync(ONBOARDING_FILE, 'utf8')); } catch { return []; } }
+function saveOnboarding(rows) { fs.writeFileSync(ONBOARDING_FILE, JSON.stringify(rows, null, 2)); }
+
+const ONB_SECTIONS = [
+  { t: 'Your business', d: 'This is what we publish everywhere, so it has to be exactly how you want it read.', f: [
+    ['business', 'Business name', 'text', 1, 'Exactly as it should appear on Google, your site and every directory'],
+    ['address', 'Full address', 'text', 1, 'Street, suite, city, state, ZIP. One character of difference splits a listing.'],
+    ['phone', 'Main phone number', 'tel', 1, ''],
+    ['website', 'Website', 'text', 0, 'Leave blank if you do not have one yet'],
+    ['years', 'How long have you been in business?', 'text', 0, ''],
+  ]},
+  { t: 'Who we talk to', d: '', f: [
+    ['contact_name', 'Your name', 'text', 1, ''],
+    ['contact_email', 'Your email', 'email', 1, ''],
+    ['contact_phone', 'Best number to reach you', 'tel', 0, ''],
+    ['approver', 'Who can approve work?', 'text', 1, 'If that is not you, give us their name and email. Work stalls without this.'],
+  ]},
+  { t: 'What you do', d: 'Answer in the words a customer would use, not internal terms.', f: [
+    ['services', 'What services do you want to be found for?', 'area', 1, 'One per line'],
+    ['areas', 'What areas do you actually serve?', 'area', 1, 'Towns, counties or ZIP codes'],
+    ['ideal', 'Describe your ideal customer', 'area', 0, ''],
+    ['age', 'Rough age range of your current customers', 'text', 0, ''],
+    ['model', 'Are you customer facing, online, or both?', 'select:Customer facing|Online|Both', 0, ''],
+    ['b2b', 'Do you do any B2B work?', 'select:No|Some|Mostly B2B', 0, ''],
+  ]},
+  { t: 'The market', d: '', f: [
+    ['competitors', 'Who do you lose work to?', 'area', 0, 'Names or websites. This tells us more than almost anything else on this form.'],
+    ['different', 'What makes you the better choice?', 'area', 0, ''],
+    ['obstacle', 'What is the single biggest thing in your way right now?', 'area', 0, ''],
+    ['success', 'What does success look like six months from now?', 'area', 1, 'Be specific. "More leads" is hard to measure against.'],
+  ]},
+  { t: 'Brand and content', d: '', f: [
+    ['brand_assets', 'Do you have logo files, brand colors or fonts?', 'select:Yes, I can send them|Some of it|No, we need these made', 0, ''],
+    ['media', 'What photo or video already exists that we can use?', 'area', 0, 'We work from your archive first and only film what we agree.'],
+    ['filming', 'If we do film, when are you available?', 'text', 0, ''],
+    ['nogo', 'Anything we must never post about?', 'area', 0, 'Compliance rules, topics, competitors, anything sensitive'],
+    ['avoid', 'Any accounts or people we should not engage with?', 'area', 0, ''],
+    ['partners', 'Any sponsorships or partnerships we should know about?', 'area', 0, ''],
+  ]},
+  { t: 'Budget', d: '', f: [
+    ['ad_budget', 'Monthly budget for paid advertising', 'select:Not yet decided|Under $500|$500 to $1,000|$1,000 to $2,500|$2,500 to $5,000|Over $5,000', 0, 'Separate from our fee. Says nothing about how we treat the account.'],
+    ['notes', 'Anything else we should know?', 'area', 0, ''],
+  ]},
+];
+
+const ONB_ACCESS = [
+  ['acc_website', 'Website admin', 'Add us as an administrator, or send a login you create for us specifically.'],
+  ['acc_gbp', 'Google Business Profile', 'Settings, People and access, Add, then invite michelle@openheartmediaco.com as Manager. You stay the Owner.'],
+  ['acc_ga', 'Google Analytics and Search Console', 'Admin, Access management, add michelle@openheartmediaco.com as Editor.'],
+  ['acc_ads', 'Google Ads', 'Tools, Access and security, invite us. Skip if you do not run ads.'],
+  ['acc_meta', 'Facebook and Instagram', 'Meta Business Suite, Settings, People, Add people. Never share a personal password.'],
+  ['acc_other', 'Other social accounts', 'LinkedIn, YouTube, TikTok. Each one supports adding a manager without a password.'],
+  ['acc_dns', 'Domain and DNS', 'We do not need access, we just need to know who holds it, in case we need a record changed.'],
+];
+
+function onboardingPage(prefill) {
+  const esc2 = v => esc(v == null ? '' : v);
+  const field = ([k, label, type, req, hint]) => {
+    const r = req ? ' <span class="rq">required</span>' : '';
+    const h = hint ? `<div class="hint">${esc2(hint)}</div>` : '';
+    let input;
+    if (type === 'area') input = `<textarea name="${k}" rows="3"${req ? ' required' : ''}></textarea>`;
+    else if (type.startsWith('select:')) {
+      const opts = type.slice(7).split('|').map(o => `<option>${esc2(o)}</option>`).join('');
+      input = `<select name="${k}"${req ? ' required' : ''}><option value="">Choose one</option>${opts}</select>`;
+    } else {
+      const v = prefill && prefill[k] ? ` value="${esc2(prefill[k])}"` : '';
+      input = `<input type="${type}" name="${k}"${v}${req ? ' required' : ''}>`;
+    }
+    return `<div class="f"><label for="${k}">${esc2(label)}${r}</label>${h}${input}</div>`;
+  };
+  const sections = ONB_SECTIONS.map((s, i) => `
+    <fieldset><legend><span class="sn">${String(i + 1).padStart(2, '0')}</span>${esc2(s.t)}</legend>
+    ${s.d ? `<p class="sd">${esc2(s.d)}</p>` : ''}
+    ${s.f.map(field).join('')}</fieldset>`).join('');
+  const access = ONB_ACCESS.map(([k, name, how]) => `
+    <label class="acc"><input type="checkbox" name="${k}" value="done">
+      <span><b>${esc2(name)}</b><em>${esc2(how)}</em></span></label>`).join('');
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Client onboarding &middot; Open Heart Media</title>
+<meta name="robots" content="noindex">
+<style>
+:root{--navy:#13233f;--ink:#0a1220;--red:#e22a24;--cream:#f4f1ea;--mut:#5c6a7e;--hair:#e0e4ec;--bg:#f6f7f9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#1d2a3d;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.hd{background:var(--navy);color:#fff;padding:40px 22px 44px}
+.hd .in{max-width:720px;margin:0 auto}
+.hd .eb{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8fa3c0;font-weight:700}
+.hd h1{font-size:clamp(28px,5vw,40px);margin:12px 0 0;letter-spacing:-.025em;line-height:1.08;font-weight:800}
+.hd p{max-width:52ch;margin:14px 0 0;color:#c3d3e8;font-size:16.5px}
+.hd .bar{height:3px;width:46px;background:var(--red);border-radius:2px;margin-top:22px}
+main{max-width:720px;margin:-24px auto 70px;padding:0 22px}
+fieldset{background:#fff;border:1px solid var(--hair);border-radius:12px;padding:22px 24px 8px;margin:0 0 16px;
+  box-shadow:0 1px 2px rgba(10,18,32,.05),0 12px 28px -22px rgba(10,18,32,.4)}
+legend{font-weight:800;font-size:18px;color:var(--ink);padding:0 9px;letter-spacing:-.015em;display:flex;align-items:center;gap:9px}
+.sn{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--red);font-weight:700}
+.sd{margin:2px 0 16px;color:var(--mut);font-size:14.5px}
+.f{margin:0 0 17px}
+label{display:block;font-weight:600;font-size:14.5px;color:var(--ink);margin-bottom:5px}
+.rq{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--red);
+  background:#fdecea;padding:1px 6px;border-radius:4px;margin-left:5px;vertical-align:1px}
+.hint{font-size:13px;color:var(--mut);margin:-1px 0 6px}
+input,textarea,select{width:100%;padding:10px 12px;border:1px solid var(--hair);border-radius:8px;font:inherit;background:#fff;color:inherit}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px rgba(19,35,63,.09)}
+textarea{resize:vertical;min-height:78px}
+.acc{display:flex;gap:11px;align-items:flex-start;font-weight:400;padding:12px 0;border-bottom:1px solid var(--hair);margin:0}
+.acc:last-of-type{border-bottom:none}
+.acc input{width:17px;height:17px;margin:3px 0 0;flex:none;accent-color:var(--navy)}
+.acc b{display:block;font-size:14.5px;color:var(--ink)}
+.acc em{display:block;font-style:normal;font-size:13.5px;color:var(--mut);margin-top:2px;line-height:1.5}
+.pw{background:var(--cream);border-left:3px solid var(--red);border-radius:8px;padding:14px 16px;margin:0 0 18px;font-size:14.5px}
+.pw b{color:var(--ink)}
+button{width:100%;padding:15px;background:var(--red);color:#fff;border:0;border-radius:9px;font:inherit;
+  font-weight:700;font-size:16px;cursor:pointer;letter-spacing:.01em}
+button:hover{background:#c41f19}
+button:disabled{opacity:.55;cursor:not-allowed}
+.msg{margin:14px 0 0;padding:13px 16px;border-radius:8px;font-size:14.5px;display:none}
+.msg.err{background:#fdecea;color:#a8231d;display:block}
+.ft{text-align:center;color:var(--mut);font-size:13px;margin:26px 0 0}
+.done{background:#fff;border:1px solid var(--hair);border-radius:12px;padding:44px 30px;text-align:center}
+.done h2{font-size:25px;margin:0;color:var(--ink);letter-spacing:-.02em}
+.done p{color:var(--mut);margin:12px auto 0;max-width:44ch}
+</style></head><body>
+<div class="hd"><div class="in">
+  <div class="eb">Open Heart Media</div>
+  <h1>Let's get started.</h1>
+  <p>Fifteen minutes, once. This is everything we need to stop guessing and start work. Required fields are marked; the rest helps but will not hold anything up.</p>
+  <div class="bar"></div>
+</div></div>
+<main>
+<form id="f" novalidate>
+${sections}
+<fieldset><legend><span class="sn">07</span>Access</legend>
+  <p class="sd">Tick each one as you do it. If something is not obvious, leave it and we will walk you through it.</p>
+  <div class="pw"><b>We will never ask for a password.</b> Every platform below lets you add us alongside you, and you can remove us at any time. If anyone ever asks you to email a password, that is not us.</div>
+  ${access}
+</fieldset>
+<button type="submit" id="sub">Send this to Open Heart Media</button>
+<div class="msg" id="m"></div>
+<div class="ft">Questions? Call 404-491-1466 or reply to the email that brought you here.</div>
+</form>
+</main>
+<script>
+var f=document.getElementById('f'),b=document.getElementById('sub'),m=document.getElementById('m');
+f.addEventListener('submit',function(e){
+  e.preventDefault();
+  var miss=[].slice.call(f.querySelectorAll('[required]')).filter(function(el){return !el.value.trim();});
+  if(miss.length){ m.className='msg err'; m.textContent='A few required answers are still blank. The first one is highlighted.';
+    miss[0].focus(); miss[0].scrollIntoView({block:'center',behavior:'smooth'}); return; }
+  m.className='msg'; b.disabled=true; b.textContent='Sending...';
+  var d={}; new FormData(f).forEach(function(v,k){ d[k]=v; });
+  fetch('/api/onboarding',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+   .then(function(r){return r.json();})
+   .then(function(r){
+     if(r&&r.ok){ document.querySelector('main').innerHTML=
+       '<div class="done"><h2>Got it. Thank you.</h2><p>That is everything we need to begin. You will hear from us within one business day, and your first call is already on the schedule.</p></div>';
+       window.scrollTo(0,0); }
+     else { throw new Error((r&&r.error)||'Something went wrong'); }
+   })
+   .catch(function(err){ m.className='msg err'; m.textContent=err.message+' Please try again, or call 404-491-1466.';
+     b.disabled=false; b.textContent='Send this to Open Heart Media'; });
+});
+</script></body></html>`;
+}
+
+app.get('/onboarding', (req, res) => {
+  res.set('Content-Type', 'text/html').send(onboardingPage({ business: req.query.b || '' }));
+});
+
+app.post('/api/onboarding', async (req, res) => {
+  const d = req.body || {};
+  const business = String(d.business || '').trim().slice(0, 160);
+  const email = String(d.contact_email || '').trim().toLowerCase().slice(0, 254);
+  if (!business) return res.status(400).json({ error: 'Please add your business name.' });
+  if (!looksLikeEmail(email)) return res.status(400).json({ error: 'That email does not look right.' });
+
+  // Defence in depth: the form has no password field, but a pasted answer could still contain one.
+  // Strip anything that looks like a credential rather than storing it and hoping nobody looks.
+  const SUSPECT = /\b(pass(word|wd)?|pwd|login)\s*[:=]\s*\S+/gi;
+  const row = { id: 'O' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+                at: new Date().toISOString(), business, email, answers: {} };
+  let scrubbed = 0;
+  for (const [k, v] of Object.entries(d)) {
+    let val = String(v == null ? '' : v).slice(0, 4000);
+    const clean = val.replace(SUSPECT, (mm) => { scrubbed++; return '[removed, send this a safer way]'; });
+    row.answers[k.slice(0, 60)] = clean;
+  }
+  if (scrubbed) row.scrubbed = scrubbed;
+
+  const rows = loadOnboarding();
+  rows.push(row);
+  try { saveOnboarding(rows); } catch (e) { console.error('[onboarding] save failed -', e.message); }
+
+  try {
+    if (process.env.SENDGRID_API_KEY && SALES.length) {
+      const lines = ONB_SECTIONS.flatMap(s => [`\n${s.t.toUpperCase()}`, ...s.f.map(([k, label]) =>
+        `  ${label}: ${row.answers[k] || '(blank)'}`)]);
+      const acc = ONB_ACCESS.map(([k, name]) => `  ${row.answers[k] ? 'done' : 'not yet'}  ${name}`);
+      await sgMail.sendMultiple({
+        to: SALES, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+        replyTo: email,
+        subject: `ONBOARDING COMPLETE: ${business}`,
+        text: `${business} finished the onboarding form.\n${lines.join('\n')}\n\nACCESS\n${acc.join('\n')}\n`
+            + (scrubbed ? `\nNote: ${scrubbed} answer(s) looked like they contained a credential and were removed before saving.\n` : ''),
+      });
+    }
+  } catch (e) { console.error('[onboarding] notify failed -', e.message); }
+
+  res.json({ ok: true, id: row.id });
+});
+
+app.get('/api/onboarding', (_, res) => res.json({ responses: loadOnboarding().slice().reverse() }));
 
 // ---------- Inbound qualified lead (contact form + campaign landing pages) ----------
 // The website's long qualifying form and the cold-outreach landing page both post here. It was
