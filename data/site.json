@@ -1,8 +1,9 @@
 {
   "videoEmbed": "",
+  "_note": "Must stay identical to the case studies published on openheartmediaco.com/work. Every figure here is measured and appears in the client PDF of the same name. No projections on this page.",
   "cases": [
     { "stat": "~90x", "label": "return on ad spend. $2.34M tracked revenue on $26K, home services" },
-    { "stat": "$312.5K", "label": "best sales month in 23 months, in the first 30 days, e-commerce" },
-    { "stat": "+96%", "label": "more traffic. Beat an entire prior year in 6 months, home healthcare" }
+    { "stat": "$896,551", "label": "in 110 days. 2,198 orders at a $408 average, e-commerce" },
+    { "stat": "+27%", "label": "care hours in the season the industry calls slow, home care" }
   ]
 }
