@@ -1570,22 +1570,27 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
   <div class="inner">
     <div class="eyebrow reveal">${bizName ? 'Free growth audit for ' + esc(bizName) : 'Free growth audit'}</div>
     <h1 class="reveal">You're a great business. You're just <em>leaving money</em> on the table.</h1>
-    <p class="sub reveal">We go through your website, your Google presence and whether AI assistants can even find you, then send you the exact gaps quietly costing you leads and revenue. Free, and no call required to get it.</p>
+    <p class="sub reveal">Tell us where to look. We go through your website, your Google presence and whether AI assistants can find you at all, by hand, and then walk you through exactly what is costing you leads.</p>
 
     <div class="formwrap reveal" id="auditbox">
-      <h2>Get your free growth audit</h2>
-      <p class="fp">We build it by hand and send it to your inbox. No call required.</p>
+      <h2>Request your free growth audit</h2>
+      <p class="fp">A real person goes through it, not a scanner. Usually back to you within one business day.</p>
       <div class="frow">
         <div><label for="f_first">First name</label><input id="f_first" placeholder="Jane"/></div>
         <div><label for="f_last">Last name</label><input id="f_last" placeholder="Doe"/></div>
       </div>
+      <label for="f_biz">Business name</label>
+      <input id="f_biz" placeholder="Your business"/>
       <label for="f_site">Your website</label>
       <input id="f_site" placeholder="yourbusiness.com" value="${esc(prefillSite)}"/>
       <label for="f_goal">What matters most right now</label>
       <select id="f_goal"><option value="more leads">More leads</option><option value="more phone calls">More phone calls</option><option value="more booked appointments">More booked appointments</option><option value="more sales">More sales</option><option value="more of everything">More of everything</option></select>
-      <label for="f_email">Where should we send your audit</label>
+      <label for="f_email">Your email</label>
       <input id="f_email" type="email" placeholder="you@yourbusiness.com"/>
-      <button class="btn" id="run">Send me my audit</button>
+      <label for="f_phone">Best number to reach you</label>
+      <input id="f_phone" type="tel" placeholder="(770) 555 0100"/>
+      <div style="position:absolute;left:-9999px" aria-hidden="true"><input id="f_company_website" tabindex="-1" autocomplete="off"/></div>
+      <button class="btn" id="run">Request my audit</button>
       <p class="err" id="err"></p>
     </div>
   </div>
@@ -1677,46 +1682,46 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
   // The report variant of this page has no form, so these elements do not exist there.
   var runBtn=document.getElementById('run');
   if(runBtn) runBtn.addEventListener('click', function(){
-    var first=document.getElementById('f_first').value.trim();
-    var last=document.getElementById('f_last').value.trim();
-    var email=document.getElementById('f_email').value.trim();
-    var sitev=document.getElementById('f_site').value.trim();
-    var goal=document.getElementById('f_goal').value;
+    function v(id){ var el=document.getElementById(id); return el ? el.value.trim() : ''; }
+    var first=v('f_first'), last=v('f_last'), biz=v('f_biz'), sitev=v('f_site');
+    var email=v('f_email'), phone=v('f_phone'), goal=v('f_goal');
     var err=document.getElementById('err');
-    var fields=[['f_first',first],['f_last',last],['f_site',sitev],['f_email',email]];
-    fields.forEach(function(f){document.getElementById(f[0]).classList.remove('invalid');});
+    var fields=[['f_first',first],['f_last',last],['f_biz',biz],['f_email',email],['f_phone',phone]];
+    fields.forEach(function(f){ var el=document.getElementById(f[0]); if(el) el.classList.remove('invalid'); });
     var missing=fields.filter(function(f){return !f[1];});
-    if(missing.length){ missing.forEach(function(f){document.getElementById(f[0]).classList.add('invalid');}); err.textContent='Please fill in all fields.'; return; }
+    if(missing.length){ missing.forEach(function(f){ var el=document.getElementById(f[0]); if(el) el.classList.add('invalid'); });
+      err.textContent='Please fill in all fields.'; return; }
     if(email.indexOf('@')<1){ document.getElementById('f_email').classList.add('invalid'); err.textContent='Please enter a valid email.'; return; }
+    if(phone.replace(/\D/g,'').length<10){ document.getElementById('f_phone').classList.add('invalid'); err.textContent='Please enter a phone number we can reach you on.'; return; }
     err.textContent=''; var btn=this; btn.disabled=true; btn.textContent='Sending...';
-    function fail(msg){ err.textContent=msg||'Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Send me my audit'; }
-    // The audit is built after this request returns, not while the visitor waits. Watching a
-    // progress bar for two minutes was the single biggest thing that could go wrong in front of a
-    // prospect: every dependency we do not control was on screen with them. Now the only thing
-    // that has to succeed here is saving their details, and the report follows by email.
-    fetch('/api/audit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:REF,firstName:first,lastName:last,email:email,website:sitev,goal:goal})})
+    function fail(msg){ err.textContent=msg||'Something went wrong. Please try again, or call 404-491-1466.';
+      btn.disabled=false; btn.textContent='Request my audit'; }
+
+    // Nothing is scanned or scored in front of the visitor any more. This only has to save the
+    // lead and tell the team; the audit itself is done by a person afterwards.
+    fetch('/api/qualify',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ ref:REF, name:(first+' '+last).trim(), business:biz, website:sitev,
+        email:email, phone:phone, goal:goal, source:'go-landing',
+        company_website:v('f_company_website') })})
      .then(function(r){return r.json();})
      .then(function(j){
-       if(j.error) return fail(j.error);
-       // The one moment we know a real lead exists. Everything upstream is just traffic.
-       try{ if(window.fbq) fbq('track','Lead',{content_name:'growth audit'}); }catch(e){}
+       if(j && j.error) return fail(j.error);
+       try{ if(window.fbq) fbq('track','Lead',{content_name:'growth audit request'}); }catch(e){}
        try{ if(window.gtag) gtag('event','generate_lead',{currency:'USD',value:1}); }catch(e){}
-       confirmed(first,email);
+       confirmed(first);
      })
      .catch(function(){ fail(); });
 
-    function confirmed(name,to){
+    function confirmed(name){
       var box=document.getElementById('auditbox');
-      box.innerHTML='<h2>Your audit is on its way</h2>'
-        +'<p class="fp" style="font-size:15px;line-height:1.6">Thanks '+esc(name)+'. We are putting your report together now and sending it to <b>'+esc(to)+'</b>. It usually lands within the hour.</p>'
-        +'<p class="fp" style="font-size:15px;line-height:1.6;margin-top:14px">It covers your website, how you show up on Google, and whether AI assistants can find you at all. Most owners are surprised by that last one.</p>'
-        +'<a class="btn" id="rbook" href="#book" style="margin-top:18px;text-decoration:none;display:block;text-align:center">Book my free discovery call</a>'
-        +'<p class="fp" style="margin-top:12px;text-align:center">Or skip ahead and we will walk you through it live.</p>';
+      box.innerHTML='<h2>Got it. We are on it.</h2>'
+        +'<p class="fp" style="font-size:15px;line-height:1.6">Thanks '+esc(name)+'. One of us is going through your site, your Google presence and your AI search visibility by hand right now.</p>'
+        +'<p class="fp" style="font-size:15px;line-height:1.6;margin-top:14px">You will hear from us within one business day. If you would rather pick a time yourself, grab a slot below.</p>'
+        +'<a class="btn" id="rbook" href="#book" style="margin-top:18px;text-decoration:none;display:block;text-align:center">Book my call</a>';
       var b=document.getElementById('rbook');
       if(b) b.addEventListener('click',function(){track('click');});
       box.scrollIntoView({behavior:'smooth'});
     }
-
   });
 </script>
 </body></html>`;
@@ -1983,7 +1988,10 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/qualify', '/guide', '/onboarding', '/api/onboarding'];
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/audit', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/qualify', '/guide', '/onboarding', '/api/onboarding']
+// '/api/audit' was public so the landing page could run a scan in front of a visitor. Nothing
+// public triggers an audit any more: leads come in through /api/qualify and the team runs the
+// audit themselves, so the endpoint now sits behind the team login like everything else.;
 function getCookie(req, name) { const m = (req.headers.cookie || '').match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : null; }
 app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
