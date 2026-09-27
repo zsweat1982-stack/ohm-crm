@@ -1,9 +1,18 @@
 {
   "videoEmbed": "",
-  "_note": "Must stay identical to the case studies published on openheartmediaco.com/work. Every figure here is measured and appears in the client PDF of the same name. No projections on this page.",
+  "_note": "Must stay identical to the case studies published on openheartmediaco.com and to the fallback defaults in loadSite(). The $6M is a client reported projection, always labelled as projected, never as banked revenue.",
   "cases": [
-    { "stat": "~90x", "label": "return on ad spend. $2.34M tracked revenue on $26K, home services" },
-    { "stat": "$896,551", "label": "in 110 days. 2,198 orders at a $408 average, e-commerce" },
-    { "stat": "+27%", "label": "care hours in the season the industry calls slow, home care" }
+    {
+      "stat": "~90x",
+      "label": "return on ad spend. $2.34M tracked revenue on $26K, home services"
+    },
+    {
+      "stat": "$896,551",
+      "label": "in 110 days. 2,198 orders at a $408 average, e-commerce"
+    },
+    {
+      "stat": "$4M to $6M",
+      "label": "projected 2026 revenue, up from 2025. Care hours up 27% in the slow season, home care"
+    }
   ]
 }

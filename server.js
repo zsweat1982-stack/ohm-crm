@@ -1348,7 +1348,7 @@ function loadSite() {
       // the website so a missing file can never put invented proof points on the page.
       { stat: '~90x', label: 'return on ad spend. $2.34M tracked revenue on $26K, home services' },
       { stat: '$896,551', label: 'in 110 days. 2,198 orders at a $408 average, e-commerce' },
-      { stat: '+27%', label: 'care hours in the season the industry calls slow, home care' },
+      { stat: '$4M to $6M', label: 'projected 2026 revenue, up from 2025. Care hours up 27% in the slow season, home care' },
     ],
   };
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SITE_FILE, 'utf8')) }; } catch { return defaults; }
@@ -1629,14 +1629,14 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
 
 <section class="case">
   <div class="inner">
-    <div class="chero reveal"><span class="bignum">+96%</span><span class="cl">Home healthcare · 6 months</span></div>
-    <div class="ctitle reveal">Six months of 2026 already beat their entire prior year online.</div>
+    <div class="chero reveal"><span class="bignum">$4M &rarr; $6M</span><span class="cl">Home care · 2025 into 2026</span></div>
+    <div class="ctitle reveal">On pace to finish 2026 at six million, up from four, with the slow season growing instead of dipping.</div>
     <div class="cstory">
       <div class="blk reveal"><h4>The challenge</h4><p>The prior year ran on social reach alone. Google was barely tested, phone calls were not tracked, and there was no way to tie spend to a real lead.</p></div>
       <div class="blk reveal"><h4>What we did</h4><p>One fully tracked channel. Consolidated budget into Performance Max, made the phone call the primary action, and tracked every call, form and contact-page visit.</p></div>
-      <div class="blk reveal"><h4>The result</h4><p>$203,450 in internet and social sales through June, versus $196,052 for all of the prior year. Monthly pace more than doubled, now traceable to the dollar.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>$203,450 in internet and social sales through June against $196,052 for all of the prior year, and care hours up 27% across July and August, the two months the industry calls slow. The client now projects six million for 2026 against four million in 2025.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">15.04%</b><span>Conversion rate, healthcare client, ~3x benchmark</span></div><div class="m"><b>229</b><span>Tracked conversions in one quarter</span></div><div class="m"><b>$1.74</b><span>Avg cost per click</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">+27%</b><span>Care hours in July and August, the slow season</span></div><div class="m"><b>+52%</b><span>Site sessions</span></div><div class="m"><b>5.95%</b><span>Ad click rate</span></div></div>
   </div>
 </section>
 
