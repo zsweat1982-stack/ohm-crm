@@ -1347,8 +1347,8 @@ function loadSite() {
       // Fallback only, used if data/site.json is unreadable. Kept identical to site.json and to
       // the website so a missing file can never put invented proof points on the page.
       { stat: '~90x', label: 'return on ad spend. $2.34M tracked revenue on $26K, home services' },
-      { stat: '$312.5K', label: 'best sales month in 23 months, in the first 30 days, e-commerce' },
-      { stat: '+96%', label: 'more traffic. Beat an entire prior year in 6 months, home healthcare' },
+      { stat: '$896,551', label: 'in 110 days. 2,198 orders at a $408 average, e-commerce' },
+      { stat: '+27%', label: 'care hours in the season the industry calls slow, home care' },
     ],
   };
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SITE_FILE, 'utf8')) }; } catch { return defaults; }
@@ -1616,14 +1616,14 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
 
 <section class="case cream">
   <div class="inner">
-    <div class="chero reveal"><span class="bignum">$312.5K</span><span class="cl">E-commerce · first 30 days</span></div>
-    <div class="ctitle reveal">Their best sales month in 23 months, without spending more on traffic.</div>
+    <div class="chero reveal"><span class="bignum">$896,551</span><span class="cl">E-commerce · 110 days</span></div>
+    <div class="ctitle reveal">Nearly nine hundred thousand dollars through one peak season, on an owned channel that kept producing after it.</div>
     <div class="cstory">
       <div class="blk reveal"><h4>The challenge</h4><p>Strong product, loyal customers, but growth was decelerating three months straight, from +95% to +35% to +16%. Too many hands on strategy at once.</p></div>
       <div class="blk reveal"><h4>What we did</h4><p>One owner, one strategy, every channel aligned. Google, Meta, Amazon, organic social and email all reinforcing the same offer and audience insight.</p></div>
       <div class="blk reveal"><h4>The result</h4><p>Growth reaccelerated inside 30 days. Traffic stayed roughly flat, but every visitor was simply worth more. Best sales month in nearly two years.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">~$900K</b><span>Across 2,198 orders in 110 days</span></div><div class="m"><b>$401</b><span>Average order value, held above $400 every month</span></div><div class="m"><b>+62%</b><span>Month over month growth</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">$896,551</b><span>Across 2,198 orders in 110 days</span></div><div class="m"><b>$408</b><span>Average order value, held above $400 every month</span></div><div class="m"><b>+62%</b><span>Month over month growth</span></div></div>
   </div>
 </section>
 
