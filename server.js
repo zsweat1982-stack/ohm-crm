@@ -1346,9 +1346,9 @@ function loadSite() {
     cases: [
       // Fallback only, used if data/site.json is unreadable. Kept identical to site.json and to
       // the website so a missing file can never put invented proof points on the page.
-      { stat: '~90x', label: 'return on ad spend. $2.34M tracked revenue on $26K, home services' },
-      { stat: '$896,551', label: 'in 110 days. 2,198 orders at a $408 average, e-commerce' },
-      { stat: '$4M to $6M', label: 'projected 2026 revenue, up from 2025. Care hours up 27% in the slow season, home care' },
+      { stat: '$2.34M', label: 'tracked revenue on $26K in ad spend, home services' },
+      { stat: '$896,551', label: 'in a single 110 day season. 2,198 orders at a $408 average, e-commerce' },
+      { stat: '$4M to $6M', label: 'projected 2026 revenue, up from 2025. Care hours up 30.4% in July and 23.1% in August, home care' },
     ],
   };
   try { return { ...defaults, ...JSON.parse(fs.readFileSync(SITE_FILE, 'utf8')) }; } catch { return defaults; }
@@ -1508,7 +1508,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 .find h3{font-size:18px;font-weight:700;margin-bottom:4px}.find p{color:#5c5c5c;font-size:15px}
 .est{background:var(--ink);color:#fff;border-radius:16px;padding:22px 26px;margin-top:22px;font-size:18px;font-weight:600;line-height:1.5}.est b{color:var(--red)}
 /* case studies */
-.case{border-top:1px solid var(--line);position:relative;overflow:hidden}
+.case{border-top:1px solid var(--line);position:relative;overflow:hidden;padding:56px 32px 64px}
 .case.cream{background:var(--cream);color:var(--ink);border-top:0}
 /* soft light bloom behind the headline number so the stat reads as the hero of the section */
 .case::before{content:"";position:absolute;top:-140px;left:-120px;width:520px;height:520px;border-radius:50%;
@@ -1561,7 +1561,7 @@ input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(223,49,49,.18)}
 .foot a:hover{border-color:var(--red)}
 .foot .flearn{color:var(--red);border-bottom-color:rgba(223,49,49,.4)}
 .hide{display:none}
-@media(max-width:720px){.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.cmetrics{grid-template-columns:1fr 1fr}.chero{gap:12px}.formwrap{padding:24px}.book h2{font-size:clamp(20px,5.7vw,30px);max-width:none;white-space:nowrap}.book p{font-size:15.5px;max-width:40ch}.book .inner{padding:0}.calwrap{min-width:0}.calwrap .calendly-inline-widget{min-width:0 !important}}
+@media(max-width:720px){.case{padding:44px 22px 52px}.sec{padding:64px 22px}.hero{padding:80px 22px 64px}.scoregrid,.cstory{grid-template-columns:1fr}.cmetrics{grid-template-columns:1fr 1fr}.chero{gap:12px}.formwrap{padding:24px}.book h2{font-size:clamp(20px,5.7vw,30px);max-width:none;white-space:nowrap}.book p{font-size:15.5px;max-width:40ch}.book .inner{padding:0}.calwrap{min-width:0}.calwrap .calendly-inline-widget{min-width:0 !important}}
 @media(max-width:360px){.book h2{white-space:normal;font-size:22px}.frow{flex-direction:column;gap:0}}
 </style></head><body>
 <div class="nav"><img class="logo" src="/media/logo-white.png" alt="Open Heart Media"/><a class="navcta" href="#book">Book a call</a></div>
@@ -1600,43 +1600,46 @@ ${prescanned ? renderPrescannedReport(prospect) : `<section class="hero">
 
 <section class="case" id="proof">
   <div class="inner">
-    <div class="eyebrow reveal">Proof, not promises</div>
-    <h2 class="reveal secheading">We don't pitch you on what we could do. Here is what we already did.</h2>
-    <p class="reveal secsub">Three real clients, real numbers, pulled straight from their accounts.</p>
-    <div class="chero reveal"><span class="bignum">$2.34M</span><span class="cl">Home services · 20 months</span></div>
-    <div class="ctitle reveal">From zero online presence to $2.34M in tracked revenue, on $26K of ad spend.</div>
+    <div class="eyebrow reveal">The receipts</div>
+    <h2 class="reveal secheading">Real campaigns. Real revenue.</h2>
+    <p class="reveal secsub">Not vague quotes and not rounded-up screenshots. Three engagements, every number traced back to the dollar, and the full report attached to each one.</p>
+    <div class="chero reveal"><span class="bignum">$2.34M</span><span class="cl">Home services · Cherokee County, GA</span></div>
+    <div class="ctitle reveal">Tracked revenue on $26K in ad spend, traced back to the dollar.</div>
     <div class="cstory">
-      <div class="blk reveal"><h4>The challenge</h4><p>A great local reputation but nothing digital working for them. No paid ads, no lead tracking, no reliable pipeline. Revenue moved with the season, not a system.</p></div>
-      <div class="blk reveal"><h4>What we did</h4><p>Built a growth system, not a campaign. Google Search plus Performance Max on high intent buyers, every call and text tracked to the dollar, and monthly optimization.</p></div>
-      <div class="blk reveal"><h4>The result</h4><p>Twenty months of compounding growth. Average monthly revenue climbed from $68K to over $111K, with April 2026 the best month on record at $157,970.</p></div>
+      <div class="blk reveal"><h4>The challenge</h4><p>They had the product and they had the reputation. What they did not have was a single tracked lead. No paid presence, no call logging, no pipeline, and revenue that moved with the season instead of with a system.</p></div>
+      <div class="blk reveal"><h4>What we did</h4><p>We built the system: high-intent search, Performance Max for reach and retargeting, every call and text logged, and monthly optimization against real numbers.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>Twenty months later, $2,340,409 traced back to the dollar.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">$2.34M</b><span>Tracked revenue on $26K in ad spend</span></div><div class="m"><b>~90x</b><span>Return on ad spend</span></div><div class="m"><b>$0.39</b><span>Average cost per click</span></div><div class="m"><b>67,100</b><span>Clicks, all traced to revenue</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">$136,000</b><span>Nov to Dec 2024</span></div><div class="m"><b>$989,233</b><span>Full year 2025</span></div><div class="m"><b>$445,390</b><span>Jan to Apr 2026</span></div></div>
+    <p class="reveal" style="margin-top:22px"><a href="https://openheartmediaco.com/case-studies/home-services-2-34m/" target="_blank" rel="noopener" style="color:inherit;font-weight:700;border-bottom:1px solid currentColor;text-decoration:none">Read the full case study &rarr;</a></p>
   </div>
 </section>
 
 <section class="case cream">
   <div class="inner">
-    <div class="chero reveal"><span class="bignum">$896,551</span><span class="cl">E-commerce · 110 days</span></div>
-    <div class="ctitle reveal">Nearly nine hundred thousand dollars through one peak season, on an owned channel that kept producing after it.</div>
+    <div class="chero reveal"><span class="bignum">$896,551</span><span class="cl">E-commerce · In a single 110 day season</span></div>
+    <div class="ctitle reveal">Nearly nine hundred thousand dollars, and by September email alone was producing better than a quarter of all revenue.</div>
     <div class="cstory">
-      <div class="blk reveal"><h4>The challenge</h4><p>Strong product, loyal customers, but growth was decelerating three months straight, from +95% to +35% to +16%. Too many hands on strategy at once.</p></div>
-      <div class="blk reveal"><h4>What we did</h4><p>One owner, one strategy, every channel aligned. Google, Meta, Amazon, organic social and email all reinforcing the same offer and audience insight.</p></div>
-      <div class="blk reveal"><h4>The result</h4><p>Growth reaccelerated inside 30 days. Traffic stayed roughly flat, but every visitor was simply worth more. Best sales month in nearly two years.</p></div>
+      <div class="blk reveal"><h4>The challenge</h4><p>A seasonal brand with one short window to make the year.</p></div>
+      <div class="blk reveal"><h4>What we did</h4><p>We ran paid media through the peak while building the owned channel underneath it.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>Nearly nine hundred thousand dollars across 2,198 orders in 110 days, with average order value holding above $400 every single month, so none of the growth came from discounting. By September, email alone was producing better than a quarter of all revenue.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">$896,551</b><span>Across 2,198 orders in 110 days</span></div><div class="m"><b>$408</b><span>Average order value, held above $400 every month</span></div><div class="m"><b>+62%</b><span>Month over month growth</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">2,198</b><span>Orders</span></div><div class="m"><b>$408</b><span>Average order value</span></div><div class="m"><b>15.7%</b><span>Of revenue from email</span></div></div>
+    <p class="reveal" style="margin-top:22px"><a href="https://openheartmediaco.com/case-studies/ecommerce-peak-season/" target="_blank" rel="noopener" style="color:inherit;font-weight:700;border-bottom:1px solid currentColor;text-decoration:none">Read the full case study &rarr;</a></p>
   </div>
 </section>
 
 <section class="case">
   <div class="inner">
-    <div class="chero reveal"><span class="bignum">$4M &rarr; $6M</span><span class="cl">Home care · 2025 into 2026</span></div>
-    <div class="ctitle reveal">On pace to finish 2026 at six million, up from four, with the slow season growing instead of dipping.</div>
+    <div class="chero reveal"><span class="bignum">$4M to $6M</span><span class="cl">Healthcare · Private home care</span></div>
+    <div class="ctitle reveal">In a single year, on a fully tracked channel.</div>
     <div class="cstory">
-      <div class="blk reveal"><h4>The challenge</h4><p>The prior year ran on social reach alone. Google was barely tested, phone calls were not tracked, and there was no way to tie spend to a real lead.</p></div>
-      <div class="blk reveal"><h4>What we did</h4><p>One fully tracked channel. Consolidated budget into Performance Max, made the phone call the primary action, and tracked every call, form and contact-page visit.</p></div>
-      <div class="blk reveal"><h4>The result</h4><p>$203,450 in internet and social sales through June against $196,052 for all of the prior year, and care hours up 27% across July and August, the two months the industry calls slow. The client now projects six million for 2026 against four million in 2025.</p></div>
+      <div class="blk reveal"><h4>The challenge</h4><p>Families were searching and finding somebody else.</p></div>
+      <div class="blk reveal"><h4>What we did</h4><p>We pointed a fully tracked search channel at skilled nursing, the highest value care this agency can staff, and held the targeting to the four counties where it can actually put a nurse.</p></div>
+      <div class="blk reveal"><h4>The result</h4><p>July and August, the two months home care writes off as slow, grew 30% and 23% against the same months last year. The client now projects $6 million for 2026 against $4 million in 2025.</p></div>
     </div>
-    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">+27%</b><span>Care hours in July and August, the slow season</span></div><div class="m"><b>+52%</b><span>Site sessions</span></div><div class="m"><b>5.95%</b><span>Ad click rate</span></div></div>
+    <div class="cmetrics reveal"><div class="m"><b style="color:var(--red)">+30.4%</b><span>July care hours</span></div><div class="m"><b>+23.1%</b><span>August care hours</span></div><div class="m"><b>5.95%</b><span>Ad click rate</span></div></div>
+    <p class="reveal" style="margin-top:22px"><a href="https://openheartmediaco.com/case-studies/healthcare-home-care/" target="_blank" rel="noopener" style="color:inherit;font-weight:700;border-bottom:1px solid currentColor;text-decoration:none">Read the full case study &rarr;</a></p>
   </div>
 </section>
 

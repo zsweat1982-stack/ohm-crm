@@ -3,16 +3,16 @@
   "_note": "Must stay identical to the case studies published on openheartmediaco.com and to the fallback defaults in loadSite(). The $6M is a client reported projection, always labelled as projected, never as banked revenue.",
   "cases": [
     {
-      "stat": "~90x",
-      "label": "return on ad spend. $2.34M tracked revenue on $26K, home services"
+      "stat": "$2.34M",
+      "label": "tracked revenue on $26K in ad spend, home services"
     },
     {
       "stat": "$896,551",
-      "label": "in 110 days. 2,198 orders at a $408 average, e-commerce"
+      "label": "in a single 110 day season. 2,198 orders at a $408 average, e-commerce"
     },
     {
       "stat": "$4M to $6M",
-      "label": "projected 2026 revenue, up from 2025. Care hours up 27% in the slow season, home care"
+      "label": "projected 2026 revenue, up from 2025. Care hours up 30.4% in July and 23.1% in August, home care"
     }
   ]
 }
