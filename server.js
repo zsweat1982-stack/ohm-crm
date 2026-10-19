@@ -436,7 +436,10 @@ function pageSignals(html) {
   const hasNewsletter = emailInput && !looksLikeLogin && (newsletterWords || /<form/i.test(html));
   const hasLiveChat = /(intercom|drift\.com|tawk\.to|zendesk|tidio|crisp\.chat|hubspot[^"']*conversations|livechatinc|customerchat|messenger[^"']*chat|gorgias|podium|chatwoot|olark|liveperson)/i.test(html);
   const hasCta = /(get (a |your )?(free )?(quote|estimate|consultation|demo|assessment|inspection|pricing)|request (a |your )?(free )?(quote|estimate|consultation|callback|appointment)|book (a |your |now|online|an appointment)|schedule (a |your |an? |now|online)|call now|claim your|get started|start (your|a) )/i.test(html);
-  const hasPhone = /href=["']tel:\+?[0-9]/i.test(html);
+  // tel: links are written many ways: tel:+17703452010, tel:(770) 345-2010, tel:770-345-2010, tel:%20770...
+  // The old pattern needed a digit straight after "tel:", so any link that began with "(" or a space was
+  // missed and the report told the owner "no clickable phone number" about a number they had linked.
+  const hasPhone = /href=["']\s*tel:[\s+()%0-9a-f-]{0,6}[0-9]/i.test(html);
   // A published number that is not wrapped in a tel: link is still a phone number.
   // Reporting "no phone number" to a business whose number is printed on their own
   // homepage is the single most credibility-destroying thing this audit can do, and
