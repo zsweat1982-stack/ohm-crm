@@ -184,6 +184,7 @@
     </div>
     <span class="sp"></span>
     <button id="autosendBtn" onclick="toggleAutosend()" title="Automatic daily sending">checking…</button>
+    <button onclick="rescanNext()" title="Re-run the audit scan for the next 40 leads the daily sender will email">Rescan next 40</button>
     <button class="primary" onclick="generateAll()">Draft next 25</button>
     <button class="green" onclick="sendApproved()">Send approved</button>
   </div>
@@ -319,6 +320,14 @@ async function loadAutosend() {
     }
   } catch (e) { b.textContent = '⚠️ Autosend unknown'; b.disabled = true; }
 }
+async function rescanNext() {
+  if (!confirm('Re-run the audit scan for the next 40 leads that will be emailed? It runs in the background and uses API credits.')) return;
+  try {
+    const r = await api('/api/prescan', 'POST', { limit: 40, force: true, mailableOnly: true });
+    toast('Rescan started for ' + (r.queued || 0) + ' leads');
+  } catch (e) { toast('Could not start the rescan: ' + (e.message || e)); }
+}
+
 async function toggleAutosend() {
   if (!autosendState || !autosendState.enabled) return;
   const pausing = !autosendState.paused;

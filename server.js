@@ -1127,7 +1127,7 @@ Return ONLY JSON:
  "findings": [ {"title": "punchy specific title", "detail": "2 to 3 sentences tied to lost leads or revenue, referencing the actual scan finding", "impact": "High|Medium|Low"} ],
  "quickWins": ["3 to 4 short fixes they could do fast, each one line, specific to what failed"],
  "summary": "2 to 3 sentences, direct and honest, that make working with OHM the obvious next step without giving away the full playbook",
- "estimate": "one line on the realistic leads/revenue upside of closing these gaps"
+ "estimate": ""
 }
 Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype words like leverage, unlock, synergy, supercharge. Specific to THIS scan, never generic.`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
@@ -1308,11 +1308,7 @@ function buildAuditPDF(business, report, bookingUrl) {
     // ---- upside + CTA ----
     nl(150);
     y += 8;
-    const est = report.estimate || '';
-    const uh = doc.font('Helvetica').fontSize(11.5).heightOfString('The upside: ' + est, { width: CW - 40 }) + 26;
-    doc.roundedRect(M, y, CW, uh, 10).fill(NAVY2);
-    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11.5).text('The upside: ', M + 20, y + 13, { continued: true, width: CW - 40 }).fillColor('#fff').font('Helvetica').text(est, { width: CW - 40 });
-    y += uh + 20;
+    // The 'upside' revenue box was removed 2026-10-18: it was an invented dollar projection.
     // The heading and summary are variable height, and the button was positioned from doc.y after
     // they were already drawn, so on a long summary the button landed on top of the page footer.
     // Measure the whole block first and break the page before drawing any of it.
@@ -1402,7 +1398,6 @@ function renderPrescannedReport(p) {
     <div class="fhead reveal">Score breakdown</div>${breakdown}
     <div class="fhead reveal" style="margin-top:26px">What is costing you customers</div>${findings}
     ${quick ? `<div class="fhead reveal" style="margin-top:22px">Quick wins you can start now</div><ul style="margin:8px 0 0;padding-left:20px">${quick}</ul>` : ''}
-    ${rep.estimate ? `<div class="est reveal"><b>The upside: </b>${esc(rep.estimate)}</div>` : ''}
     <a class="btn" id="rbook" href="#book" style="max-width:360px;margin:30px auto 0;text-decoration:none;display:block;text-align:center">Book my free discovery call</a>
   </div>
 </section>`;
@@ -2352,7 +2347,7 @@ app.get('/api/audit-pdf-preview', async (_, res) => {
     ],
     quickWins: ['Add a meta description to the homepage', 'Install Google Analytics 4 and the Meta pixel this week', 'Compress the hero images to cut load time', 'Add alt text to the 14 images missing it'],
     summary: 'The reputation is already there. The gap is a slow, invisible website that is not capturing or measuring the demand you have earned. That is exactly the kind of thing we fix.',
-    estimate: 'Closing these gaps could realistically recover 8 to 15 additional booked appointments a month at your review volume.',
+    estimate: '',
   };
   const sampleGbp = { found: true, rating: 4.9, reviews: 820, latestReviewDays: 12, hasHours: true, websiteOnGbp: true, phoneOnGbp: true, photos: 10, hasDescription: false, primaryCategory: 'spa', status: 'OPERATIONAL' };
   sample.checklist = buildChecklist(sampleScan, samplePs, sampleGbp);
@@ -2672,10 +2667,12 @@ function setRescanCutoff(iso, after) {
   if (iso || after) fs.writeFileSync(RESCAN_STALE_FILE, JSON.stringify({ before: iso || null, after: after || null, set_at: new Date().toISOString() }));
   else { try { fs.unlinkSync(RESCAN_STALE_FILE); } catch {} }
 }
-function prescanTargets({ force = false } = {}) {
+function prescanTargets({ force = false, mailableOnly = false } = {}) {
   const { before, after, until } = rescanWindow();
   return prospects.filter(p => {
     if (!p.website || !/^https?:\/\//i.test(p.website)) return false;
+    // Rescan only the leads the daily sender can actually reach, in the order it will reach them.
+    if (mailableOnly && (p.status !== 'new' || p.unsubscribed_at || !isMailableBusiness(p.email))) return false;
     if (force) return true;
     if (!p.prescan_at && !p.prescan_failed_at) return true;          // never scanned
     const last = [p.prescan_at, p.prescan_failed_at].filter(Boolean).sort().pop() || '';
@@ -2689,9 +2686,9 @@ function prescanTargets({ force = false } = {}) {
   });
 }
 
-async function runPrescan({ limit = 0, force = false } = {}) {
+async function runPrescan({ limit = 0, force = false, mailableOnly = false } = {}) {
   if (prescanState.running) return prescanState;
-  let queue = prescanTargets({ force });
+  let queue = prescanTargets({ force, mailableOnly });
   if (limit > 0) queue = queue.slice(0, limit);
   Object.assign(prescanState, {
     running: true, stop: false, total: queue.length, done: 0, ok: 0, failed: 0,
@@ -4550,12 +4547,13 @@ app.post('/api/prescan', (req, res) => {
   if (prescanState.running) return res.status(409).json({ error: 'a pre-scan is already running', state: prescanState });
   const limit = Number(req.body?.limit) || 0;
   const force = req.body?.force === true;
+  const mailableOnly = req.body?.mailableOnly === true;
   const after = typeof req.body?.after === 'string' ? req.body.after : null;
   // Written before the run starts so a crash one minute in still leaves a resumable instruction.
   if (after) setRescanCutoff(null, after);
-  else if (force && !limit) setRescanCutoff(new Date().toISOString());
-  const pending = prescanTargets({ force }).length;
-  runPrescan({ limit, force }).catch(e => console.error('[prescan] run failed -', e.message));
+  else if (force && !limit && !mailableOnly) setRescanCutoff(new Date().toISOString());
+  const pending = prescanTargets({ force, mailableOnly }).length;
+  runPrescan({ limit, force, mailableOnly }).catch(e => console.error('[prescan] run failed -', e.message));
   res.json({ started: true, queued: limit > 0 ? Math.min(limit, pending) : pending, cutoff: rescanCutoff() });
 });
 // Clears the standing instruction, so a rescan can be called off without stopping the process.
