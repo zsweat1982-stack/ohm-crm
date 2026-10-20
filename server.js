@@ -3568,7 +3568,7 @@ The winner is drawn on November 20. We will contact the winner by email and phon
 
 Whether or not you win, here is a thank-you for entering: 20% off any monthly subscription, or $250 off any one-time service, good through March 31, 2027. Just mention code CONTENTDAY when we talk.
 
-If you want to use it, or you would like a free 15 minute look at your content, you can book a time here:
+If you want to use it, or you would like to talk about your business and what we can do for it, book a discovery call here:
 https://calendly.com/michelle-openheartmediaco/discovery-call-with-open-heart-media
 
 Thank you for entering.
