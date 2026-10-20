@@ -92,6 +92,8 @@
   .colhead .cn{margin-left:auto;background:#fff;border:1px solid var(--line);border-radius:20px;font-size:11px;
        font-weight:700;color:var(--mut);padding:1px 8px;font-variant-numeric:tabular-nums}
   .col.inbound .cn{border-color:#f2b7b3;color:var(--red)}
+  .col.giveaway{background:#e8f0fb;box-shadow:inset 0 3px 0 #2b6cd9}
+  .col.giveaway .cn{border-color:#b6cdf2;color:#2b6cd9}
   .colhint{font-size:10.5px;color:var(--mut);padding:3px 5px 9px}
   .colbody{overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:1px}
   .card{background:#fff;border:1px solid var(--line);border-radius:9px;padding:11px 12px;cursor:pointer;
@@ -237,6 +239,7 @@ function logout(){ fetch('/api/logout',{method:'POST'}).then(()=>location.href='
 const NAV = [
   ['Pipeline', [
     ['board',       '\u25A6', 'Pipeline',       null],
+    ['giveaway',    '\u{1F381}', 'Giveaway',       p => p.source==='giveaway'],
     ['inbound',     '\u2605', 'Inbound',        p => isInbound(p)],
     ['sent',        '\u2709', 'Awaiting reply', p => p.status==='sent'],
     ['replied',     '\u21A9', 'Replied',        p => p.status==='replied'],
@@ -265,12 +268,12 @@ function renderNav(){
 }
 function navTo(k){
   navKey = k;
-  const titles = {board:'Pipeline', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
+  const titles = {board:'Pipeline', giveaway:'Giveaway', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
                   booked:'Booked', won:'Won', all:'All leads', new:'Queue', drafted:'Drafted',
                   unreachable:'Unreachable', rejected:'Rejected'};
   document.getElementById('viewTitle').textContent = titles[k] || 'Pipeline';
   if (k==='board'){ document.getElementById('filter').value='all'; setView('board'); }
-  else if (k==='inbound'){ document.getElementById('filter').value='all'; setView('board'); }
+  else if (k==='inbound' || k==='giveaway'){ document.getElementById('filter').value='all'; setView('board'); }
   else { document.getElementById('filter').value = (k==='all'?'all':k); setView('table'); }
   renderNav();
 }
@@ -381,11 +384,13 @@ function setView(v){
 // prospect who later got audited is still a cold prospect, and our own team testing is neither.
 function isInbound(p){
   if (p.internal || p.status==='test') return false;
+  if (p.source==='giveaway') return false;     // giveaway entries have their own column
   if (p.sent_at) return false;
   return ['guide','website-form','self_serve'].includes(p.source)
       || ['subscriber','lead','audit_requested','audited'].includes(p.status);
 }
 const COLS = [
+  {k:'giveaway',label:'Giveaway',  hint:'Entered the Content Day giveaway'},
   {k:'inbound', label:'Inbound',   hint:'They came to you'},
   {k:'queue',   label:'Queue',     hint:'Drafted and approved'},
   {k:'sent',    label:'Awaiting reply', hint:'Emailed, nothing back yet'},
@@ -396,6 +401,7 @@ const COLS = [
 ];
 function stageOf(p){
   if (p.internal || p.status==='test') return null;
+  if (p.source==='giveaway' && !['booked','won'].includes(p.status)) return 'giveaway';
   if (isInbound(p)) return 'inbound';
   const st = p.status;
   if (st==='drafted' || st==='approved') return 'queue';
@@ -407,6 +413,7 @@ function stageOf(p){
   return null;                       // new, unreachable, rejected, lost: counted, not shown
 }
 function srcLabel(p){
+  if (p.source==='giveaway') return 'giveaway';
   if (p.source==='guide') return 'guide';
   if (p.source==='website-form') return 'form';
   if (p.source==='self_serve') return 'audit';
@@ -434,6 +441,7 @@ function cardHtml(p){
 }
 function renderBoard(list){
   if (navKey==='inbound') list = list.filter(isInbound);
+  if (navKey==='giveaway') list = list.filter(p=>p.source==='giveaway');
   const by = {}; COLS.forEach(c=>by[c.k]=[]);
   const dead = {'new':0,'unreachable':0,'rejected':0,'lost':0,'internal':0};
   for (const p of state.prospects){
@@ -446,7 +454,7 @@ function renderBoard(list){
   document.getElementById('board').innerHTML = COLS.map(c=>{
     let items = by[c.k].filter(p=>show.has(p.id));
     items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
-    return `<div class="col${c.k==='inbound'?' inbound':''}">
+    return `<div class="col${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}">
       <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
       ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
       <div class="colbody">${items.slice(0,120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
@@ -509,6 +517,7 @@ function renderDrawer(p){
   // timeline
   const evs = [
     ['Added', p.created_at],
+    ['Entered giveaway', p.giveaway_entered_at],
     ['Drafted', p.status!=='new'&&p.body? (p.drafted_at||null):null],
     ['Sent', p.sent_at],
     ['Opened landing page', p.viewed_at],
@@ -532,6 +541,18 @@ function renderDrawer(p){
     <div style="margin-top:10px"><span class="pill s-${st}">${st}</span></div>
   </div>
   <div class="dbody">
+    ${p.source==='giveaway'?`<div class="card"><h4>Giveaway entry</h4>
+      <div style="font-size:13px;line-height:1.7">
+        <div><b>Contact:</b> ${esc(p.contact_name||'')} (${esc(p.giveaway_role||'')})</div>
+        <div><b>Email:</b> ${esc(p.email||'')} &nbsp; <b>Phone:</b> ${esc(p.phone||'')}</div>
+        <div><b>Website:</b> ${esc(p.website||'')}</div>
+        <div><b>Industry:</b> ${esc(p.giveaway_industry||'')}</div>
+        <div><b>Biggest challenge:</b> ${esc(p.giveaway_challenge||'')}</div>
+        <div><b>Posts video:</b> ${esc(p.giveaway_posts_video||'')} &nbsp; <b>Budget:</b> ${esc(p.giveaway_budget||'')}</div>
+        <div><b>Referral:</b> ${esc(p.giveaway_referral||'')}</div>
+        <div><b>Source:</b> ${esc(p.giveaway_source||'')}</div>
+        <div><b>Wants updates:</b> ${p.giveaway_opt_in_updates?'yes':'no'}${p.giveaway_duplicates?' &nbsp; <b>Repeat entries:</b> '+p.giveaway_duplicates:''}</div>
+      </div></div>`:''}
     <div class="card">
       <h4>Move this lead</h4>
       <div class="actions">

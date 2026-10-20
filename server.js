@@ -1989,7 +1989,7 @@ const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-acc
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/qualify', '/guide', '/onboarding', '/api/onboarding']
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding']
 // '/api/audit' was public so the landing page could run a scan in front of a visitor. Nothing
 // public triggers an audit any more: leads come in through /api/qualify and the team runs the
 // audit themselves, so the endpoint now sits behind the team login like everything else.;
@@ -3491,6 +3491,74 @@ If you want it ran for you instead, just reply. This comes straight to us.
 Michelle Baker
 Open Heart Media`;
 }
+
+
+// ---------- The Content Day Giveaway entries ----------
+// The giveaway landing page (a separate Netlify site) posts every entry here as well as to Netlify
+// Forms, so the CRM has its own copy. Entries get their own column on the board and are NOT part of
+// the cold sequence: no sent_at and no seq_anchor_at, so no autosend and no follow-up touches them.
+app.options('/api/giveaway', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+  }).status(204).end();
+});
+app.post('/api/giveaway', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const b = req.body || {};
+  if (String(b['bot-field'] || b.company_hp || '').trim()) return res.json({ ok: true });   // honeypot
+  const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  const email = clip(b.email, 254).toLowerCase();
+  const name = clip(b.name, 120), business = clip(b.business, 160);
+  if (!name || !business || !looksLikeEmail(email)) return res.status(400).json({ error: 'Name, business and a valid email are required.' });
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  if (subscribeRateLimited(ip)) return res.status(429).json({ error: 'Too many entries from this connection.' });
+
+  const nowIso = new Date().toISOString();
+  const data = {
+    giveaway_role: clip(b.role, 60), giveaway_industry: clip(b.industry, 80), giveaway_challenge: clip(b.challenge, 120),
+    giveaway_posts_video: clip(b.posts_video, 40), giveaway_budget: clip(b.budget, 40), giveaway_referral: clip(b.referral, 200),
+    giveaway_source: clip(b.source, 200), giveaway_opt_in_updates: b.consent_updates === 'yes' || b.consent_updates === true,
+  };
+  // One entry per business: match the mailbox first, then the business name.
+  const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  let row = prospects.find(x => (x.email || '').toLowerCase() === email)
+         || prospects.find(x => x.source === 'giveaway' && norm(x.business) === norm(business));
+  let duplicate = false;
+  if (row && row.source === 'giveaway') {
+    duplicate = true;
+    row.giveaway_duplicates = (row.giveaway_duplicates || 0) + 1;
+    row.updated_at = nowIso;
+  } else if (row) {
+    // Already in the CRM from the cold list. Keep the record, mark that they entered, and stop treating it as cold.
+    Object.assign(row, data, { giveaway_entered_at: nowIso, updated_at: nowIso, source: 'giveaway' });
+    row.contact_name = row.contact_name || name; row.contact_first = row.contact_first || name.split(' ')[0];
+    if (!row.unsubscribed_at && !['booked', 'won'].includes(row.status)) row.status = 'giveaway';
+  } else {
+    row = {
+      id: 'GW' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+      business, category: data.giveaway_industry, city: clip(b.city, 80), phone: clip(b.phone, 40), website: clip(b.website, 200),
+      rating: '', reviews: '', email, subject: '', body: '', notes: '', handled_by: '', deal_value: '',
+      contact_first: name.split(' ')[0], contact_name: name,
+      status: 'giveaway', source: 'giveaway', giveaway_entered_at: nowIso, updated_at: nowIso,
+      internal: isOwnTeam(email) || undefined,
+      consent: { at: nowIso, ip, source: 'content-day-giveaway', page: clip(b.page, 200) },
+      ...data,
+    };
+    prospects.push(row);
+  }
+  try { save(prospects); } catch (e) { console.error('[giveaway] save failed -', e.message); return res.status(500).json({ error: 'save failed' }); }
+  console.log('[giveaway]', duplicate ? 'duplicate' : 'new entry', business);
+  if (!duplicate && !row.internal) {
+    softStage(alertTeam(`New giveaway entry: ${business}`,
+      `<b>${esc(business)}</b><br>${esc(name)} (${esc(data.giveaway_role)})<br>${esc(email)} / ${esc(clip(b.phone, 40))}<br>${esc(clip(b.website, 200))}<br>`
+      + `Industry: ${esc(data.giveaway_industry)}<br>Challenge: ${esc(data.giveaway_challenge)}<br>Posts video: ${esc(data.giveaway_posts_video)}<br>Budget: ${esc(data.giveaway_budget)}<br>Referral: ${esc(data.giveaway_referral)}<br>Updates opt-in: ${data.giveaway_opt_in_updates ? 'yes' : 'no'}`),
+      15000, 'giveaway alert').catch(() => {});
+  }
+  res.json({ ok: true, duplicate });
+});
 
 app.options('/api/subscribe', (req, res) => {
   res.set({
