@@ -3558,6 +3558,34 @@ app.post('/api/giveaway', async (req, res) => {
       15000, 'giveaway alert').catch(() => {});
   }
   res.json({ ok: true, duplicate });
+  if (!duplicate) {
+    const first = (row.contact_first || name.split(' ')[0] || '').trim();
+    const text = `${first ? 'Hi ' + first + ',' : 'Hi,'}
+
+You are entered in The Content Day Giveaway for ${business}. There is nothing else you need to do.
+
+The winner is drawn on November 20. We will contact the winner by email and phone, and we will announce it on Open Heart Media's social channels.
+
+Whether or not you win, here is a thank-you for entering: 20% off any monthly subscription, or $250 off any one-time service, good through March 31, 2027. Just mention code CONTENTDAY when we talk.
+
+If you want to use it, or you would like a free 15 minute look at your content, you can book a time here:
+https://calendly.com/michelle-openheartmediaco/discovery-call-with-open-heart-media
+
+Thank you for entering.
+
+Michelle Baker
+Open Heart Media
+openheartmediaco.com`;
+    try {
+      if (!process.env.SENDGRID_API_KEY) throw new Error('no SENDGRID_API_KEY');
+      await sendMail(row, "You're entered: The Content Day Giveaway", text, { kind: 'giveaway-confirm', transactional: true });
+      row.giveaway_confirm_sent_at = new Date().toISOString(); delete row.giveaway_confirm_error;
+    } catch (e) {
+      row.giveaway_confirm_error = String(e.message || e).slice(0, 200);
+      console.error('[giveaway] confirmation failed -', email, row.giveaway_confirm_error);
+    }
+    try { save(prospects); } catch {}
+  }
 });
 
 app.options('/api/subscribe', (req, res) => {
@@ -4576,7 +4604,8 @@ async function runFollowups() {
     const anchor = p.seq_anchor_at || p.sent_at;
     if (!anchor || !looksLikeEmail(p.email)) continue;
     if (p.unsubscribed_at) continue;
-    if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable', 'test'].includes(p.status)) continue;
+    if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable', 'test', 'giveaway'].includes(p.status)) continue;   // giveaway entries are never cold followed up
+    if (p.source === 'giveaway') continue;
     if (p.internal) continue;                                  // our own team testing the forms
     const step = (p.followup_step || 0) + 1;
     if (step > 5) continue;
