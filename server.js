@@ -4324,6 +4324,16 @@ const ROLE_LOCALPARTS = new Set([
   'reception', 'team', 'general', 'webmaster', 'billing', 'accounts', 'accounting',
 ]);
 
+// Held back by hand: audit reports that still say "no tappable phone" on sites that have one.
+// Override or extend with the SEND_SKIP env var (comma separated, case insensitive substrings of the business name).
+const SEND_SKIP = (process.env.SEND_SKIP ||
+  'MTak Roofing,Russell Family Dentistry,Affordable Vet Center,Atlanta Family Mortgage,Sage Home Loans,5 Stones Renovation')
+  .split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+function isHeldBack(p) {
+  const n = String((p && p.business) || '').toLowerCase();
+  return SEND_SKIP.some(k => n.includes(k));
+}
+
 function isMailableBusiness(addr) {
   const e = normEmail(addr);
   if (!looksLikeEmail(e)) return false;
@@ -4360,7 +4370,7 @@ function claimedAddresses(alsoCountQueued) {
 
 async function sendApprovedBatch(budget) {
   const queue = prospects.filter(p =>
-    p.status === 'approved' && !p.unsubscribed_at && isMailableBusiness(p.email));
+    p.status === 'approved' && !p.unsubscribed_at && isMailableBusiness(p.email) && !isHeldBack(p));
   // Last line of defence. Two approved records can still share an address, so the set
   // grows as we go and the second one is parked rather than mailed.
   const alreadyMailed = claimedAddresses(false);
@@ -4940,7 +4950,7 @@ async function runDailyCold() {
     const todo = [];
     for (const p of prospects) {
       if (todo.length >= need) break;
-      if (p.status !== 'new' || !isMailableBusiness(p.email) || p.unsubscribed_at) continue;
+      if (p.status !== 'new' || !isMailableBusiness(p.email) || p.unsubscribed_at || isHeldBack(p)) continue;
       const addr = normEmail(p.email);
       if (spokenFor.has(addr)) continue;
       spokenFor.add(addr);   // so a second record for the same address is skipped in this run too
@@ -4966,7 +4976,7 @@ async function runDailyCold() {
     if (approved >= budget) break;
     if (p.status !== 'drafted') continue;
     if (!p.subject || !p.body || p.body.trim().length < 120) continue;
-    if (p.unsubscribed_at || !isMailableBusiness(p.email)) continue;
+    if (p.unsubscribed_at || !isMailableBusiness(p.email) || isHeldBack(p)) continue;
     p.status = 'approved';
     p.approved_by = 'auto';
     p.updated_at = new Date().toISOString();
