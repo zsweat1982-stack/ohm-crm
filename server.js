@@ -3519,7 +3519,7 @@ app.post('/api/giveaway', async (req, res) => {
   const nowIso = new Date().toISOString();
   const data = {
     giveaway_role: clip(b.role, 60), giveaway_industry: clip(b.industry, 80), giveaway_challenge: clip(b.challenge, 120),
-    giveaway_posts_video: clip(b.posts_video, 40), giveaway_budget: clip(b.budget, 40), giveaway_referral: clip(b.referral, 200),
+    giveaway_posts_video: clip(b.posts_video, 40), giveaway_website_status: clip(b.website_status, 40), giveaway_budget: clip(b.budget, 40), giveaway_referral: clip(b.referral, 200),
     giveaway_prize: clip(b.prize_choice, 60), giveaway_source: clip(b.source, 200), giveaway_opt_in_updates: b.consent_updates === 'yes' || b.consent_updates === true,
   };
   // One entry per business: match the mailbox first, then the business name.
@@ -3554,7 +3554,7 @@ app.post('/api/giveaway', async (req, res) => {
   if (!duplicate && !row.internal) {
     softStage(alertTeam(`New giveaway entry: ${business}`,
       `<b>${esc(business)}</b><br>${esc(name)} (${esc(data.giveaway_role)})<br>${esc(email)} / ${esc(clip(b.phone, 40))}<br>${esc(clip(b.website, 200))}<br>`
-      + `Prize preference: ${esc(data.giveaway_prize)}<br>Industry: ${esc(data.giveaway_industry)}<br>Challenge: ${esc(data.giveaway_challenge)}<br>Posts video: ${esc(data.giveaway_posts_video)}<br>Budget: ${esc(data.giveaway_budget)}<br>Referral: ${esc(data.giveaway_referral)}<br>Updates opt-in: ${data.giveaway_opt_in_updates ? 'yes' : 'no'}`),
+      + `Prize preference: ${esc(data.giveaway_prize)}<br>Industry: ${esc(data.giveaway_industry)}<br>Challenge: ${esc(data.giveaway_challenge)}<br>Website: ${esc(data.giveaway_website_status)}<br>Posts video: ${esc(data.giveaway_posts_video)}<br>Budget: ${esc(data.giveaway_budget)}<br>Referral: ${esc(data.giveaway_referral)}<br>Updates opt-in: ${data.giveaway_opt_in_updates ? 'yes' : 'no'}`),
       15000, 'giveaway alert').catch(() => {});
   }
   res.json({ ok: true, duplicate });
