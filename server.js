@@ -114,7 +114,7 @@ async function aiVisibilityProbe(business, city, category) {
 Business: "${business}"${city ? ', in ' + city + ', GA' : ''}${category ? ' - a ' + category : ''}.
 Return ONLY JSON: {"known": true|false, "confidence": "high|medium|low", "wouldRecommend": true|false, "competitorsKnown": true|false, "whatAiKnows": "one honest sentence"}`;
     const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 300, messages: [{ role: 'user', content: probe }] });
-    let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    let t = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null;
   } catch { return null; }
 }
@@ -289,7 +289,7 @@ Return ONLY JSON: {"subject": "...", "body": "..."}`;
 }
 
 function finishDraft(r, p) {
-  let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  let txt = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/);
   if (m) txt = m[0];
   const out = JSON.parse(txt);
@@ -1134,7 +1134,7 @@ Return ONLY JSON:
 }
 Give 5 to 7 findings ordered by biggest revenue impact. No em dashes. No hype words like leverage, unlock, synergy, supercharge. Specific to THIS scan, never generic.`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
-  let txt = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  let txt = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = txt.match(/\{[\s\S]*\}/); if (m) txt = m[0];
   const report = JSON.parse(txt);
   // Enforce the no-em-dash rule: strip em/en dashes and "--" substitutes the model sometimes emits.
@@ -4567,7 +4567,7 @@ async function draftFollowup(p, step) {
   }
   const prompt = `Write a short follow-up email (${length}) from Michelle at Open Heart Media to ${p.business}, a ${p.category} in ${p.city} GA. This is follow-up ${step} of 5. ${context} ${angles[step]} Voice: a sharp operator who already did the work and is telling them what he found, not a marketer selling a service. Plain, direct, a little dry. Confident enough to give the fix away. Lead with the specific thing, short sentences, every line earns its place, skimmable, no filler. Never use hype, urgency, flattery, "I hope this finds you well", "just following up", "I wanted to reach out", "circling back", "synergy", "leverage", "unlock" or "game changer". Write like a person who has looked at 400 of these sites and is mildly, specifically annoyed on their behalf. Reference their business naturally. Any tip must be specific and genuinely useful free value, never generic. Put the exact token [LINK] on its own line for ${linkPurpose}. Sign "Michelle, Open Heart Media". ${inbound ? 'They came to us and asked for this themselves, so speak to them as somebody who raised their hand. Never say we looked at their business unprompted.' : 'We ran this audit ourselves and sent it to them unprompted, so never write "your audit", "run your audit", "request", "sign up", "claim" or "get your free audit": the report already exists and already has their name on it.'} No em dashes, no exclamation marks, no hype words. SUBJECT LINE, same discipline as the first email and this is not optional: sentence case, UNDER 45 CHARACTERS, and it must name something SPECIFIC about THEIR business, a number from their report, their city, their category or what they will lose. NEVER the words "free", "audit", "check in", "checking in", "circle back", "following up", "touching base", "just wanted to", or any form of "did you get a chance". Those went out for months and were opened zero times. If the subject would still make sense sent to a different business, it is wrong and you must rewrite it. Return ONLY JSON {"subject":"...","body":"..."}`;
   const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
-  let t = r.content[0].text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  let t = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const m = t.match(/\{[\s\S]*\}/); if (m) t = m[0];
   const o = JSON.parse(t);
   // Enforce the no-em-dash rule on both subject and body.
