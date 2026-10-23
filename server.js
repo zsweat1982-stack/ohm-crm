@@ -3520,7 +3520,7 @@ app.post('/api/giveaway', async (req, res) => {
   const data = {
     giveaway_role: clip(b.role, 60), giveaway_industry: clip(b.industry, 80), giveaway_challenge: clip(b.challenge, 120),
     giveaway_posts_video: clip(b.posts_video, 40), giveaway_budget: clip(b.budget, 40), giveaway_referral: clip(b.referral, 200),
-    giveaway_source: clip(b.source, 200), giveaway_opt_in_updates: b.consent_updates === 'yes' || b.consent_updates === true,
+    giveaway_prize: clip(b.prize_choice, 60), giveaway_source: clip(b.source, 200), giveaway_opt_in_updates: b.consent_updates === 'yes' || b.consent_updates === true,
   };
   // One entry per business: match the mailbox first, then the business name.
   const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -3554,7 +3554,7 @@ app.post('/api/giveaway', async (req, res) => {
   if (!duplicate && !row.internal) {
     softStage(alertTeam(`New giveaway entry: ${business}`,
       `<b>${esc(business)}</b><br>${esc(name)} (${esc(data.giveaway_role)})<br>${esc(email)} / ${esc(clip(b.phone, 40))}<br>${esc(clip(b.website, 200))}<br>`
-      + `Industry: ${esc(data.giveaway_industry)}<br>Challenge: ${esc(data.giveaway_challenge)}<br>Posts video: ${esc(data.giveaway_posts_video)}<br>Budget: ${esc(data.giveaway_budget)}<br>Referral: ${esc(data.giveaway_referral)}<br>Updates opt-in: ${data.giveaway_opt_in_updates ? 'yes' : 'no'}`),
+      + `Prize preference: ${esc(data.giveaway_prize)}<br>Industry: ${esc(data.giveaway_industry)}<br>Challenge: ${esc(data.giveaway_challenge)}<br>Posts video: ${esc(data.giveaway_posts_video)}<br>Budget: ${esc(data.giveaway_budget)}<br>Referral: ${esc(data.giveaway_referral)}<br>Updates opt-in: ${data.giveaway_opt_in_updates ? 'yes' : 'no'}`),
       15000, 'giveaway alert').catch(() => {});
   }
   res.json({ ok: true, duplicate });
@@ -3562,9 +3562,9 @@ app.post('/api/giveaway', async (req, res) => {
     const first = (row.contact_first || name.split(' ')[0] || '').trim();
     const text = `${first ? 'Hi ' + first + ',' : 'Hi,'}
 
-You are entered in The Content Day Giveaway for ${business}. There is nothing else you need to do.
+You are entered in the Open Heart Media Giveaway for ${business}. There is nothing else you need to do.
 
-The winner is drawn on November 20. We will contact the winner by email and phone, and we will announce it on Open Heart Media's social channels.
+The winner is drawn on November 20 and chooses a new website or a day of production. We will contact the winner by email and phone, and we will announce it on Open Heart Media's social channels.
 
 Whether or not you win, here is a thank-you for entering: 20% off any monthly subscription, or $250 off any one-time service, good through March 31, 2027. Just mention code CONTENTDAY when we talk.
 
@@ -3578,7 +3578,7 @@ Open Heart Media
 openheartmediaco.com`;
     try {
       if (!process.env.SENDGRID_API_KEY) throw new Error('no SENDGRID_API_KEY');
-      await sendMail(row, "You're entered: The Content Day Giveaway", text, { kind: 'giveaway-confirm', transactional: true });
+      await sendMail(row, "You're entered: The Open Heart Media Giveaway", text, { kind: 'giveaway-confirm', transactional: true });
       row.giveaway_confirm_sent_at = new Date().toISOString(); delete row.giveaway_confirm_error;
     } catch (e) {
       row.giveaway_confirm_error = String(e.message || e).slice(0, 200);
