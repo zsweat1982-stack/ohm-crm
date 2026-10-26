@@ -4327,7 +4327,7 @@ const ROLE_LOCALPARTS = new Set([
 // Held back by hand: audit reports that still say "no tappable phone" on sites that have one.
 // Override or extend with the SEND_SKIP env var (comma separated, case insensitive substrings of the business name).
 const SEND_SKIP = (process.env.SEND_SKIP ||
-  'MTak Roofing,Russell Family Dentistry,Affordable Vet Center,Atlanta Family Mortgage,Sage Home Loans,5 Stones Renovation')
+  'MTak Roofing,Russell Family Dentistry,Affordable Vet Center,Atlanta Family Mortgage,Sage Home Loans,5 Stones Renovation,Corrective Chiropractic')
   .split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 function isHeldBack(p) {
   const n = String((p && p.business) || '').toLowerCase();
