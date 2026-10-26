@@ -3205,8 +3205,24 @@ async function checkGmailReplies() {
     const isStop = STOP_RE.test(snippet) || STOP_RE.test(hdr.subject || '');
     if (!Array.isArray(p.notes)) p.notes = [];
     if (isStop) {
+      const firstStop = !p.unsubscribed_at;
       p.unsubscribed_at = p.unsubscribed_at || now;
       p.status = 'rejected';
+      // Somebody who asks to stop gets one short confirmation back, and only the first time. Sent
+      // straight through sgMail, not sendMail: sendMail refuses unsubscribed leads, and an opt-out
+      // confirmation must not carry an unsubscribe footer.
+      if (firstStop && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(from) && !/no-?reply|mailer-daemon|postmaster/i.test(from)) {
+        try {
+          const text = `You're unsubscribed. Thank you for letting us know, and sorry for the interruption.\n\nWe will not contact you again.${transactionalFooter()}`;
+          await sgMail.send({
+            to: from,
+            from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+            subject: "You're unsubscribed",
+            text, html: textToHtml(text),
+          });
+          p.notes.push({ ts: now, by: null, text: 'Sent the unsubscribe confirmation.' });
+        } catch (e) { console.error('[gmail] unsubscribe confirmation failed', e.message); }
+      }
       p.notes.push({ ts: now, by: null, text: `Replied asking to stop. Suppressed. "${snippet.slice(0, 120)}"` });
     } else if (p.status !== 'booked' && p.status !== 'won') {
       p.status = 'replied';
