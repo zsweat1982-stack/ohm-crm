@@ -450,7 +450,8 @@ function srcLabel(p){
 function callTags(p){
   const f = p.call_flags||[], t = [];
   if (!(p.contact_name||'').trim()) t.push('<span class="tag need">needs name</span>');
-  t.push(p.call_tier==='deep' ? '<span class="tag ok">deep check</span>' : '<span class="tag warn">quick check</span>');
+  if (f.includes('possible_website')) t.push('<span class="tag need">possible site: check</span>');
+  t.push(p.call_tier==='deep' ? '<span class="tag ok">deep check</span>' : p.call_tier==='rechecked' ? '<span class="tag ok">re-checked</span>' : '<span class="tag warn">quick check</span>');
   if (f.includes('near_county_line')) t.push('<span class="tag warn">near county line</span>');
   if (f.includes('facebook_or_instagram_only')) t.push('<span class="tag">FB/IG only</span>');
   if (f.includes('no_review_in_12_months')) t.push('<span class="tag warn">quiet 12 mo</span>');
@@ -683,7 +684,9 @@ function callCard(p){
     return `<h5>${esc(l)}</h5><p class="${none?'mut':''}">${esc(none?'Not yet researched':v)}</p>`;
   }).join('');
   const f = p.call_flags||[];
-  const flagTags = (p.call_tier==='deep'?'<span class="tag ok">deep check</span>':'<span class="tag warn">quick check</span>')
+  const flagTags = (p.call_tier==='deep'?'<span class="tag ok">deep check</span>':p.call_tier==='rechecked'?'<span class="tag ok">re-checked Oct 27</span>':'<span class="tag warn">quick check</span>')
+    + (f.includes('possible_website')?'<span class="tag need">possible website: check before calling</span>':'')
+    + (f.includes('has_website')?'<span class="tag need">has a website</span>':'')
     + (f.includes('near_county_line')?'<span class="tag warn">near county line: confirm</span>':'')
     + (f.includes('facebook_or_instagram_only')?'<span class="tag">FB/IG only</span>':'')
     + (f.includes('listing_unclaimed')?'<span class="tag">listing unclaimed</span>':'')
@@ -703,6 +706,7 @@ function callCard(p){
     <p>${esc(c['Website check']||'')}</p>
     <div class="tags">${flagTags}</div>
     <p class="mut">${esc(c['How verified']||'')}</p>
+    ${c['Possible website']?`<p><b>Possible website:</b> <a href="${esc(c['Possible website'])}" target="_blank">${esc(c['Possible website'])}</a></p>`:''}
     ${c['Booking / social link']?`<p><a href="${esc(c['Booking / social link'])}" target="_blank">${esc(c['Booking / social link'])}</a></p>`:''}
     ${body}
     <details><summary>Call script</summary>${scripts||'<p class="mut">No script loaded.</p>'}</details>

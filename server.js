@@ -104,14 +104,15 @@ function ensureCallLeads() {
         website: '', rating: l.rating, reviews: l.reviews, email: '', subject: '', body: '', notes: [],
         handled_by: '', deal_value: '', contact_first: '', contact_name: l.contact_name || '',
         contact_name_source: l.contact_name_source || '',
-        status: 'calllist', source: 'callleads', do_not_email: true,
-        call_outcome: '', call_tier: l.tier, call_flags: l.flags, calllead: research,
+        status: l.removed ? 'lost' : 'calllist', source: 'callleads', do_not_email: true,
+        call_outcome: l.removed ? 'Actually has a website' : '', call_tier: l.tier, call_flags: l.flags, calllead: research,
         created_at: nowIso, updated_at: nowIso,
       });
       added++;
     } else {
       cur.do_not_email = true; cur.email = cur.email || '';
       cur.call_tier = l.tier; cur.call_flags = l.flags; cur.calllead = research;
+      if (l.removed && cur.status === 'calllist') { cur.status = 'lost'; cur.call_outcome = 'Actually has a website'; cur.updated_at = nowIso; }
       cur.business = cur.business || l.business;
       refreshed++;
     }
