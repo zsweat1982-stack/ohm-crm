@@ -94,6 +94,16 @@
   .col.inbound .cn{border-color:#f2b7b3;color:var(--red)}
   .col.giveaway{background:#e8f0fb;box-shadow:inset 0 3px 0 #2b6cd9}
   .col.giveaway .cn{border-color:#b6cdf2;color:#2b6cd9}
+  .col.nosite{background:#e9f6ee;box-shadow:inset 0 3px 0 #1e9e5a}
+  .col.nosite .cn{border-color:#b4dfc6;color:#1e9e5a}
+  .tag{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#eef1f6;color:#57607a;white-space:nowrap}
+  .tag.warn{background:#fff1d6;color:#a86400} .tag.need{background:#fdecea;color:#c4261d} .tag.ok{background:#e1f4e8;color:#1e7a47}
+  .s-calllist{background:#e1f4e8;color:#1e7a47}
+  .ci h5{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:13px 0 3px}
+  .ci p{margin:0;font-size:13px;line-height:1.55;white-space:pre-wrap}
+  .ci p.mut{color:var(--mut)} .ci .tags{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
+  .ci details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px} .ci summary{cursor:pointer;font-weight:700;font-size:13px}
+  .claimrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px}
   .colhint{font-size:10.5px;color:var(--mut);padding:3px 5px 9px}
   .colbody{overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:1px}
   .card{background:#fff;border:1px solid var(--line);border-radius:9px;padding:11px 12px;cursor:pointer;
@@ -209,6 +219,9 @@
         <option value="needsemail">Missing email</option>
       </select>
     </label>
+    <label class="muted">Owner
+      <select id="ownerFilter" onchange="render()"><option value="all">All owners</option><option value="unclaimed">Unclaimed</option></select>
+    </label>
     <span class="muted" id="capnote"></span>
     <span class="sp" style="margin-left:auto"></span>
     <span class="muted" id="stats" style="display:none"></span>
@@ -240,6 +253,7 @@ const NAV = [
   ['Pipeline', [
     ['board',       '\u25A6', 'Pipeline',       null],
     ['giveaway',    '\u{1F381}', 'Giveaway',       p => p.source==='giveaway'],
+    ['nosite',      '\u260E', 'No Website',     p => p.source==='callleads'],
     ['inbound',     '\u2605', 'Inbound',        p => isInbound(p)],
     ['sent',        '\u2709', 'Awaiting reply', p => p.status==='sent'],
     ['replied',     '\u21A9', 'Replied',        p => p.status==='replied'],
@@ -268,12 +282,12 @@ function renderNav(){
 }
 function navTo(k){
   navKey = k;
-  const titles = {board:'Pipeline', giveaway:'Giveaway', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
+  const titles = {board:'Pipeline', giveaway:'Giveaway', nosite:'No Website', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
                   booked:'Booked', won:'Won', all:'All leads', new:'Queue', drafted:'Drafted',
                   unreachable:'Unreachable', rejected:'Rejected'};
   document.getElementById('viewTitle').textContent = titles[k] || 'Pipeline';
   if (k==='board'){ document.getElementById('filter').value='all'; setView('board'); }
-  else if (k==='inbound' || k==='giveaway'){ document.getElementById('filter').value='all'; setView('board'); }
+  else if (k==='inbound' || k==='giveaway' || k==='nosite'){ document.getElementById('filter').value='all'; setView('board'); }
   else { document.getElementById('filter').value = (k==='all'?'all':k); setView('table'); }
   renderNav();
 }
@@ -292,8 +306,17 @@ function money(n){ n=Number(n)||0; return n? '$'+n.toLocaleString() : ''; }
 function ago(iso){ if(!iso) return ''; const d=(Date.now()-new Date(iso))/86400000; if(d<1) return 'today'; if(d<2) return 'yesterday'; return Math.floor(d)+'d ago'; }
 function when(iso){ if(!iso) return ''; return new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
 
+function fillOwnerFilter(){
+  const el = document.getElementById('ownerFilter'); if(!el) return;
+  const want = ['all','unclaimed'].concat(state.team||[]);
+  if (el.options.length === want.length) return;
+  const cur = el.value;
+  el.innerHTML = want.map(v=>`<option value="${esc(v)}">${v==='all'?'All owners':v==='unclaimed'?'Unclaimed':esc(v)}</option>`).join('');
+  el.value = want.includes(cur)?cur:'all';
+}
 async function load() {
   state = await api('/api/prospects');
+  fillOwnerFilter();
   renderStats(); renderNav(); render(); loadMetrics(); loadAutosend();
   if (openId) { const p = state.prospects.find(x=>x.id===openId); if(p) renderDrawer(p); }
 }
@@ -385,11 +408,13 @@ function setView(v){
 function isInbound(p){
   if (p.internal || p.status==='test') return false;
   if (p.source==='giveaway') return false;     // giveaway entries have their own column
+  if (p.source==='callleads') return false;    // so does the no-website call list
   if (p.sent_at) return false;
   return ['guide','website-form','self_serve'].includes(p.source)
       || ['subscriber','lead','audit_requested','audited'].includes(p.status);
 }
 const COLS = [
+  {k:'nosite',  label:'No Website', hint:'Call list: no site found. Claim one, get a contact name.'},
   {k:'giveaway',label:'Giveaway',  hint:'Entered the Content Day giveaway'},
   {k:'inbound', label:'Inbound',   hint:'They came to you'},
   {k:'queue',   label:'Queue',     hint:'Drafted and approved'},
@@ -401,6 +426,7 @@ const COLS = [
 ];
 function stageOf(p){
   if (p.internal || p.status==='test') return null;
+  if (p.source==='callleads' && p.status==='calllist') return 'nosite';
   if (p.source==='giveaway' && !['booked','won'].includes(p.status)) return 'giveaway';
   if (isInbound(p)) return 'inbound';
   const st = p.status;
@@ -421,10 +447,20 @@ function srcLabel(p){
   if (p.status==='lead') return 'form';
   return 'audit';
 }
+function callTags(p){
+  const f = p.call_flags||[], t = [];
+  if (!(p.contact_name||'').trim()) t.push('<span class="tag need">needs name</span>');
+  t.push(p.call_tier==='deep' ? '<span class="tag ok">deep check</span>' : '<span class="tag warn">quick check</span>');
+  if (f.includes('near_county_line')) t.push('<span class="tag warn">near county line</span>');
+  if (f.includes('facebook_or_instagram_only')) t.push('<span class="tag">FB/IG only</span>');
+  if (f.includes('no_review_in_12_months')) t.push('<span class="tag warn">quiet 12 mo</span>');
+  if (p.call_outcome) t.push('<span class="tag">'+esc(p.call_outcome)+'</span>');
+  return t.join('');
+}
 function cardHtml(p){
   const inb = isInbound(p);
   const flag = needsResponse(p) ? '\u{1F525} ' : '';
-  const sub = [p.category, p.city].filter(Boolean).join(' \u00b7 ');
+  const sub = (p.source==='callleads' ? [p.category, p.phone] : [p.category, p.city]).filter(Boolean).join(' \u00b7 ');
   const d = p.updated_at ? Math.floor((Date.now()-new Date(p.updated_at))/86400000) : null;
   const stale = d!==null && d>=14;
   const own = (p.handled_by||'').trim();
@@ -434,6 +470,7 @@ function cardHtml(p){
     <div class="cs">${esc(sub) || esc(p.email)}</div>
     <div class="cf">
       ${inb?`<span class="src">${srcLabel(p)}</span>`:''}
+      ${p.source==='callleads'?callTags(p):''}
       ${d!==null?`<span class="days${stale?' stale':''}">${d===0?'today':d+'d'}</span>`:''}
       ${ini?`<span class="own" title="${esc(own)}">${ini}</span>`:''}
       <span class="cv">${money(p.deal_value)}</span></div>
@@ -442,6 +479,7 @@ function cardHtml(p){
 function renderBoard(list){
   if (navKey==='inbound') list = list.filter(isInbound);
   if (navKey==='giveaway') list = list.filter(p=>p.source==='giveaway');
+  if (navKey==='nosite') list = list.filter(p=>p.source==='callleads');
   const by = {}; COLS.forEach(c=>by[c.k]=[]);
   const dead = {'new':0,'unreachable':0,'rejected':0,'lost':0,'internal':0};
   for (const p of state.prospects){
@@ -454,10 +492,10 @@ function renderBoard(list){
   document.getElementById('board').innerHTML = COLS.map(c=>{
     let items = by[c.k].filter(p=>show.has(p.id));
     items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
-    return `<div class="col${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}">
+    return `<div class="col${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}">
       <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
       ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
-      <div class="colbody">${items.slice(0,120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
+      <div class="colbody">${items.slice(0, c.k==='nosite'?300:120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
     </div>`;
   }).join('');
   const contactedEver = state.prospects.filter(p=>p.sent_at).length;
@@ -486,7 +524,10 @@ function render() {
   if (f==='needsemail') list = list.filter(p=>!p.email||!p.email.includes('@'));
   else if (f==='needsresponse') list = list.filter(needsResponse);
   else if (f!=='all') list = list.filter(p=>p.status===f);
-  if (q) list = list.filter(p => [p.business,p.city,p.category,p.email].some(v=>(v||'').toLowerCase().includes(q)));
+  if (q) list = list.filter(p => [p.business,p.city,p.category,p.email,p.phone,p.contact_name].some(v=>(v||'').toLowerCase().includes(q)));
+  const of = (document.getElementById('ownerFilter')||{}).value||'all';
+  if (of==='unclaimed') list = list.filter(p=>!(p.handled_by||'').trim());
+  else if (of!=='all') list = list.filter(p=>p.handled_by===of);
   // sort: needs-response first, then most recently updated
   list.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
   if (view==='board') renderBoard(list);
@@ -533,11 +574,12 @@ function renderDrawer(p){
   const tl = evs.length? evs.map(e=>`<div class="ev"><div>${esc(e[0])}</div><div class="when">${when(e[1])}</div></div>`).join('') : '<div class="muted" style="font-size:13px">No activity yet.</div>';
   const notes = (p.notes||[]).slice().reverse().map(n=>`<div class="note">${esc(n.text)}<div class="meta">${n.by?esc(n.by)+' · ':''}${when(n.ts)}</div></div>`).join('') || '<div class="muted" style="font-size:13px">No notes yet.</div>';
   const st = p.status;
+  const isCall = p.source==='callleads';
   document.getElementById('drawerContent').innerHTML = `
   <div class="dhead">
     <button class="dclose" onclick="closeDrawer()">×</button>
     <h2>${esc(p.business)}</h2>
-    <div class="dsub">${esc(p.category)} · ${esc(p.city)}, GA ${p.rating?'· ⭐'+esc(p.rating)+' ('+esc(p.reviews)+')':''}</div>
+    <div class="dsub">${esc(p.category)} · ${p.source==='callleads'?(p.city?esc(p.city)+', GA':'Cherokee County, GA'):esc(p.city)+', GA'} ${p.rating?'· ⭐'+esc(p.rating)+' ('+esc(p.reviews)+')':''}</div>
     <div style="margin-top:10px"><span class="pill s-${st}">${st}</span></div>
   </div>
   <div class="dbody">
@@ -554,7 +596,13 @@ function renderDrawer(p){
         <div><b>Source:</b> ${esc(p.giveaway_source||'')}</div>
         <div><b>Wants updates:</b> ${p.giveaway_opt_in_updates?'yes':'no'}${p.giveaway_duplicates?' &nbsp; <b>Repeat entries:</b> '+p.giveaway_duplicates:''}</div>
       </div></div>`:''}
-    <div class="card">
+    ${isCall?callCard(p):''}
+    ${isCall?`<div class="card"><h4>Move this lead</h4><div class="actions">
+        <button onclick="setStatus('${p.id}','booked')">\u{1F4C5} Booked a meeting</button>
+        <button class="green" onclick="markWon('${p.id}')">\u{1F3C6} Won</button>
+        <button onclick="setStatus('${p.id}','lost')">Not interested</button>
+        ${st!=='calllist'?`<button onclick="setStatus('${p.id}','calllist')">Back to call list</button>`:''}
+      </div></div>`:`<div class="card">
       <h4>Move this lead</h4>
       <div class="actions">
         ${p.body&&st!=='approved'?`<button class="green" onclick="setStatus('${p.id}','approved')">✓ Approve</button>`:''}
@@ -571,7 +619,7 @@ function renderDrawer(p){
         </div>`:''}
         ${(st==='audit_held'||st==='audit_failed')?`<button class="primary" onclick="rerunAudit('${p.id}')">🔁 Re-run audit and send</button>`:''}
       </div>
-    </div>
+    </div>`}
 
     <div class="card">
       <h4>Response &amp; deal</h4>
@@ -585,11 +633,11 @@ function renderDrawer(p){
 
     <div class="card">
       <h4>Contact</h4>
-      <div class="fld"><label>Email</label>
-        <input value="${esc(p.email)}" placeholder="add email…" onchange="patch('${p.id}',{email:this.value})"/></div>
-      <div class="kv"><span>Phone</span><b>${esc(p.phone)||'—'}</b></div>
+      ${isCall?'':`<div class="fld"><label>Email</label>
+        <input value="${esc(p.email)}" placeholder="add email…" onchange="patch('${p.id}',{email:this.value})"/></div>`}
+      <div class="kv"><span>Phone</span><b>${p.phone?`<a href="tel:${esc(p.phone)}">${esc(p.phone)}</a>`:'—'}</b></div>
       <div class="kv"><span>Website</span><b>${p.website?`<a href="${esc(p.website)}" target="_blank">${esc(p.website)}</a>`:'—'}</b></div>
-      <div class="kv"><span>Landing page</span><b><a href="/go?ref=${p.id}" target="_blank">open ↗</a></b></div>
+      ${isCall?'':`<div class="kv"><span>Landing page</span><b><a href="/go?ref=${p.id}" target="_blank">open ↗</a></b></div>`}
     </div>
 
     ${p.body?`<div class="card"><h4>Outreach email</h4>
@@ -620,6 +668,47 @@ function renderDrawer(p){
   </div>`;
 }
 
+const CALL_OUTCOMES = ['','No answer','Left voicemail','Spoke, interested','Spoke, not interested','Wrong number or closed','Actually has a website'];
+function callCard(p){
+  const c = p.calllead||{}, who = (p.handled_by||'').trim();
+  const you = who || '[Your name]';
+  const fill = t => (t||'').replace(/\[Your name\]/g, you).replace(/\[Agency\]/g, 'Open Heart Media').replace(/\[Business\]/g, p.business||'[Business]');
+  const claimBtns = ['Zac','Michelle'].map(t=>`<button class="${who===t?'primary':''}" onclick="claim('${p.id}','${t}')">${who===t?'✓ ':''}${t}</button>`).join('');
+  const rows = [['About','About'],['Who they serve','Who they serve'],['Services','Services'],['Website angles','Website angles'],
+    ['Call opener','Call opener'],['Discovery question','Discovery question'],['What customers say','What customers say'],
+    ['Hours','Hours'],['Last review','Last review'],['Listing claimed by owner','Listing claimed by owner'],
+    ['Owner replies to reviews','Owner replies to reviews'],['Owner (if found)','Owner (if found)'],['GA registration','GA registration']];
+  const body = rows.map(([k,l])=>{
+    const v = fill(c[k]); const none = !v || v==='Not yet researched';
+    return `<h5>${esc(l)}</h5><p class="${none?'mut':''}">${esc(none?'Not yet researched':v)}</p>`;
+  }).join('');
+  const f = p.call_flags||[];
+  const flagTags = (p.call_tier==='deep'?'<span class="tag ok">deep check</span>':'<span class="tag warn">quick check</span>')
+    + (f.includes('near_county_line')?'<span class="tag warn">near county line: confirm</span>':'')
+    + (f.includes('facebook_or_instagram_only')?'<span class="tag">FB/IG only</span>':'')
+    + (f.includes('listing_unclaimed')?'<span class="tag">listing unclaimed</span>':'')
+    + (f.includes('no_review_in_12_months')?'<span class="tag warn">no review in 12 months</span>':'');
+  const scripts = (state.callScripts||[]).map(s=>`<h5>${esc(s.section)}</h5><p>${esc(fill(s.script))}</p>`).join('');
+  return `<div class="card ci">
+    <h4>Call lead</h4>
+    <div class="claimrow">${who?`<span><b>Owned by ${esc(who)}</b></span><button onclick="claim('${p.id}','')">Release</button>`:`<span class="muted">Unclaimed. Take it:</span>`}${claimBtns}</div>
+    <div class="fld"><label>Contact name (required before calling)</label>
+      <input value="${esc(p.contact_name||'')}" placeholder="Who do we ask for?" onchange="patch('${p.id}',{contact_name:this.value})"/>
+      ${p.contact_name_source?`<div class="muted" style="font-size:11px;margin-top:3px">Prefilled: ${esc(p.contact_name_source)}. Confirm on the call.</div>`:''}</div>
+    <div class="fld" style="margin-top:10px"><label>Call outcome</label>
+      <select onchange="patch('${p.id}',{call_outcome:this.value})">${CALL_OUTCOMES.map(o=>`<option value="${esc(o)}" ${(p.call_outcome||'')===o?'selected':''}>${o||'Not called yet'}</option>`).join('')}</select></div>
+    <div class="kv"><span>Address</span><b>${esc(c['Address']||'')}</b></div>
+    <div class="kv"><span>Map</span><b>${c.maps_url?`<a href="${esc(c.maps_url)}" target="_blank">Open in Maps ↗</a>`:'—'}</b></div>
+    <h5>Website check</h5>
+    <p>${esc(c['Website check']||'')}</p>
+    <div class="tags">${flagTags}</div>
+    <p class="mut">${esc(c['How verified']||'')}</p>
+    ${c['Booking / social link']?`<p><a href="${esc(c['Booking / social link'])}" target="_blank">${esc(c['Booking / social link'])}</a></p>`:''}
+    ${body}
+    <details><summary>Call script</summary>${scripts||'<p class="mut">No script loaded.</p>'}</details>
+  </div>`;
+}
+async function claim(id, who){ try{ await api('/api/prospects/'+id+'/claim','POST',{who}); await load(); toast(who?('Claimed by '+who):'Released'); }catch(e){toast(e.message);} }
 async function patch(id, body){ try{ await api('/api/prospects/'+id,'PATCH',body); await load(); }catch(e){toast(e.message);} }
 async function setStatus(id, status){ await patch(id,{status}); toast('Moved to '+status); }
 async function markWon(id){ const v=prompt('Deal value for this win? (numbers only)',''); const body={status:'won'}; if(v!==null&&v.trim())body.deal_value=v; await patch(id,body); toast('🏆 Marked won'); }

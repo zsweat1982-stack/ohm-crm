@@ -79,6 +79,48 @@ function seedFromCsv() {
 }
 let prospects = load() || seedFromCsv();
 
+// ---------- No-website call list ----------
+// Calling leads, never emailed. They live in the same list as everything else so the board,
+// owners and notes all work, but every sender, drafter, scanner and purger skips them: they carry
+// source 'callleads' and do_not_email, and sendMail itself refuses them as the last line of defence.
+// The data ships in data/call_leads.json and is merged in on every boot. Merging only ever adds new
+// leads and refreshes the research fields, so nobody's owner, contact name, call outcome, notes or
+// status is overwritten by a deploy.
+let CALL_SCRIPTS = [];
+function ensureCallLeads() {
+  let src;
+  try { src = JSON.parse(fs.readFileSync(path.join(SEED_DIR, 'call_leads.json'), 'utf8')); }
+  catch (e) { console.warn('[callleads] no call_leads.json:', e.message); return; }
+  CALL_SCRIPTS = src.scripts || [];
+  const byId = new Map(prospects.filter(x => x.source === 'callleads').map(x => [x.id, x]));
+  const nowIso = new Date().toISOString();
+  let added = 0, refreshed = 0;
+  for (const l of src.leads || []) {
+    const research = { ...l.info, lead_id: l.lead_id, maps_url: l.maps_url };
+    const cur = byId.get(l.id);
+    if (!cur) {
+      prospects.push({
+        id: l.id, business: l.business, category: l.category, city: l.city, phone: l.phone,
+        website: '', rating: l.rating, reviews: l.reviews, email: '', subject: '', body: '', notes: [],
+        handled_by: '', deal_value: '', contact_first: '', contact_name: l.contact_name || '',
+        contact_name_source: l.contact_name_source || '',
+        status: 'calllist', source: 'callleads', do_not_email: true,
+        call_outcome: '', call_tier: l.tier, call_flags: l.flags, calllead: research,
+        created_at: nowIso, updated_at: nowIso,
+      });
+      added++;
+    } else {
+      cur.do_not_email = true; cur.email = cur.email || '';
+      cur.call_tier = l.tier; cur.call_flags = l.flags; cur.calllead = research;
+      cur.business = cur.business || l.business;
+      refreshed++;
+    }
+  }
+  if (added) save(prospects);
+  console.log('[callleads] added', added, 'refreshed', refreshed, 'total', (src.leads || []).length);
+}
+ensureCallLeads();
+
 // One-time, idempotent. bounced_at and complained_at did not exist until the September metrics
 // fix, so every send before it has no delivery outcome stamped on it and would read as clean.
 // Recover the real outcomes from the error strings and notes the webhook already wrote.
@@ -1938,6 +1980,7 @@ setTimeout(() => { refreshSuppressions().catch(e => console.error('[suppression]
 setInterval(() => { refreshSuppressions().catch(e => console.error('[suppression]', e.message)); }, 6 * 60 * 60 * 1000);
 
 async function sendMail(p, subject, body, { kind = 'outreach', attachments = null, transactional = false } = {}) {
+  if (p.do_not_email || p.source === 'callleads') throw Object.assign(new Error('call lead: never emailed'), { permanent: true, callLead: true });
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
   // The role-address filter exists to stop us COLD-mailing info@ and sales@. When someone fills in
   // our own form and asks us to contact them, refusing to answer because they typed a shared
@@ -2062,7 +2105,7 @@ app.get('/api/prospects', (_, res) => {
   });
   const wonValue = prospects.filter(p => p.status === 'won').reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
   const openValue = prospects.filter(p => ['replied', 'booked'].includes(p.status)).reduce((s, p) => s + (Number(p.deal_value) || 0), 0);
-  res.json({ prospects: slim, counts, sentToday: sentToday(), dailyCap: DAILY_CAP, team: TEAM, wonValue, openValue });
+  res.json({ prospects: slim, counts, sentToday: sentToday(), dailyCap: DAILY_CAP, team: TEAM, wonValue, openValue, callScripts: CALL_SCRIPTS });
 });
 
 // Team members who can be "on" a response. Configurable via TEAM env (comma list).
@@ -2079,7 +2122,7 @@ app.patch('/api/prospects/:id', (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   const prevStatus = p.status;
-  for (const k of ['email', 'subject', 'body', 'status', 'handled_by']) {
+  for (const k of ['email', 'subject', 'body', 'status', 'handled_by', 'contact_name', 'call_outcome']) {
     if (req.body[k] !== undefined) p[k] = req.body[k];
   }
   if (req.body.deal_value !== undefined) {
@@ -2158,6 +2201,7 @@ app.post('/api/prospects/import', (req, res) => {
 app.post('/api/prospects/purge', (req, res) => {
   const { reason = 'unreachable', confirm = false } = req.body || {};
   const match = p => {
+    if (p.source === 'callleads') return false;   // call leads have no email or site by design
     if (reason === 'unreachable') return !!p.prescan_error && !p.prescan_at && !p.audit_report;
     if (reason === 'no_email') return !(p.audit_email || p.email);
     return false;
@@ -2190,6 +2234,22 @@ app.post('/api/prospects/:id/note', (req, res) => {
   res.json(p);
 });
 
+// Take ownership of a lead (or release it with who=''). Logged as a note so the history shows who had it.
+app.post('/api/prospects/:id/claim', (req, res) => {
+  const p = prospects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const who = String(req.body?.who || '').trim().slice(0, 40);
+  const prev = p.handled_by || '';
+  if (who === prev) return res.json(p);
+  p.handled_by = who;
+  p.claimed_at = who ? new Date().toISOString() : null;
+  if (!Array.isArray(p.notes)) p.notes = [];
+  p.notes.push({ ts: new Date().toISOString(), by: who || prev || null, text: who ? (prev ? 'Taken over from ' + prev + ' by ' + who : 'Claimed by ' + who) : 'Released by ' + prev });
+  p.updated_at = new Date().toISOString();
+  save(prospects);
+  res.json(p);
+});
+
 // Preview is derived, never authored: recomputing it here keeps it honest for leads drafted
 // before this existed.
 function inboxPreview(body) {
@@ -2198,6 +2258,7 @@ function inboxPreview(body) {
 app.post('/api/prospects/:id/generate', async (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
+  if (p.source === 'callleads') return res.status(400).json({ error: 'call lead: we phone these, never email' });
   try {
     const d = await draftEmail(p);
     p.subject = d.subject; p.body = d.body; p.preview = inboxPreview(d.body);
@@ -2210,7 +2271,7 @@ app.post('/api/prospects/:id/generate', async (req, res) => {
 
 app.post('/api/generate-all', async (req, res) => {
   const limit = Number(req.body?.limit) || 25;
-  const todo = prospects.filter(p => p.status === 'new' || (!p.body && p.status !== 'sent')).slice(0, limit);
+  const todo = prospects.filter(p => p.source !== 'callleads' && (p.status === 'new' || (!p.body && p.status !== 'sent'))).slice(0, limit);
   let done = 0;
   for (const p of todo) {
     try {
@@ -2673,6 +2734,7 @@ function setRescanCutoff(iso, after) {
 function prescanTargets({ force = false, mailableOnly = false } = {}) {
   const { before, after, until } = rescanWindow();
   return prospects.filter(p => {
+    if (p.source === 'callleads') return false;
     if (!p.website || !/^https?:\/\//i.test(p.website)) return false;
     // Rescan only the leads the daily sender can actually reach, in the order it will reach them.
     if (mailableOnly && (p.status !== 'new' || p.unsubscribed_at || !isMailableBusiness(p.email))) return false;
@@ -4631,7 +4693,7 @@ async function runFollowups() {
     if (!anchor || !looksLikeEmail(p.email)) continue;
     if (p.unsubscribed_at) continue;
     if (['booked', 'replied', 'rejected', 'won', 'lost', 'unreachable', 'test', 'giveaway'].includes(p.status)) continue;   // giveaway entries are never cold followed up
-    if (p.source === 'giveaway') continue;
+    if (p.source === 'giveaway' || p.source === 'callleads') continue;
     if (p.internal) continue;                                  // our own team testing the forms
     const step = (p.followup_step || 0) + 1;
     if (step > 5) continue;
@@ -5097,7 +5159,7 @@ app.get('/api/autosend-status', (_, res) => {
   });
 });
 
-app.post('/api/reseed', (_, res) => { prospects = seedFromCsv(); res.json({ count: prospects.length }); });
+app.post('/api/reseed', (_, res) => { prospects = seedFromCsv(); ensureCallLeads(); res.json({ count: prospects.length }); });
 
 const PORT = process.env.PORT || 4100;
 // Flush on the way down so a graceful redeploy loses nothing at all.
