@@ -4796,6 +4796,7 @@ app.post('/api/prescan', (req, res) => {
   // who will open the link and read it, and any made before the accuracy fixes are suspect.
   if (req.body?.engaged === true) {
     const only = prospects.filter(p => p.source !== 'callleads' && p.sent_at && !p.unsubscribed_at
+      && ['sent', 'clicked', 'replied', 'audited', 'booked'].includes(p.status)
       && p.website && /^https?:\/\//i.test(p.website) && !isPlatformHost(p.website) && !reportSendable(p).ok);
     runPrescan({ only: limit > 0 ? only.slice(0, limit) : only }).catch(e => console.error('[prescan] run failed -', e.message));
     return res.json({ started: true, queued: limit > 0 ? Math.min(limit, only.length) : only.length, engaged: true });
