@@ -531,7 +531,17 @@ function pageSignals(html) {
   const napInSchema = /"streetAddress"\s*:\s*"[^"]{4,}"/i.test(html)
     || /itemprop=["']streetAddress["']/i.test(html);
   const napAddress = napVisible || napInSchema;
-  const schemaLocalBusiness = /("@type"\s*:\s*"?(LocalBusiness|Dentist|MedicalBusiness|MedicalClinic|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|GeneralContractor|Contractor|MovingCompany|ProfessionalService|Store|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|AutoRepair|RealEstateAgent|Physician|Dentistry)"?|itemtype=["'][^"']*schema\.org\/(LocalBusiness|[A-Za-z]*Business))/i.test(html);
+  const schemaKnownType = /("@type"\s*:\s*"?(LocalBusiness|Dentist|MedicalBusiness|MedicalClinic|Restaurant|Attorney|LegalService|HomeAndConstructionBusiness|Plumber|Electrician|RoofingContractor|GeneralContractor|Contractor|MovingCompany|ProfessionalService|Store|HealthAndBeautyBusiness|BeautySalon|HairSalon|DaySpa|AutoRepair|RealEstateAgent|Physician|Dentistry)"?|itemtype=["'][^"']*schema\.org\/(LocalBusiness|[A-Za-z]*Business))/i.test(html);
+  // Business types are a long tail (ExerciseGym, HealthClub, Locksmith, ...), so the named list
+  // above cannot be complete and a miss prints a false "no local business markup". A JSON-LD
+  // block with a street address, coordinates or opening hours attached to a specific type is a
+  // local business description whatever the type is called.
+  const ldBlocks = (html.match(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi) || []).join(' ');
+  const generic = /^(WebSite|WebPage|ImageObject|BreadcrumbList|ListItem|SearchAction|PostalAddress|GeoCoordinates|OpeningHoursSpecification|ContactPoint|Person|Article|BlogPosting|NewsArticle|CollectionPage|ItemList|Offer|Product|VideoObject|Question|Answer|FAQPage|SiteNavigationElement|WPHeader|WPFooter|EntryPoint|Rating|AggregateRating|Review|PropertyValue)$/i;
+  const ldTypes = [...ldBlocks.matchAll(/"@type"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+  const schemaLocalBusiness = schemaKnownType
+    || (/"@type"\s*:\s*"(PostalAddress|GeoCoordinates|OpeningHoursSpecification)"|"openingHours"/.test(ldBlocks)
+        && ldTypes.some(t => !generic.test(t)));
   const faqSchema = /("@type"\s*:\s*"?(FAQPage|Question)"?)/i.test(html);
   const sameAs = /"sameAs"\s*:/i.test(html);
   return { text, hasForm, hasBooking, hasNewsletter, hasLiveChat, hasCta, hasPhone, phoneVisible, hasEmailLink, napAddress, napVisible, napInSchema, schemaLocalBusiness, faqSchema, sameAs };
@@ -1543,7 +1553,7 @@ function renderSnapshot(p) {
       ${bad.length ? `<div class="snap-col no"><h2>Worth fixing${bad.length > 1 ? ', in order' : ''}</h2><ul>${li(bad, 'b', '!')}</ul></div>` : ''}
     </div>
     <a class="btn" id="rbook" href="#book" style="max-width:360px;margin:34px 0 0;text-decoration:none;display:block;text-align:center">${bad.length ? 'Talk through the fixes (free discovery call)' : 'Book a free call'}</a>
-    <p class="snap-note">Based on an automated scan of ${esc(p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '') : 'your public website')}${when ? ' on ' + when : ''}. Anything we could not measure is left out, and some things, like tags that load late, are not always detectable.</p>
+    <p class="snap-note">Based on an automated scan of ${esc(p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '') : 'your public website')}${when ? ' on ' + when : ''}. Anything we could not measure is left out, speed scores can shift a little between tests, and some things, like tags that load late, are not always detectable.</p>
   </div>
 </section>`;
 }
