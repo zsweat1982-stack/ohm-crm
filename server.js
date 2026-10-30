@@ -903,7 +903,10 @@ async function scanGBP(business, city, siteHost) {
     const find = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${q}&inputtype=textquery&fields=place_id&key=${key}`, { signal: AbortSignal.timeout(10000) });
     const fd = await find.json();
     const pid = fd.candidates?.[0]?.place_id;
-    if (!pid) return { found: false };
+    // No candidate is a lookup miss, not proof the business is absent from Google. Scoring it as
+    // "not found" put a 0 and the words "not on Google" in front of owners who have a profile.
+    // null means unmeasured everywhere downstream, so the category is left out instead.
+    if (!pid) return null;
     const fields = 'name,rating,user_ratings_total,opening_hours,website,formatted_phone_number,formatted_address,business_status,types,url,photos,reviews,editorial_summary';
     const det = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${pid}&fields=${fields}&key=${key}`, { signal: AbortSignal.timeout(10000) });
     const dd = await det.json();
@@ -911,11 +914,14 @@ async function scanGBP(business, city, siteHost) {
     // Verify the match: does the profile's linked website match the site we scanned, or the name align?
     let verified = null, matchHost = null;
     if (r.website) { try { matchHost = new URL(r.website).host.replace(/^www\./, ''); } catch {} }
-    if (siteHost && matchHost) verified = matchHost === siteHost;
-    else {
-      const norm = x => (x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (r.name && business) { const a = norm(r.name), b = norm(business); verified = a.includes(b) || b.includes(a); }
-    }
+    const norm = x => (x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const hostOk = siteHost && matchHost ? matchHost === siteHost.replace(/^www\./, '') : null;
+    const nameOk = r.name && business ? (() => { const a = norm(r.name), b = norm(business); return !!a && !!b && (a.includes(b) || b.includes(a)); })() : null;
+    // Either signal is enough to trust the match. Both failing means Google handed back a
+    // different business, and its rating, review count and hours would be reported as theirs.
+    if (hostOk === true || nameOk === true) verified = true;
+    else if (hostOk === false || nameOk === false) verified = false;
+    if (verified === false) return null;
     let latestReviewDays = null;
     if (Array.isArray(r.reviews) && r.reviews.length) {
       const newest = Math.max(...r.reviews.map(rv => rv.time || 0));
@@ -2752,9 +2758,9 @@ function prescanTargets({ force = false, mailableOnly = false } = {}) {
   });
 }
 
-async function runPrescan({ limit = 0, force = false, mailableOnly = false } = {}) {
+async function runPrescan({ limit = 0, force = false, mailableOnly = false, only = null } = {}) {
   if (prescanState.running) return prescanState;
-  let queue = prescanTargets({ force, mailableOnly });
+  let queue = Array.isArray(only) ? only : prescanTargets({ force, mailableOnly });
   if (limit > 0) queue = queue.slice(0, limit);
   Object.assign(prescanState, {
     running: true, stop: false, total: queue.length, done: 0, ok: 0, failed: 0,
@@ -4413,6 +4419,37 @@ function isHeldBack(p) {
   return SEND_SKIP.some(k => n.includes(k));
 }
 
+// The report is what a recipient actually reads, so nothing is drafted or sent for a lead whose
+// report cannot be trusted. Reports written before REPORT_FRESH_AFTER predate the accuracy fixes
+// (the Sep 18 scanner pass and the Oct 24 writer fix); several said "zero tracking" on sites that
+// run Tag Manager. A fallback report is deterministic filler, a thin crawl is not evidence, and a
+// directory or booking-platform page is somebody else's site: scoring it describes the platform.
+const REPORT_FRESH_AFTER = process.env.REPORT_FRESH_AFTER || '2026-10-24T00:00:00.000Z';
+const PLATFORM_HOSTS = ['salonlofts.com', 'facebook.com', 'instagram.com', 'linktr.ee', 'linktree.com', 'yelp.com',
+  'google.com', 'goo.gl', 'vagaro.com', 'styleseat.com', 'fresha.com', 'mindbodyonline.com', 'booksy.com',
+  'thumbtack.com', 'angi.com', 'homeadvisor.com', 'nextdoor.com', 'yellowpages.com', 'mapquest.com',
+  'bbb.org', 'tiktok.com', 'youtube.com', 'linkedin.com', 'x.com', 'twitter.com', 'houzz.com', 'zillow.com',
+  'realtor.com', 'healthgrades.com', 'zocdoc.com', 'psychologytoday.com', 'avvo.com', 'findlaw.com',
+  'justia.com', 'lawyers.com', 'doordash.com', 'ubereats.com', 'opentable.com', 'tripadvisor.com'];
+function isPlatformHost(url) {
+  try {
+    const h = new URL(url).host.toLowerCase().replace(/^www\./, '');
+    return PLATFORM_HOSTS.some(d => h === d || h.endsWith('.' + d));
+  } catch { return true; }
+}
+function reportSendable(p) {
+  const r = p && p.audit_report;
+  if (!r || typeof r !== 'object') return { ok: false, why: 'no report' };
+  if (r.degraded) return { ok: false, why: 'fallback report' };
+  if (!p.prescan_at || p.prescan_at < REPORT_FRESH_AFTER) return { ok: false, why: 'report predates the accuracy fixes' };
+  if (p.prescan_error) return { ok: false, why: 'last scan errored' };
+  const sc = p.audit_scan;
+  if (!sc || sc.reachable === false) return { ok: false, why: 'site was not reachable' };
+  if (!Array.isArray(sc.pagesScanned) || sc.pagesScanned.length < 2) return { ok: false, why: 'fewer than 2 pages scanned' };
+  if (isPlatformHost(p.website)) return { ok: false, why: 'website is a platform page, not their own site' };
+  return { ok: true, why: '' };
+}
+
 function isMailableBusiness(addr) {
   const e = normEmail(addr);
   if (!looksLikeEmail(e)) return false;
@@ -4741,6 +4778,14 @@ app.post('/api/prescan', (req, res) => {
   // Written before the run starts so a crash one minute in still leaves a resumable instruction.
   if (after) setRescanCutoff(null, after);
   else if (force && !limit && !mailableOnly) setRescanCutoff(new Date().toISOString());
+  // engaged: rebuild the reports of people we have ALREADY emailed, since those are the ones
+  // who will open the link and read it, and any made before the accuracy fixes are suspect.
+  if (req.body?.engaged === true) {
+    const only = prospects.filter(p => p.source !== 'callleads' && p.sent_at && !p.unsubscribed_at
+      && p.website && /^https?:\/\//i.test(p.website) && !isPlatformHost(p.website) && !reportSendable(p).ok);
+    runPrescan({ only: limit > 0 ? only.slice(0, limit) : only }).catch(e => console.error('[prescan] run failed -', e.message));
+    return res.json({ started: true, queued: limit > 0 ? Math.min(limit, only.length) : only.length, engaged: true });
+  }
   const pending = prescanTargets({ force, mailableOnly }).length;
   runPrescan({ limit, force, mailableOnly }).catch(e => console.error('[prescan] run failed -', e.message));
   res.json({ started: true, queued: limit > 0 ? Math.min(limit, pending) : pending, cutoff: rescanCutoff() });
@@ -5004,6 +5049,30 @@ function stampAutosendRun() {
   try { fs.writeFileSync(AUTOSEND_STAMP, JSON.stringify({ ts: new Date().toISOString() })); } catch {}
 }
 
+// Scans the leads the sender will reach next so every email goes out with a report written after
+// the accuracy fixes. Without this the gate above would starve the queue, because almost every
+// waiting lead was scanned on Aug 24. Bounded per day to keep API spend predictable.
+async function ensureFreshReports(wanted) {
+  if (prescanState.running) return;
+  const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+  const spokenFor = claimedAddresses(true);
+  const batch = [];
+  for (const p of prospects) {
+    if (batch.length >= wanted) break;
+    if (p.source === 'callleads' || p.status !== 'new' || !isMailableBusiness(p.email) || p.unsubscribed_at || isHeldBack(p)) continue;
+    if (!p.website || !/^https?:\/\//i.test(p.website) || isPlatformHost(p.website)) continue;
+    if (reportSendable(p).ok) continue;
+    if (p.prescan_failed_at && new Date(p.prescan_failed_at).getTime() > cutoff) continue;
+    const addr = normEmail(p.email);
+    if (spokenFor.has(addr)) continue;
+    spokenFor.add(addr);
+    batch.push(p);
+  }
+  if (!batch.length) return;
+  console.log('[autosend] rescanning', batch.length, 'leads before drafting');
+  await runPrescan({ only: batch });
+}
+
 async function runDailyCold() {
   // Cold sends now have their own cap, so a heavy follow-up day no longer reduces new outreach.
   // The cap itself is set by measured deliverability rather than by a constant, so a good week
@@ -5022,6 +5091,9 @@ async function runDailyCold() {
   let drafted = 0;
   const need = budget - readyNow;
   if (need > 0) {
+    // Reports are rebuilt first and only the ones that pass reportSendable are drafted below.
+    try { await ensureFreshReports(Math.min(60, Math.ceil(need * 1.5))); }
+    catch (e) { console.error('[autosend] rescan failed -', e.message); }
     // Skip addresses another record has already claimed, queued ones included. Drafting
     // for a duplicate costs an Anthropic call to produce copy that the send guard will
     // throw away, and on a list with 153 duplicate records that is real money.
@@ -5030,6 +5102,7 @@ async function runDailyCold() {
     for (const p of prospects) {
       if (todo.length >= need) break;
       if (p.status !== 'new' || !isMailableBusiness(p.email) || p.unsubscribed_at || isHeldBack(p)) continue;
+      if (!reportSendable(p).ok) continue;
       const addr = normEmail(p.email);
       if (spokenFor.has(addr)) continue;
       spokenFor.add(addr);   // so a second record for the same address is skipped in this run too
@@ -5056,6 +5129,7 @@ async function runDailyCold() {
     if (p.status !== 'drafted') continue;
     if (!p.subject || !p.body || p.body.trim().length < 120) continue;
     if (p.unsubscribed_at || !isMailableBusiness(p.email) || isHeldBack(p)) continue;
+    if (!reportSendable(p).ok) continue;
     p.status = 'approved';
     p.approved_by = 'auto';
     p.updated_at = new Date().toISOString();
