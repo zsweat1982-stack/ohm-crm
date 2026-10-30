@@ -434,6 +434,25 @@ async function fetchPage(url, timeout = 12000) {
 }
 
 // Tighter social detection: ignore share/pixel/plugin/intent links, keep real profile links only.
+// Social icons that exist on the page but link nowhere (no href, "#", or a script stub). Common in
+// page builders where the icon was added and the address never filled in. The owner sees an icon;
+// a visitor clicking it goes nowhere.
+function extractDeadSocials(html) {
+  const out = {};
+  const plats = 'facebook|instagram|twitter|youtube|linkedin|pinterest|tiktok';
+  const re = /<a\b([^>]*)>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const attrs = m[1];
+    const cls = (attrs.match(/class\s*=\s*["']([^"']*)["']/i) || [])[1] || '';
+    const hit = cls.match(new RegExp('(?:social|icon)[^\\s]*?-(' + plats + ')\\b|\\bfa-(' + plats + ')\\b|\\be-fab-(' + plats + ')\\b', 'i'));
+    if (!hit) continue;
+    const plat = (hit[1] || hit[2] || hit[3]).toLowerCase();
+    const href = (attrs.match(/href\s*=\s*["']([^"']*)["']/i) || [null, null])[1];
+    if (href === null || /^\s*(#|javascript:)/i.test(href) || href.trim() === '') out[plat] = true;
+  }
+  return out;
+}
 function extractSocials(html) {
   const out = {};
   const bad = /(sharer|share\.php|\/tr\b|\/tr\?|plugins|dialog|intent|\/share|\/events\/|widgets|badge|oembed|\/plugins\/)/i;
@@ -643,7 +662,7 @@ async function scanWebsite(rawUrl) {
     // media / trust
     imgCount: 0, imgMissingAlt: 0, hasVideo: false, mixedContent: false, copyrightYear: null,
     // social
-    socials: {},
+    socials: {}, deadSocials: {},
     // crawl coverage + AI search readiness
     pagesScanned: [], host: null, robotsFound: false, aiCrawlersAllowed: null, aiCrawlersBlocked: [], llmsTxt: false,
   };
@@ -722,6 +741,7 @@ async function scanWebsite(rawUrl) {
     out.hasEmailLink ||= s.hasEmailLink; out.napAddress ||= s.napAddress;
     out.schemaLocalBusiness ||= s.schemaLocalBusiness; out.faqSchema ||= s.faqSchema; out.sameAs ||= s.sameAs;
     Object.assign(out.socials, extractSocials(h));
+    Object.assign(out.deadSocials, extractDeadSocials(h));
     return s;
   };
   const homeSig = merge(html);
@@ -1004,6 +1024,7 @@ async function scanAIO(business, city, category, scan) {
 // Build a full pass/fail checklist from the scan so the audit shows everything we looked at.
 function buildChecklist(scan, ps, gbp, aio) {
   const socials = Object.keys(scan.socials || {});
+  const deadList = Object.keys(scan.deadSocials || {}).filter(k => !socials.includes(k === 'twitter' ? 'x' : k));
   // With the crawl refused, every raw-HTML signal is absent because we never saw the HTML, not
   // because the site lacks it. Same rule as everywhere else: unmeasured reports as unmeasured.
   const lim = !!scan.limited;
@@ -1125,6 +1146,8 @@ function buildChecklist(scan, ps, gbp, aio) {
       { label: 'Instagram linked', ok: C(socials.includes('instagram')), note: CN('') },
       { label: 'YouTube linked', ok: C(socials.includes('youtube')), note: CN('') },
       { label: 'TikTok linked', ok: L(socials.includes('tiktok')), note: LN('') },
+      // Only ever false: an icon with no working link. Null (unmeasured) otherwise.
+      { label: 'Social icons link to real profiles', ok: deadList.length ? false : null, note: deadList.join(', ') },
     ]},
   ];
 }
@@ -1458,7 +1481,7 @@ function renderSnapshot(p) {
     { label: 'AI assistants recognize your business', pass: () => 'AI assistants recognized the business when we asked',
       fail: () => 'AI assistants did not recognize the business when we asked', fix: 'Get the business recognized by AI assistants' },
     { label: 'Video on site', pass: () => 'Video on the site',
-      fail: () => `No video found ${scope}`, fix: 'Add video to the site', passOnly: true },
+      fail: () => `No video found ${scope}`, fix: 'Add video to the site' },
   ];
   const num = it => { const m = String((it && it.note) || '').match(/(\d+)\s*\/\s*100/); return m ? m[1] : ''; };
   const good = [], bad = [];
@@ -1477,6 +1500,11 @@ function renderSnapshot(p) {
     // Pass only. Icons with an empty or script-set link look present to the owner while the
     // scanner finds no profile URL, so a "not linked" claim is not safe to print.
     if (socials.some(i => i.ok === true)) good.push({ text: 'Social profiles linked from the site', fix: '' });
+  }
+  const dead = items['Social icons link to real profiles'];
+  if (dead && dead.ok === false && dead.note) {
+    const names = dead.note.split(', ').map(x => ({ youtube: 'YouTube', linkedin: 'LinkedIn', tiktok: 'TikTok' }[x] || x.charAt(0).toUpperCase() + x.slice(1))).join(', ');
+    bad.push({ text: `The social icons on the site (${names}) are there but do not link to anything`, fix: 'Link the social icons to your real profiles' });
   }
   const measured = good.length + bad.length;
   const when = p.prescan_at ? new Date(p.prescan_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
@@ -3120,7 +3148,7 @@ async function runAuditJob(jobId, opts) {
       // run it". A pre-scanned lead has not seen anything yet and is still cold.
       if (p) {
         p.audit_report = report;
-        p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
+        p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, deadSocials: scan.deadSocials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
         p.prescan_at = new Date().toISOString();
         p.prescan_error = null;
         p.updated_at = p.prescan_at;
@@ -3140,7 +3168,7 @@ async function runAuditJob(jobId, opts) {
       if (p) {
         p.audit_email = email; p.audit_goal = goal || null; p.audit_report = report;
         p.contact_first = firstName; p.contact_last = lastName; p.contact_name = `${firstName} ${lastName}`.trim();
-        p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
+        p.audit_scan = { pagespeed: ps, gbp, aio, socials: scan.socials, deadSocials: scan.deadSocials, reachable: scan.reachable, pagesScanned: scan.pagesScanned };
         if (heldReason) {
           // Deliberately NOT 'audited': that status means they received their report, and the
           // follow-up copy branches on it to ask whether they had a chance to read it.
@@ -4891,6 +4919,11 @@ app.post('/api/prescan', (req, res) => {
   else if (force && !limit && !mailableOnly) setRescanCutoff(new Date().toISOString());
   // engaged: rebuild the reports of people we have ALREADY emailed, since those are the ones
   // who will open the link and read it, and any made before the accuracy fixes are suspect.
+  if (Array.isArray(req.body?.ids) && req.body.ids.length) {
+    const only = prospects.filter(p => req.body.ids.includes(p.id) && p.website && /^https?:\/\//i.test(p.website));
+    runPrescan({ only }).catch(e => console.error('[prescan] run failed -', e.message));
+    return res.json({ started: true, queued: only.length, ids: true });
+  }
   if (req.body?.engaged === true) {
     const only = prospects.filter(p => p.source !== 'callleads' && p.sent_at && !p.unsubscribed_at
       && ['sent', 'clicked', 'replied', 'audited', 'booked'].includes(p.status)
