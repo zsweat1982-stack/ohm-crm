@@ -899,10 +899,24 @@ async function scanGBP(business, city, siteHost) {
   const key = process.env.PLACES_KEY || process.env.GOOGLE_API_KEY || process.env.PAGESPEED_KEY;
   if (!key || !business) return null;
   try {
-    const q = encodeURIComponent(`${business} ${city || ''} GA`);
-    const find = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${q}&inputtype=textquery&fields=place_id&key=${key}`, { signal: AbortSignal.timeout(10000) });
-    const fd = await find.json();
-    const pid = fd.candidates?.[0]?.place_id;
+    // One transient failure or an over-specific query used to leave the whole Local Visibility
+    // category unmeasured, so the lookup tries the query two ways before giving up.
+    let pid = null, lastStatus = null;
+    for (const text of [`${business} ${city || ''} GA`, `${business} ${city || ''}`]) {
+      const q = encodeURIComponent(text.replace(/\s+/g, ' ').trim());
+      for (let attempt = 0; attempt < 2 && !pid; attempt++) {
+        try {
+          const find = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${q}&inputtype=textquery&fields=place_id&key=${key}`, { signal: AbortSignal.timeout(10000) });
+          const fd = await find.json();
+          lastStatus = fd.status || null;
+          pid = fd.candidates?.[0]?.place_id || null;
+          if (fd.status && !['OK', 'ZERO_RESULTS'].includes(fd.status)) await new Promise(r => setTimeout(r, 800));
+          else break;
+        } catch (e) { lastStatus = e.message; }
+      }
+      if (pid) break;
+    }
+    if (!pid) console.warn('[gbp] no profile for', business, '-', lastStatus);
     // No candidate is a lookup miss, not proof the business is absent from Google. Scoring it as
     // "not found" put a 0 and the words "not on Google" in front of owners who have a profile.
     // null means unmeasured everywhere downstream, so the category is left out instead.
