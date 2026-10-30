@@ -1440,7 +1440,7 @@ function renderSnapshot(p) {
     { label: 'Lead capture form', pass: () => 'Contact form so visitors can reach you',
       fail: () => `No contact form found ${scope}`, fix: 'Add a simple contact form' },
     { label: 'Online booking / scheduling', pass: () => 'Online booking',
-      fail: () => `No online booking found ${scope}`, fix: 'Let customers book online' },
+      fail: () => `No online booking found ${scope}`, fix: 'Let customers book online', passOnly: true },
     { label: 'Secure HTTPS connection', pass: () => 'Secure connection (HTTPS)',
       fail: () => 'Site is not on a secure connection', fix: 'Move the site to a secure connection' },
     { label: 'Mobile friendly (responsive viewport)', pass: () => 'Set up for phone screens',
@@ -1458,21 +1458,25 @@ function renderSnapshot(p) {
     { label: 'AI assistants recognize your business', pass: () => 'AI assistants recognized the business when we asked',
       fail: () => 'AI assistants did not recognize the business when we asked', fix: 'Get the business recognized by AI assistants' },
     { label: 'Video on site', pass: () => 'Video on the site',
-      fail: () => `No video found ${scope}`, fix: 'Add video to the site' },
+      fail: () => `No video found ${scope}`, fix: 'Add video to the site', passOnly: true },
   ];
   const num = it => { const m = String((it && it.note) || '').match(/(\d+)\s*\/\s*100/); return m ? m[1] : ''; };
   const good = [], bad = [];
   for (const sp of specs) {
     const it = items[sp.label];
     if (!it || (it.ok !== true && it.ok !== false)) continue;       // unmeasured: say nothing
+    // Absence of booking or video cannot be proven from static HTML: stores, embeds and widgets
+    // load them after the page renders. Those only ever show as a pass.
+    if (!it.ok && sp.passOnly) continue;
     (it.ok ? good : bad).push({ text: (it.ok ? sp.pass : sp.fail)(num(it)), fix: sp.fix });
   }
   // Social is one check built from two measured links, so one missing profile is not a failure.
   const fbIt = items['Facebook linked'], igIt = items['Instagram linked'];
   const socials = [fbIt, igIt].filter(i => i && (i.ok === true || i.ok === false));
   if (socials.length === 2) {
+    // Pass only. Icons with an empty or script-set link look present to the owner while the
+    // scanner finds no profile URL, so a "not linked" claim is not safe to print.
     if (socials.some(i => i.ok === true)) good.push({ text: 'Social profiles linked from the site', fix: '' });
-    else bad.push({ text: `No Facebook or Instagram profile linked ${scope}`, fix: 'Link your social profiles from the site' });
   }
   const measured = good.length + bad.length;
   const when = p.prescan_at ? new Date(p.prescan_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
