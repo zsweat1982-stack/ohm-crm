@@ -1424,7 +1424,81 @@ let events = loadMetrics();
 // What a cold prospect sees the moment they click the link in their email. Their report already
 // exists, so there is nothing to request, nothing to wait for and no form: showing one here would
 // ask them to apply for something we already made. The whole page is the finding, then the call.
+// Short report: only checks the scanner actually measured, in plain words, with no model-written
+// prose. Anything unmeasured is left off the page instead of shown as a failure. The long
+// report still exists and still renders when a record has no checklist.
+function renderSnapshot(p) {
+  const rep = p.audit_report || {};
+  const items = {};
+  (rep.checklist || []).forEach(g => (g.items || []).forEach(i => { items[i.label] = i; }));
+  const scope = 'on the pages we checked';
+  const specs = [
+    { label: 'Mobile page speed', pass: n => `Loads fast on phones (${n}/100 on Google's speed test)`,
+      fail: n => `Slow to load on phones (${n}/100 on Google's speed test)`, fix: 'Speed up the site on phones' },
+    { label: 'Click to call phone number', pass: () => 'Tap-to-call phone number',
+      fail: () => `No tap-to-call phone number found ${scope}`, fix: 'Add a tap-to-call phone number' },
+    { label: 'Lead capture form', pass: () => 'Contact form so visitors can reach you',
+      fail: () => `No contact form found ${scope}`, fix: 'Add a simple contact form' },
+    { label: 'Online booking / scheduling', pass: () => 'Online booking',
+      fail: () => `No online booking found ${scope}`, fix: 'Let customers book online' },
+    { label: 'Secure HTTPS connection', pass: () => 'Secure connection (HTTPS)',
+      fail: () => 'Site is not on a secure connection', fix: 'Move the site to a secure connection' },
+    { label: 'Mobile friendly (responsive viewport)', pass: () => 'Set up for phone screens',
+      fail: () => 'Not set up for phone screens', fix: 'Make the layout phone friendly' },
+    { label: 'Website analytics installed', pass: () => 'Visitor analytics installed',
+      fail: () => `No visitor analytics found ${scope}`, fix: 'Install analytics to see where customers come from' },
+  ];
+  const num = it => { const m = String((it && it.note) || '').match(/(\d+)\s*\/\s*100/); return m ? m[1] : ''; };
+  const good = [], bad = [];
+  for (const sp of specs) {
+    const it = items[sp.label];
+    if (!it || (it.ok !== true && it.ok !== false)) continue;       // unmeasured: say nothing
+    (it.ok ? good : bad).push({ text: (it.ok ? sp.pass : sp.fail)(num(it)), fix: sp.fix });
+  }
+  const measured = good.length + bad.length;
+  const when = p.prescan_at ? new Date(p.prescan_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
+  const lead = bad.length ? bad[0].fix : 'Your basics are in good shape';
+  const headline = bad.length
+    ? `We checked the website for ${esc(p.business || 'your business')} and found ${bad.length === 1 ? 'one thing' : bad.length + ' things'} worth fixing`
+    : `${esc(p.business || 'Your')} website passed every check we ran`;
+  const li = (arr, cls, mark) => arr.map(x => `<li class="${cls}"><span class="snap-mark">${mark}</span>${esc(x.text)}</li>`).join('');
+  return `
+<style>
+.snap{padding:76px 32px 40px}.snap .inner{max-width:760px}
+.snap h1{font-size:clamp(26px,3.6vw,40px);font-weight:900;line-height:1.15;letter-spacing:-.015em;margin:0 0 14px}
+.snap .sub{color:#cfd6e4;font-size:18px;line-height:1.55;max-width:56ch}
+.snap-score{display:flex;align-items:baseline;gap:12px;margin:34px 0 8px}
+.snap-score b{font-size:64px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.snap-score span{color:#98a3ba;font-size:17px;font-weight:600}
+.snap-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+@media(max-width:640px){.snap{padding:56px 20px 30px}.snap-grid{grid-template-columns:1fr}}
+.snap-col{background:#182640;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:22px}
+.snap-col h2{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;font-weight:700;margin:0 0 14px}
+.snap-col ul{list-style:none;margin:0;padding:0}
+.snap-col li{display:flex;gap:10px;font-size:15px;line-height:1.45;margin-bottom:12px;color:#e6ebf5}
+.snap-mark{flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#0f1a30}
+.snap-col.ok h2{color:#3fbf6a}.snap-col.ok .snap-mark{background:#3fbf6a}
+.snap-col.no h2{color:#ff7b7b}.snap-col.no .snap-mark{background:#ff7b7b}
+.snap-note{color:#8fa0bd;font-size:13px;line-height:1.5;margin-top:22px;max-width:62ch}
+</style>
+<section class="snap">
+  <div class="inner">
+    <div class="eyebrow">Website check &middot; ${esc(p.business || 'your business')}</div>
+    <h1>${headline}</h1>
+    <p class="sub">${bad.length ? 'Here is what is working, and what we would fix first.' : 'Nice work. If you want to go further, we are happy to talk about what comes next.'}</p>
+    ${measured ? `<div class="snap-score"><b>${good.length}/${measured}</b><span>checks passing</span></div>` : ''}
+    <div class="snap-grid">
+      ${good.length ? `<div class="snap-col ok"><h2>Working well</h2><ul>${li(good, 'g', '&#10003;')}</ul></div>` : ''}
+      ${bad.length ? `<div class="snap-col no"><h2>Worth fixing${bad.length > 1 ? ', in order' : ''}</h2><ul>${li(bad, 'b', '!')}</ul></div>` : ''}
+    </div>
+    <a class="btn" id="rbook" href="#book" style="max-width:360px;margin:34px 0 0;text-decoration:none;display:block;text-align:center">${bad.length ? 'Talk through the fixes (free discovery call)' : 'Book a free call'}</a>
+    <p class="snap-note">Based on an automated scan of ${esc(p.website ? p.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '') : 'your public website')}${when ? ' on ' + when : ''}. Anything we could not measure is left out, and some things, like tags that load late, are not always detectable.</p>
+  </div>
+</section>`;
+}
+
 function renderPrescannedReport(p) {
+  if (process.env.SNAPSHOT_OFF !== '1' && Array.isArray((p.audit_report || {}).checklist) && p.audit_report.checklist.length) return renderSnapshot(p);
   const rep = p.audit_report || {};
   const cats = rep.categories || [];
   const overall = cats.length
