@@ -2110,7 +2110,7 @@ app.get('/api/prospects', (_, res) => {
 });
 
 // Team members who can be "on" a response. Configurable via TEAM env (comma list).
-const TEAM = (process.env.TEAM || 'Zac,Michelle,Brad,Griffin').split(',').map(s => s.trim()).filter(Boolean);
+const TEAM = (process.env.TEAM || 'Michelle,Brad,Griffin,Lisa').split(',').map(s => s.trim()).filter(Boolean);
 
 // Full record including the report, for the single lead being viewed.
 app.get('/api/prospects/:id', (req, res) => {

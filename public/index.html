@@ -292,7 +292,7 @@ function navTo(k){
   renderNav();
 }
 
-let state = { prospects: [], counts: {}, sentToday: 0, dailyCap: 40, team: ['Zac','Michelle'], wonValue:0, openValue:0 };
+let state = { prospects: [], counts: {}, sentToday: 0, dailyCap: 40, team: ['Michelle','Brad','Griffin','Lisa'], wonValue:0, openValue:0 };
 let openId = null;
 
 async function api(url, method='GET', body) {
@@ -674,7 +674,7 @@ function callCard(p){
   const c = p.calllead||{}, who = (p.handled_by||'').trim();
   const you = who || '[Your name]';
   const fill = t => (t||'').replace(/\[Your name\]/g, you).replace(/\[Agency\]/g, 'Open Heart Media').replace(/\[Business\]/g, p.business||'[Business]');
-  const claimBtns = ['Zac','Michelle'].map(t=>`<button class="${who===t?'primary':''}" onclick="claim('${p.id}','${t}')">${who===t?'✓ ':''}${t}</button>`).join('');
+  const claimBtns = ['Michelle','Brad','Griffin','Lisa'].map(t=>`<button class="${who===t?'primary':''}" onclick="claim('${p.id}','${t}')">${who===t?'✓ ':''}${t}</button>`).join('');
   const rows = [['About','About'],['Who they serve','Who they serve'],['Services','Services'],['Website angles','Website angles'],
     ['Call opener','Call opener'],['Discovery question','Discovery question'],['What customers say','What customers say'],
     ['Hours','Hours'],['Last review','Last review'],['Listing claimed by owner','Listing claimed by owner'],
