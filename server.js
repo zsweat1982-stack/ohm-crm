@@ -1447,6 +1447,18 @@ function renderSnapshot(p) {
       fail: () => 'Not set up for phone screens', fix: 'Make the layout phone friendly' },
     { label: 'Website analytics installed', pass: () => 'Visitor analytics installed',
       fail: () => `No visitor analytics found ${scope}`, fix: 'Install analytics to see where customers come from' },
+    { label: 'Local business schema markup', pass: () => 'Local business markup, so Google knows who and where you are',
+      fail: () => `No local business markup ${scope}, so Google gets less detail on who and where you are`, fix: 'Add local business markup' },
+    { label: 'Page title present and sized right', pass: () => 'Search listing title set',
+      fail: () => 'Search listing title is missing or the wrong length', fix: 'Fix the search listing title' },
+    { label: 'Meta description present and sized right', pass: () => 'Search listing description set',
+      fail: () => 'Search listing description is missing or the wrong length', fix: 'Fix the search listing description' },
+    { label: 'Single clear H1 headline', pass: () => 'One clear main headline per page',
+      fail: () => 'Some pages we checked have more than one main headline, which blurs what each page is about', fix: 'Give each page one clear headline' },
+    { label: 'AI assistants recognize your business', pass: () => 'AI assistants recognized the business when we asked',
+      fail: () => 'AI assistants did not recognize the business when we asked', fix: 'Get the business recognized by AI assistants' },
+    { label: 'Video on site', pass: () => 'Video on the site',
+      fail: () => `No video found ${scope}`, fix: 'Add video to the site' },
   ];
   const num = it => { const m = String((it && it.note) || '').match(/(\d+)\s*\/\s*100/); return m ? m[1] : ''; };
   const good = [], bad = [];
@@ -1454,6 +1466,13 @@ function renderSnapshot(p) {
     const it = items[sp.label];
     if (!it || (it.ok !== true && it.ok !== false)) continue;       // unmeasured: say nothing
     (it.ok ? good : bad).push({ text: (it.ok ? sp.pass : sp.fail)(num(it)), fix: sp.fix });
+  }
+  // Social is one check built from two measured links, so one missing profile is not a failure.
+  const fbIt = items['Facebook linked'], igIt = items['Instagram linked'];
+  const socials = [fbIt, igIt].filter(i => i && (i.ok === true || i.ok === false));
+  if (socials.length === 2) {
+    if (socials.some(i => i.ok === true)) good.push({ text: 'Social profiles linked from the site', fix: '' });
+    else bad.push({ text: `No Facebook or Instagram profile linked ${scope}`, fix: 'Link your social profiles from the site' });
   }
   const measured = good.length + bad.length;
   const when = p.prescan_at ? new Date(p.prescan_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
@@ -1559,7 +1578,7 @@ function renderLandingPage(ref, token) {
     : `<div class="vframe"><video src="/media/ohm-promo.mp4" autoplay muted loop playsinline controls preload="metadata"></video></div>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${prescanned ? esc(bizName || 'Your') + ' growth audit · Open Heart Media' : 'Free growth audit · Open Heart Media'}</title>
+<title>${prescanned ? esc(bizName || 'Your') + ' website check · Open Heart Media' : 'Free growth audit · Open Heart Media'}</title>
 ${META_PIXEL_ID ? `<script>
 !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
 if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;
