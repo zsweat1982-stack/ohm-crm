@@ -725,6 +725,7 @@ async function scanWebsite(rawUrl) {
   if (/googletagmanager\.com\/gtm|GTM-[A-Z0-9]{4,}/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Tag Manager'; }
   else if (/gtag\s*\(|googletagmanager\.com\/gtag|["']G-[A-Z0-9]{6,}["']/i.test(html)) { out.analytics = true; out.analyticsType = 'Google Analytics 4'; }
   else if (/google-analytics\.com\/analytics|ga\(\s*['"]create|UA-\d{4,}-\d/i.test(html)) { out.analytics = true; out.analyticsType = 'Universal Analytics (legacy)'; }
+  else if (/plausible\.io|matomo|piwik|fathom|clarity\.ms|hotjar|cloudflareinsights|simpleanalyticscdn|umami|posthog|mixpanel|heapanalytics|segment\.com\/analytics|stats\.wp\.com|wp-statistics/i.test(html)) { out.analytics = true; out.analyticsType = 'Other analytics'; }
   out.fbPixel = /connect\.facebook\.net\/[^"']*fbevents|fbq\(\s*['"]init/i.test(html);
   out.googleAdsTag = /AW-\d{6,}|googleadservices\.com\/pagead\/conversion|google_conversion_id/i.test(html);
 
@@ -1479,7 +1480,7 @@ function renderSnapshot(p) {
     { label: 'Mobile friendly (responsive viewport)', pass: () => 'Set up for phone screens',
       fail: () => 'Not set up for phone screens', fix: 'Make the layout phone friendly' },
     { label: 'Website analytics installed', pass: () => 'Visitor analytics installed',
-      fail: () => `No visitor analytics found ${scope}`, fix: 'Install analytics to see where customers come from' },
+      fail: () => `No visitor analytics found ${scope}`, fix: 'Install analytics to see where customers come from', passOnly: true },
     { label: 'Local business schema markup', pass: () => 'Local business markup, so Google knows who and where you are',
       fail: () => `No local business markup ${scope}, so Google gets less detail on who and where you are`, fix: 'Add local business markup' },
     { label: 'Page title present and sized right', pass: () => 'Search listing title set',
@@ -1501,6 +1502,13 @@ function renderSnapshot(p) {
     // Absence of booking or video cannot be proven from static HTML: stores, embeds and widgets
     // load them after the page renders. Those only ever show as a pass.
     if (!it.ok && sp.passOnly) continue;
+    if (!it.ok && sp.label === 'Single clear H1 headline') {
+      // Zero and several are different problems; "more than one" printed for a page with none
+      // is simply false.
+      const c = Number((String(it.note || '').match(/(\d+)\s*found/) || [])[1]);
+      if (c === 0) { bad.push({ text: 'No main headline (H1) found on the home page, which tells Google less about what the page is about', fix: 'Add one clear main headline to each page' }); continue; }
+      if (!(c > 1)) continue;                                   // count unknown: say nothing
+    }
     (it.ok ? good : bad).push({ text: (it.ok ? sp.pass : sp.fail)(num(it)), fix: sp.fix });
   }
   // Social is one check built from two measured links, so one missing profile is not a failure.
@@ -4589,7 +4597,9 @@ function isPlatformHost(url) {
 function reportSendable(p) {
   const r = p && p.audit_report;
   if (!r || typeof r !== 'object') return { ok: false, why: 'no report' };
-  if (r.degraded) return { ok: false, why: 'fallback report' };
+  // The short report is built from the deterministic checklist, never from the model's prose, so a
+  // fallback long report is fine as long as the checklist exists.
+  if (r.degraded && !(Array.isArray(r.checklist) && r.checklist.length)) return { ok: false, why: 'fallback report without a checklist' };
   if (!p.prescan_at || p.prescan_at < REPORT_FRESH_AFTER) return { ok: false, why: 'report predates the accuracy fixes' };
   if (p.prescan_error) return { ok: false, why: 'last scan errored' };
   const sc = p.audit_scan;
