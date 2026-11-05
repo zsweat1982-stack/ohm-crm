@@ -592,6 +592,7 @@ function renderDrawer(p){
         <div><b>Industry:</b> ${esc(p.giveaway_industry||'')}</div>
         <div><b>Biggest challenge:</b> ${esc(p.giveaway_challenge||'')}</div>
         <div><b>Website:</b> ${esc(p.giveaway_website_status||'')} &nbsp; <b>Posts video:</b> ${esc(p.giveaway_posts_video||'')} &nbsp; <b>Budget:</b> ${esc(p.giveaway_budget||'')}</div>
+        ${p.giveaway_instagram?`<div><b>Instagram:</b> <a href="https://instagram.com/${encodeURIComponent(String(p.giveaway_instagram).replace(/^@/,''))}" target="_blank">${esc(p.giveaway_instagram)}</a></div>`:''}
         <div><b>Prize preference:</b> ${esc(p.giveaway_prize||'')}</div>
         <div><b>Referral:</b> ${esc(p.giveaway_referral||'')}</div>
         <div><b>Source:</b> ${esc(p.giveaway_source||'')}</div>
@@ -637,7 +638,7 @@ function renderDrawer(p){
       ${isCall?'':`<div class="fld"><label>Email</label>
         <input value="${esc(p.email)}" placeholder="add email…" onchange="patch('${p.id}',{email:this.value})"/></div>`}
       <div class="kv"><span>Phone</span><b>${p.phone?`<a href="tel:${esc(p.phone)}">${esc(p.phone)}</a>`:'—'}</b></div>
-      <div class="kv"><span>Website</span><b>${p.website?`<a href="${esc(p.website)}" target="_blank">${esc(p.website)}</a>`:'—'}</b></div>
+      <div class="kv"><span>Website</span><b>${p.website?(/^https?:\/\//i.test(p.website)?`<a href="${esc(p.website)}" target="_blank">${esc(p.website)}</a>`:/^@/.test(p.website)?`<a href="https://instagram.com/${encodeURIComponent(p.website.replace(/^@/,''))}" target="_blank">${esc(p.website)} (Instagram)</a>`:/\.\S/.test(p.website)?`<a href="https://${esc(p.website)}" target="_blank">${esc(p.website)}</a>`:esc(p.website)):'—'}</b></div>
       ${isCall?'':`<div class="kv"><span>Landing page</span><b><a href="/go?ref=${p.id}" target="_blank">open ↗</a></b></div>`}
     </div>
 
