@@ -2331,6 +2331,38 @@ app.post('/api/prospects/:id/rerun-audit', (req, res) => {
 // Bulk import of a scraped list. Deduped on the address itself and on the domain, because the
 // old list carried 153 duplicate records and drafting for a duplicate burns an Anthropic call to
 // produce copy the send guard then throws away.
+// A prospect typed in by hand. Lives in its own Manual column, is never drafted or emailed by the
+// automation (do_not_email, status 'manual', source 'manual'), and joins the normal board once
+// someone moves it to another stage.
+app.post('/api/prospects/manual', (req, res) => {
+  const b = req.body || {};
+  const clip = (v, n) => String(v || '').trim().slice(0, n);
+  const business = clip(b.business, 120);
+  if (!business) return res.status(400).json({ error: 'Business name is required' });
+  const city = clip(b.city, 60), phone = clip(b.phone, 40);
+  const digits = phone.replace(/\D/g, '');
+  const dupe = prospects.find(p => !p.internal && (
+    (digits.length >= 7 && String(p.phone || '').replace(/\D/g, '') === digits) ||
+    (String(p.business || '').trim().toLowerCase() === business.toLowerCase() && String(p.city || '').trim().toLowerCase() === city.toLowerCase())));
+  if (dupe) return res.status(409).json({ error: `Already in the CRM: ${dupe.business || dupe.email} (${dupe.status})`, id: dupe.id });
+  const nowIso = new Date().toISOString();
+  const who = clip(b.handled_by, 40);
+  const note = clip(b.note, 1000);
+  const p = {
+    id: 'M' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+    business, category: clip(b.category, 60), city, phone,
+    website: clip(b.website, 200), rating: '', reviews: '',
+    email: normEmail(b.email), subject: '', body: '',
+    notes: note ? [{ ts: nowIso, by: who || null, text: note }] : [],
+    handled_by: who, deal_value: '', contact_first: '', contact_name: clip(b.contact_name, 80),
+    status: 'manual', source: 'manual', do_not_email: true,
+    created_at: nowIso, updated_at: nowIso,
+  };
+  prospects.push(p);
+  save(prospects);
+  res.json(p);
+});
+
 app.post('/api/prospects/import', (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rows.length) return res.status(400).json({ error: 'send { rows: [...] }' });
@@ -2423,6 +2455,7 @@ app.post('/api/prospects/:id/generate', async (req, res) => {
   const p = prospects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   if (p.source === 'callleads') return res.status(400).json({ error: 'call lead: we phone these, never email' });
+  if (p.source === 'manual') return res.status(400).json({ error: 'manual prospect: added by hand, not part of the cold email sequence' });
   try {
     const d = await draftEmail(p);
     p.subject = d.subject; p.body = d.body; p.preview = inboxPreview(d.body);
@@ -2435,7 +2468,7 @@ app.post('/api/prospects/:id/generate', async (req, res) => {
 
 app.post('/api/generate-all', async (req, res) => {
   const limit = Number(req.body?.limit) || 25;
-  const todo = prospects.filter(p => p.source !== 'callleads' && (p.status === 'new' || (!p.body && p.status !== 'sent'))).slice(0, limit);
+  const todo = prospects.filter(p => p.source !== 'callleads' && p.source !== 'manual' && (p.status === 'new' || (!p.body && p.status !== 'sent'))).slice(0, limit);
   let done = 0;
   for (const p of todo) {
     try {

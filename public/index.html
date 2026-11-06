@@ -94,6 +94,9 @@
   .col.inbound .cn{border-color:#f2b7b3;color:var(--red)}
   .col.giveaway{background:#e8f0fb;box-shadow:inset 0 3px 0 #2b6cd9}
   .col.giveaway .cn{border-color:#b6cdf2;color:#2b6cd9}
+  .col.manual{background:#f1ebfa;box-shadow:inset 0 3px 0 #7a4fd0}
+  .col.manual .cn{border-color:#d3c3f0;color:#7a4fd0}
+  .s-manual{background:#efe8fb;color:#6b3fc4}
   .col.nosite{background:#e9f6ee;box-shadow:inset 0 3px 0 #1e9e5a}
   .col.nosite .cn{border-color:#b4dfc6;color:#1e9e5a}
   .tag{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#eef1f6;color:#57607a;white-space:nowrap}
@@ -207,7 +210,7 @@
       <select id="filter" onchange="render()">
         <option value="all">All</option>
         <option value="needsresponse">Needs response</option>
-        <option value="new">New</option><option value="drafted">Drafted</option>
+        <option value="manual">Manual</option><option value="new">New</option><option value="drafted">Drafted</option>
         <option value="approved">Approved</option><option value="sent">Sent</option>
         <option value="clicked">Clicked</option><option value="audited">Audited</option>
         <option value="audit_requested">Audit started</option>
@@ -240,6 +243,32 @@
 
 <div class="scrim" id="scrim" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer"><div id="drawerContent"></div></div>
+<dialog id="addPros" style="border:0;border-radius:14px;padding:0;width:min(460px,92vw);box-shadow:0 20px 60px rgba(10,20,40,.35)">
+  <form method="dialog" onsubmit="return false" style="padding:22px 24px">
+    <h3 style="margin:0 0 4px">Add prospect</h3>
+    <div class="muted" style="margin-bottom:14px;font-size:12.5px">Goes in the Manual column. It is never emailed automatically.</div>
+    <div style="display:grid;gap:10px">
+      <input id="ap_business" placeholder="Business name *" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+      <input id="ap_contact" placeholder="Contact name" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <input id="ap_phone" placeholder="Phone" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+        <input id="ap_email" placeholder="Email" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <input id="ap_category" placeholder="Category (e.g. Gym)" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+        <input id="ap_city" placeholder="City" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+      </div>
+      <input id="ap_website" placeholder="Website" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px">
+      <select id="ap_owner" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px"></select>
+      <textarea id="ap_note" rows="3" placeholder="Note (where you met them, what they need)" style="padding:9px 11px;border:1px solid #d6dde8;border-radius:8px;font:inherit"></textarea>
+    </div>
+    <div id="ap_err" style="color:#c0392b;font-size:12.5px;min-height:18px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button type="button" onclick="document.getElementById('addPros').close()">Cancel</button>
+      <button type="button" class="primary" id="ap_save" onclick="saveProspect()">Add prospect</button>
+    </div>
+  </form>
+</dialog>
 
 <div class="toast" id="toast"></div>
 
@@ -253,6 +282,7 @@ const NAV = [
   ['Pipeline', [
     ['board',       '\u25A6', 'Pipeline',       null],
     ['giveaway',    '\u{1F381}', 'Giveaway',       p => p.source==='giveaway'],
+    ['manual',      '\u271A', 'Manual',        p => p.source==='manual' && p.status==='manual'],
     ['nosite',      '\u260E', 'No Website',     p => p.source==='callleads'],
     ['inbound',     '\u2605', 'Inbound',        p => isInbound(p)],
     ['sent',        '\u2709', 'Awaiting reply', p => p.status==='sent'],
@@ -282,12 +312,12 @@ function renderNav(){
 }
 function navTo(k){
   navKey = k;
-  const titles = {board:'Pipeline', giveaway:'Giveaway', nosite:'No Website', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
+  const titles = {board:'Pipeline', manual:'Manual', giveaway:'Giveaway', nosite:'No Website', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
                   booked:'Booked', won:'Won', all:'All leads', new:'Queue', drafted:'Drafted',
                   unreachable:'Unreachable', rejected:'Rejected'};
   document.getElementById('viewTitle').textContent = titles[k] || 'Pipeline';
   if (k==='board'){ document.getElementById('filter').value='all'; setView('board'); }
-  else if (k==='inbound' || k==='giveaway' || k==='nosite'){ document.getElementById('filter').value='all'; setView('board'); }
+  else if (k==='inbound' || k==='giveaway' || k==='nosite' || k==='manual'){ document.getElementById('filter').value='all'; setView('board'); }
   else { document.getElementById('filter').value = (k==='all'?'all':k); setView('table'); }
   renderNav();
 }
@@ -414,6 +444,7 @@ function isInbound(p){
       || ['subscriber','lead','audit_requested','audited'].includes(p.status);
 }
 const COLS = [
+  {k:'manual',  label:'Manual',    hint:'Prospects you add by hand. Never emailed automatically.'},
   {k:'nosite',  label:'No Website', hint:'Call list: no site found. Claim one, get a contact name.'},
   {k:'giveaway',label:'Giveaway',  hint:'Entered the Content Day giveaway'},
   {k:'inbound', label:'Inbound',   hint:'They came to you'},
@@ -426,6 +457,7 @@ const COLS = [
 ];
 function stageOf(p){
   if (p.internal || p.status==='test') return null;
+  if (p.source==='manual' && p.status==='manual') return 'manual';
   if (p.source==='callleads' && p.status==='calllist') return 'nosite';
   if (p.source==='giveaway' && !['booked','won'].includes(p.status)) return 'giveaway';
   if (isInbound(p)) return 'inbound';
@@ -481,6 +513,7 @@ function renderBoard(list){
   if (navKey==='inbound') list = list.filter(isInbound);
   if (navKey==='giveaway') list = list.filter(p=>p.source==='giveaway');
   if (navKey==='nosite') list = list.filter(p=>p.source==='callleads');
+  if (navKey==='manual') list = list.filter(p=>p.source==='manual');
   const by = {}; COLS.forEach(c=>by[c.k]=[]);
   const dead = {'new':0,'unreachable':0,'rejected':0,'lost':0,'internal':0};
   for (const p of state.prospects){
@@ -493,9 +526,10 @@ function renderBoard(list){
   document.getElementById('board').innerHTML = COLS.map(c=>{
     let items = by[c.k].filter(p=>show.has(p.id));
     items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
-    return `<div class="col${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}">
+    return `<div class="col${c.k==='manual'?' manual':''}${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}">
       <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
       ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
+      ${c.k==='manual'?'<button class="primary" style="margin:0 0 10px;width:100%" onclick="openAddProspect()">+ Add prospect</button>':''}
       <div class="colbody">${items.slice(0, c.k==='nosite'?300:120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
     </div>`;
   }).join('');
@@ -576,6 +610,7 @@ function renderDrawer(p){
   const notes = (p.notes||[]).slice().reverse().map(n=>`<div class="note">${esc(n.text)}<div class="meta">${n.by?esc(n.by)+' · ':''}${when(n.ts)}</div></div>`).join('') || '<div class="muted" style="font-size:13px">No notes yet.</div>';
   const st = p.status;
   const isCall = p.source==='callleads';
+  const isManual = p.source==='manual';
   document.getElementById('drawerContent').innerHTML = `
   <div class="dhead">
     <button class="dclose" onclick="closeDrawer()">×</button>
@@ -599,11 +634,12 @@ function renderDrawer(p){
         <div><b>Wants updates:</b> ${p.giveaway_opt_in_updates?'yes':'no'}${p.giveaway_duplicates?' &nbsp; <b>Repeat entries:</b> '+p.giveaway_duplicates:''}</div>
       </div></div>`:''}
     ${isCall?callCard(p):''}
-    ${isCall?`<div class="card"><h4>Move this lead</h4><div class="actions">
+    ${(isCall||isManual)?`<div class="card"><h4>Move this lead</h4><div class="actions">
         <button onclick="setStatus('${p.id}','booked')">\u{1F4C5} Booked a meeting</button>
         <button class="green" onclick="markWon('${p.id}')">\u{1F3C6} Won</button>
         <button onclick="setStatus('${p.id}','lost')">Not interested</button>
-        ${st!=='calllist'?`<button onclick="setStatus('${p.id}','calllist')">Back to call list</button>`:''}
+        ${isCall&&st!=='calllist'?`<button onclick="setStatus('${p.id}','calllist')">Back to call list</button>`:''}
+        ${isManual&&st!=='manual'?`<button onclick="setStatus('${p.id}','manual')">Back to Manual</button>`:''}
       </div></div>`:`<div class="card">
       <h4>Move this lead</h4>
       <div class="actions">
@@ -715,6 +751,24 @@ function callCard(p){
 }
 async function claim(id, who){ try{ await api('/api/prospects/'+id+'/claim','POST',{who}); await load(); toast(who?('Claimed by '+who):'Released'); }catch(e){toast(e.message);} }
 async function patch(id, body){ try{ await api('/api/prospects/'+id,'PATCH',body); await load(); }catch(e){toast(e.message);} }
+function openAddProspect(){
+  for (const id of ['business','contact','phone','email','category','city','website','note']) document.getElementById('ap_'+id).value='';
+  document.getElementById('ap_err').textContent='';
+  document.getElementById('ap_owner').innerHTML = '<option value="">Owner (optional)</option>' + state.team.map(t=>`<option>${esc(t)}</option>`).join('');
+  document.getElementById('addPros').showModal();
+  document.getElementById('ap_business').focus();
+}
+async function saveProspect(){
+  const v = id => document.getElementById('ap_'+id).value.trim();
+  const btn = document.getElementById('ap_save'); btn.disabled = true;
+  try {
+    await api('/api/prospects/manual','POST',{ business:v('business'), contact_name:v('contact'), phone:v('phone'), email:v('email'),
+      category:v('category'), city:v('city'), website:v('website'), note:v('note'), handled_by:v('owner') });
+    document.getElementById('addPros').close();
+    await load(); toast('Prospect added');
+  } catch(e){ document.getElementById('ap_err').textContent = e.message; }
+  btn.disabled = false;
+}
 async function setStatus(id, status){ await patch(id,{status}); toast('Moved to '+status); }
 async function markWon(id){ const v=prompt('Deal value for this win? (numbers only)',''); const body={status:'won'}; if(v!==null&&v.trim())body.deal_value=v; await patch(id,body); toast('🏆 Marked won'); }
 async function addNote(id){ const t=document.getElementById('noteInput').value.trim(); const by=document.getElementById('noteBy').value; if(!t){toast('Write a note first');return;} try{ await api('/api/prospects/'+id+'/note','POST',{text:t,by}); document.getElementById('noteInput').value=''; await load(); toast('Note added'); }catch(e){toast(e.message);} }
