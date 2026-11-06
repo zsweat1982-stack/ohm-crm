@@ -529,7 +529,7 @@ function renderBoard(list){
     return `<div class="col${c.k==='manual'?' manual':''}${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}">
       <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
       ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
-      ${c.k==='manual'?'<button class="primary" style="margin:0 0 10px;width:100%" onclick="openAddProspect()">+ Add prospect</button>':''}
+      ${c.k==='manual'?'<button class="primary" style="margin:0 0 6px;width:100%" onclick="openAddProspect()">+ Add prospect</button><button style="margin:0 0 10px;width:100%" onclick="document.getElementById(\'csvIn\').click()">Import CSV</button><input type="file" id="csvIn" accept=".csv,text/csv" style="display:none" onchange="importCsv(this)">':''}
       <div class="colbody">${items.slice(0, c.k==='nosite'?300:120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
     </div>`;
   }).join('');
@@ -751,6 +751,29 @@ function callCard(p){
 }
 async function claim(id, who){ try{ await api('/api/prospects/'+id+'/claim','POST',{who}); await load(); toast(who?('Claimed by '+who):'Released'); }catch(e){toast(e.message);} }
 async function patch(id, body){ try{ await api('/api/prospects/'+id,'PATCH',body); await load(); }catch(e){toast(e.message);} }
+function parseCsv(t){
+  const rows=[]; let r=[], f='', q=false; t=t.replace(/^\uFEFF/,'');
+  for (let i=0;i<t.length;i++){ const c=t[i];
+    if (q){ if (c==='"'){ if (t[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if (c==='"') q=true;
+    else if (c===','){ r.push(f); f=''; }
+    else if (c==='\n'||c==='\r'){ if (c==='\r'&&t[i+1]==='\n') i++; r.push(f); f=''; if (r.length>1||r[0]) rows.push(r); r=[]; }
+    else f+=c; }
+  if (f||r.length){ r.push(f); rows.push(r); }
+  return rows;
+}
+async function importCsv(inp){
+  const file = inp.files[0]; inp.value=''; if (!file) return;
+  try {
+    const rows = parseCsv(await file.text()); const h = rows.shift().map(x=>x.trim());
+    const need = h.indexOf('title')>=0 || h.indexOf('business')>=0;
+    if (!need) throw new Error('CSV needs a "title" or "business" column');
+    const objs = rows.map(r=>Object.fromEntries(h.map((k,i)=>[k, r[i]||''])));
+    if (!confirm('Import '+objs.length+' rows into Manual? Duplicates of anything already in the CRM are skipped. Nothing is emailed.')) return;
+    const res = await api('/api/prospects/manual/import','POST',{rows:objs});
+    await load(); toast('Added '+res.added+', skipped '+res.dupes+' duplicates'+(res.bad?', '+res.bad+' unusable':''));
+  } catch(e){ toast(e.message); }
+}
 function openAddProspect(){
   for (const id of ['business','contact','phone','email','category','city','website','note']) document.getElementById('ap_'+id).value='';
   document.getElementById('ap_err').textContent='';

@@ -2363,6 +2363,39 @@ app.post('/api/prospects/manual', (req, res) => {
   res.json(p);
 });
 
+// Bulk version of the manual add, for a CSV of local businesses (title, categoryName, city,
+// postalCode, phone, website, totalScore, reviewsCount). Same rules: Manual column, never emailed,
+// skipped when the phone or the business name plus city is already in the CRM.
+app.post('/api/prospects/manual/import', (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 3000) : [];
+  if (!rows.length) return res.status(400).json({ error: 'send { rows: [...] }' });
+  const clip = (v, n) => String(v || '').trim().slice(0, n);
+  const dig = s => String(s || '').replace(/\D/g, '');
+  const phones = new Set(prospects.map(p => dig(p.phone)).filter(d => d.length >= 7));
+  const names = new Set(prospects.map(p => String(p.business || '').trim().toLowerCase() + '|' + String(p.city || '').trim().toLowerCase()));
+  const nowIso = new Date().toISOString();
+  let added = 0, dupes = 0, bad = 0;
+  for (const r of rows) {
+    const business = clip(r.business || r.title, 120);
+    if (!business) { bad++; continue; }
+    const city = clip(r.city, 60), phone = clip(r.phone, 40), d = dig(phone);
+    const key = business.toLowerCase() + '|' + city.toLowerCase();
+    if ((d.length >= 7 && phones.has(d)) || names.has(key)) { dupes++; continue; }
+    prospects.push({
+      id: 'M' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString('hex').toUpperCase(),
+      business, category: clip(r.category || r.categoryName, 60), city, phone,
+      website: clip(r.website, 200), zip: clip(r.zip || r.postalCode, 12),
+      rating: clip(r.rating || r.totalScore, 8), reviews: clip(r.reviews || r.reviewsCount, 10),
+      email: '', subject: '', body: '', notes: [], handled_by: '', deal_value: '', contact_first: '', contact_name: '',
+      status: 'manual', source: 'manual', do_not_email: true, created_at: nowIso, updated_at: nowIso,
+    });
+    if (d.length >= 7) phones.add(d);
+    names.add(key); added++;
+  }
+  if (added) save(prospects);
+  res.json({ added, dupes, bad, total: prospects.length });
+});
+
 app.post('/api/prospects/import', (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rows.length) return res.status(400).json({ error: 'send { rows: [...] }' });
