@@ -5326,7 +5326,9 @@ async function bcProjects() {
   bcProjCache = { at: Date.now(), list: out };
   return out;
 }
-const workCache = new Map();
+const WORK_CACHE_FILE = path.join(DATA_DIR, 'work_cache.json');
+const workCache = new Map(Object.entries(readJson(WORK_CACHE_FILE, {})));
+let workSaveT = null; const saveWorkCache = () => { clearTimeout(workSaveT); workSaveT = setTimeout(() => { try { fs.writeFileSync(WORK_CACHE_FILE, JSON.stringify(Object.fromEntries(workCache))); } catch {} }, 2000); };
 async function clientWorkRaw(c) {
   const hit = workCache.get(c.slug);
   if (hit && Date.now() - hit.at < 600e3) return hit.data;
@@ -5352,9 +5354,12 @@ async function clientWorkRaw(c) {
   const d = { linked: true, project: { id: proj.id, name: proj.name, url: proj.app_url }, lists,
     open: allOpen.length, overdue: allOpen.filter(t => t.overdue).length,
     nextDue: allOpen.filter(t => t.due).map(t => t.due).sort()[0] || '' };
-  workCache.set(c.slug, { at: Date.now(), data: d });
+  workCache.set(c.slug, { at: Date.now(), data: d }); saveWorkCache();
   return d;
 }
+// Keep Basecamp data warm so the Clients page is never blank after a restart.
+async function warmWork() { if (!readJson(BC_TOKEN_FILE, null)) return; for (const c of loadClients()) { try { await clientWorkRaw(c); } catch (e) { console.error('[warm]', c.slug, String(e.message).slice(0, 80)); } } }
+setTimeout(warmWork, 25e3); setInterval(warmWork, 9 * 60e3);
 async function clientWork(c) { try { return await clientWorkRaw(c); } catch (e) { const hit = workCache.get(c.slug); if (hit) return hit.data; throw e; } }
 app.get('/api/hq', async (req, res) => {
   if (!teamOnly(req, res)) return;
@@ -5366,7 +5371,7 @@ app.get('/api/hq', async (req, res) => {
     const mine = onb.filter(r => r.client === c.slug);
     let work = null, workError = '';
     let syncing = false;
-    if (connected) { try { const w = await Promise.race([clientWork(c), new Promise(r => setTimeout(() => r('__slow'), 5500))]); if (w === '__slow') syncing = true; else work = w; } catch (e) { workError = e.message.slice(0, 120); } }
+    if (connected) { try { const w = await Promise.race([clientWork(c), new Promise(r => setTimeout(() => r('__slow'), 5500))]); if (w === '__slow') { const st = workCache.get(c.slug); if (st) work = st.data; else syncing = true; } else work = w; } catch (e) { workError = e.message.slice(0, 120); } }
     out.push({ ...c, onboarding: { count: mine.length, last: mine.length ? mine[mine.length - 1].at : '' }, work, workError, syncing });
   }));
   const order = clients.map(c => c.slug);

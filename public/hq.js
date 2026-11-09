@@ -54,7 +54,7 @@
   function root() { return document.getElementById('hq'); }
 
   function health(c) {
-    if (!c.work) return { k: '', t: 'Not synced', col: '#bcc5d3' };
+    if (!c.work) return { k: '', t: c.syncing ? 'Syncing' : 'Not synced', col: '#bcc5d3' };
     if (!c.work.linked) return { k: '', t: 'Not linked', col: '#bcc5d3' };
     if (c.work.overdue > 0) return { k: 'red', t: c.work.overdue + ' late', col: '#d6342d' };
     return { k: 'green', t: c.work.open ? 'On track' : 'All clear', col: '#17935f' };
@@ -87,7 +87,7 @@
 
   async function fetchHq(force) {
     if (HQ.loading) return; HQ.loading = true;
-    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); if (HQ.data.clients.some(function (c) { return c.syncing; }) && (HQ.syncTries = (HQ.syncTries || 0) + 1) <= 8) setTimeout(function () { HQ.data = null; fetchHq(false).then(function () { if (document.body.classList.contains('hqmode')) show(navKey); }); }, 7000); else HQ.syncTries = 0; HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
+    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); if (HQ.data.clients.some(function (c) { return c.syncing; }) && (HQ.syncTries = (HQ.syncTries || 0) + 1) <= 30) setTimeout(function () { HQ.data = null; fetchHq(false).then(function () { if (document.body.classList.contains('hqmode')) show(navKey); }); }, 7000); else HQ.syncTries = 0; HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
     catch (err) { HQ.err = err.message; }
     HQ.loading = false;
   }
