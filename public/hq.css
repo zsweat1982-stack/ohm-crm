@@ -325,3 +325,7 @@ body.hqout .top .sp{display:block}
 .ckb:hover:not(:disabled){border-color:var(--ok)}.ckb.on{background:var(--ok);border-color:var(--ok)}.ckb:disabled{opacity:.5;cursor:default}.ckb .ico{width:14px;height:14px}
 .td.dn a,.td.dn span:not(.chip):not(.due){text-decoration:line-through;color:var(--mut)}
 .sec{gap:12px;flex-wrap:wrap}
+
+.calpick{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px;padding:12px;background:#f6f8fb;border-radius:12px}
+.calpick .cb i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.ev2 em{max-width:200px;overflow:hidden;text-overflow:ellipsis}

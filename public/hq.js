@@ -119,7 +119,7 @@
     return x.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   }
   function agenda() {
-    var c = HQ.cal, me = HQ.me, head = '<div class="ph"><h3>' + ico('clock') + ' Coming up</h3><a class="lnk" href="https://calendar.google.com" target="_blank" rel="noopener">Open calendar</a></div>';
+    var c = HQ.cal, me = HQ.me, head = '<div class="ph"><h3>' + ico('clock') + ' Coming up</h3><span><a class="lnk" onclick="hqCalPick()">Calendars</a> &nbsp;·&nbsp; <a class="lnk" href="https://calendar.google.com" target="_blank" rel="noopener">Open</a></span></div>' + (HQ.calPick && c && c.calendars ? '<div class="calpick">' + c.calendars.map(function (k, i) { return '<label class="cb"><input type="checkbox" ' + (k.hidden ? '' : 'checked') + ' onchange="hqCalToggle()" data-cid="' + e(k.id) + '"> <i style="background:' + e(k.color || '#999') + '"></i> ' + e(k.name) + '</label>'; }).join('') + '</div>' : '');
     if (!me || me.legacy) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Sign in with your own email to see your calendar.</div></div>';
     if (!c) return '<div class="panel agenda">' + head + '<div class="sk" style="height:200px"></div></div>';
     if (!c.connected) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Connect your Google account to see meetings and shoots here.<br><br><a class="btn2 red" href="/api/me/gmail/connect">Connect Google</a></div></div>';
@@ -132,10 +132,15 @@
     return '<div class="panel agenda">' + head + order.slice(0, 5).map(function (k) {
       return '<div class="day"><div class="dl">' + e(dayLabel(evDate(groups[k][0]))) + '</div>' + groups[k].slice(0, 6).map(function (x) {
         var tm = x.allDay ? 'All day' : new Date(x.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.cal) + '</em></a>';
+        return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.project || x.cal) + '</em></a>';
       }).join('') + '</div>';
     }).join('') + '</div>';
   }
+  window.hqCalPick = function () { HQ.calPick = !HQ.calPick; var el = root(); if (el && document.body.classList.contains('hqmode')) el.innerHTML = home(); };
+  window.hqCalToggle = async function () {
+    var hidden = []; document.querySelectorAll('.calpick input').forEach(function (i) { if (!i.checked) hidden.push(i.getAttribute('data-cid')); });
+    try { await api('/api/me/calendar/prefs', 'POST', { hidden: hidden }); HQ.cal = null; await loadCal(); var el = root(); if (navKey === 'hq:home') el.innerHTML = home(); } catch (er) { toast(er.message); }
+  };
   function stat(title, icon, big, sub, go, tone) {
     return '<a class="st ' + (tone || '') + '" tabindex="0" onclick="' + go + '" onkeydown="if(event.key===\'Enter\'){' + go + '}"><span class="si">' + ico(icon) + '</span><div><div class="sv">' + e(big) + '</div><div class="sl">' + e(title) + '</div><div class="ss">' + e(sub) + '</div></div><span class="sa">' + ico('arrow') + '</span></a>';
   }

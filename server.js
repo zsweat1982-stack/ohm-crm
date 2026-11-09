@@ -3666,6 +3666,12 @@ app.get('/api/me/mail', async (req, res) => {
 });
 
 const calCache = new Map();
+const CAL_PREFS_FILE = path.join(DATA_DIR, 'cal_prefs.json');
+app.post('/api/me/calendar/prefs', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  const p = readJson(CAL_PREFS_FILE, {}); p[me.id] = (Array.isArray(req.body && req.body.hidden) ? req.body.hidden : []).map(x => String(x).slice(0, 200)).slice(0, 50);
+  fs.writeFileSync(CAL_PREFS_FILE, JSON.stringify(p)); calCache.delete(me.id); res.json({ ok: true });
+});
 app.get('/api/me/calendar', async (req, res) => {
   const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
   if (me.legacy) return res.json({ connected: false, legacy: true });
@@ -3681,7 +3687,9 @@ app.get('/api/me/calendar', async (req, res) => {
       return res.json({ connected: true, needsCalendar: true, apiOff, detail: body.slice(0, 200) });
     }
     if (!cl.ok) throw new Error('Calendar list failed ' + cl.status);
-    const cals = ((await cl.json()).items || []).filter(c => c.selected !== false && !/holiday/i.test(c.id || '') && !/^transferred from/i.test(c.summary || '')).sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0));
+    const allCals = ((await cl.json()).items || []).filter(c => c.selected !== false && !/holiday/i.test(c.id || '') && !/^transferred from/i.test(c.summary || '')).sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0));
+    const hidden = new Set((readJson(CAL_PREFS_FILE, {})[me.id] || []));
+    const cals = allCals.filter(c => !hidden.has(c.id));
     const now = new Date(), end = new Date(now.getTime() + 14 * 864e5);
     const events = [];
     for (const c of cals.slice(0, 12)) {
@@ -3694,9 +3702,18 @@ app.get('/api/me/calendar', async (req, res) => {
         events.push({ id: ev.id + c.id, title: ev.summary || '(no title)', start: ev.start.dateTime || ev.start.date, end: ev.end && (ev.end.dateTime || ev.end.date), allDay: !ev.start.dateTime, where: (ev.location || '').slice(0, 80), link: ev.htmlLink, cal: c.primary ? 'Mine' : (c.summary || '').trim(), color: c.backgroundColor || '' });
       }
     }
-    events.sort((a, b) => new Date(a.start) - new Date(b.start));
-    const seen = new Set(), uniq = events.filter(e => { const k = e.title + e.start; if (seen.has(k)) return false; seen.add(k); return true; });
-    const data = { connected: true, events: uniq.slice(0, 40) }; calCache.set(me.id, { at: Date.now(), data }); res.json(data);
+    // Clean up: drop placeholder blocks, pull a trailing "(Project)" out of the title, and merge copies of the same event.
+    const clean = [];
+    for (const ev of events) {
+      if (/^\s*busy\b/i.test(ev.title)) continue;
+      const m = /^(.*?)\s*\(([^()]{2,60})\)\s*$/.exec(ev.title); if (m && m[1].trim()) { ev.title = m[1].trim(); ev.project = m[2].trim(); }
+      clean.push(ev);
+    }
+    const norm = e => e.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + '|' + (e.allDay ? String(e.start).slice(0, 10) : new Date(e.start).toISOString().slice(0, 16));
+    const byKey = new Map();
+    for (const ev of clean) { const k = norm(ev), cur = byKey.get(k); if (!cur) byKey.set(k, ev); else if (cur.cal !== 'Mine' && ev.cal === 'Mine') byKey.set(k, { ...ev, project: ev.project || cur.project }); else if (!cur.project && ev.project) cur.project = ev.project; }
+    const uniq = [...byKey.values()].sort((a, b) => { const ka = a.allDay ? String(a.start).slice(0, 10) + 'T00:00' : new Date(a.start).toISOString(), kb = b.allDay ? String(b.start).slice(0, 10) + 'T00:00' : new Date(b.start).toISOString(); return ka < kb ? -1 : ka > kb ? 1 : 0; });
+    const data = { connected: true, events: uniq.slice(0, 60), calendars: allCals.map(c => ({ id: c.id, name: c.primary ? 'Mine' : (c.summary || '').trim(), color: c.backgroundColor || '', hidden: hidden.has(c.id) })) }; calCache.set(me.id, { at: Date.now(), data }); res.json(data);
   } catch (e) { res.json({ connected: true, error: e.message.slice(0, 140) }); }
 });
 
