@@ -13,6 +13,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Runtime data lives in DATA_DIR (a persistent disk in production). The committed ./data folder
 // is the seed: on first boot to a fresh disk, copy the seed prospects in so nothing is lost.
 const SEED_DIR = path.join(__dirname, 'data');
+process.on('unhandledRejection', e => console.error('[unhandledRejection]', e && e.stack || e));
+process.on('uncaughtException', e => console.error('[uncaughtException]', e && e.stack || e));
 const DATA_DIR = process.env.DATA_DIR || SEED_DIR;
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (DATA_DIR !== SEED_DIR) {
