@@ -1,6 +1,6 @@
 /* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
 (function () {
-  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], workTab: '', ctab: 'overview', ctabSlug: '', brain: {}, content: {}, guides: null, guideDoc: {} };
+  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], cw: null, workTab: '', ctab: 'overview', ctabSlug: '', brain: {}, facts: {}, copy: {}, shots: {}, working: {}, shotSel: {}, content: {}, guides: null, guideDoc: {} };
   var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
   // One icon family: 24px grid, 1.8 stroke, round caps.
   // Icons: Lucide (ISC license), 24px grid, round caps and joins.
@@ -36,6 +36,7 @@
     team: '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
     chevron: '<path d="m9 18 6-6-6-6"/>',
     sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+    film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
     external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
   };
   var ALIAS = { '\u25A3': 'home', '\u2726': 'building', '\u2709': 'clipboard', '\u25A6': 'kanban', '\u{1F381}': 'gift', '\u271A': 'plus', '\u260E': 'phone', '\u2605': 'star', '\u21A9': 'reply', '\u2713': 'task', '\u2691': 'flag', '\u2261': 'list', '\u25CB': 'circle', '\u270E': 'edit', '\u2298': 'ban', '\u2715': 'x' };
@@ -468,10 +469,10 @@
   var DRIVE_ROOT = 'https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK';
   function tabsBar(c) {
     var t = function (k, l) { return '<button class="tb ' + ((HQ.ctab || 'overview') === k ? 'on' : '') + '" onclick="hqCTab(\'' + k + '\')">' + l + '</button>'; };
-    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
+    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('copy', 'Copy') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
   }
   window.hqCTab = function (k) { HQ.ctab = k; show(navKey); };
-  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
+  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
   function linksPanel(c) {
     var rows = [];
     if (c.drive) rows.push(['Drive: ' + c.name, 'https://drive.google.com/drive/folders/' + c.drive]);
@@ -507,12 +508,70 @@
     return '<div class="two"><div class="panel"><h3>Content by week</h3><p class="hint">Uploaded footage, numbered by the week it landed. Due is 10 business days after upload.</p>' + body + '</div><div style="display:grid;gap:16px">' +
       '<div class="panel"><h3>Next on the calendar</h3>' + calHtml + '</div>' + linksPanel(c) + (folders ? '<div class="panel"><h3>Drive folders</h3><div class="chips" style="margin-top:6px">' + folders + '</div></div>' : '') + '</div></div>';
   }
+  function nextShootDate(c) {
+    var evs = clientEvents(c).filter(function (x) { return /shoot|film/i.test(x.title + ' ' + x.cal); });
+    if (!evs.length) return ''; var d = evDate(evs[0]); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function shotText(l) {
+    var n = function (a, f) { return a.map(function (x, i) { return (i + 1) + '. ' + f(x); }).join('\n'); };
+    return l.name + '\n\nHOOKS TO FILM\n' + n(l.hooks, function (h) { return h.hook; }) + '\n\nB-ROLL TO GET\n' + n(l.broll, function (b) { return b.shot; }) + '\n\nPHOTOS TO GET\n' + n(l.photos, function (p) { return p.shot + (p.label ? ' (' + p.label + ')' : ''); }) + '\n\nMUST-GETS\n' + n(l.mustgets, function (m) { return m.shot + (m.for ? ' (for ' + m.for + ')' : ''); }) + (l.notes ? '\n\nNOTES\n' + l.notes : '');
+  }
+  function shotPanel(c) {
+    var lists = HQ.shots[c.slug], me = HQ.me, real = me && !me.legacy;
+    var sel = HQ.shotSel[c.slug], l = lists && lists.length ? (lists.filter(function (x) { return x.id === sel; })[0] || lists[0]) : null;
+    var def = nextShootDate(c);
+    var bar = real ? '<div class="shbar"><div><label for="sh_d">Shoot date</label><input id="sh_d" type="date" value="' + e(def || (l ? l.date : '')) + '"></div><button class="btn2 red" id="sh_b" onclick="hqGenShot(\'' + e(c.slug) + '\')">' + ico('refresh') + (l ? 'Rewrite from what is working' : 'Write the shot list') + '</button>' + (def ? '<span class="hint" style="margin:0">Next shoot on the calendar: ' + e(dshort(def)) + '</span>' : '') + '</div>' : '<div class="empty" style="padding:8px 0">Sign in with your own login to write shot lists.</div>';
+    var body = '';
+    if (l) {
+      var sec = function (title, items) { return '<div class="shsec"><h4>' + title + '</h4>' + items + '</div>'; };
+      body = '<div class="shhead"><span class="chip st-internal">' + e(l.name) + '</span>' + lists.map(function (x) { return '<a class="chip' + (x.id === l.id ? ' st-active' : '') + '" style="cursor:pointer;text-decoration:none" onclick="hqShotSel(\'' + e(c.slug) + '\',\'' + e(x.id) + '\')">' + e(dshort(x.date)) + '</a>'; }).join('') + '<span class="hint" style="margin:0 0 0 auto">Written ' + e(new Date(l.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + ' · ' + (l.basis && l.basis.working ? 'from top posts' : 'no top-post data') + (l.basis && l.basis.archive ? ' + archive gaps' : '') + '</span></div>' +
+        sec('Hooks to film', l.hooks.map(function (x, i) { return '<div class="shi cpy" title="Click to copy" data-copy="' + e(x.hook) + '"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.hook) + '</b><div class="who">' + (x.level ? '<span class="chip">Level ' + x.level + '</span> ' : '') + (x.mimic ? 'Copies: ' + e(x.mimic) : '') + (x.why ? ' · ' + e(x.why) : '') + '</div>' + (x.verify && x.verify.length ? '<div class="vf">VERIFY: ' + e(x.verify.join('; ')) + '</div>' : '') + '</div></div>'; }).join('')) +
+        sec('B-roll to get', l.broll.map(function (x, i) { return '<div class="shi"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.shot) + '</b>' + (x.why ? '<div class="who">' + e(x.why) + '</div>' : '') + '</div></div>'; }).join('')) +
+        sec('Photos to get', l.photos.map(function (x, i) { return '<div class="shi"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.shot) + '</b>' + (x.label ? '<div class="who"><span class="chip">' + e(x.label) + '</span></div>' : '') + '</div></div>'; }).join('')) +
+        sec('Must-gets', l.mustgets.map(function (x, i) { return '<div class="shi"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.shot) + '</b>' + (x.for ? '<div class="who">For: ' + e(x.for) + '</div>' : '') + '</div></div>'; }).join('')) +
+        (l.notes ? '<p class="hint">' + e(l.notes) + '</p>' : '') +
+        '<div class="shfoot"><button class="btn2 line" data-copy="' + e(shotText(l)) + '" onclick="navigator.clipboard.writeText(this.getAttribute(\'data-copy\'));toast(\'Shot list copied\')">Copy the shot list</button>' + (real ? '<button class="btn2 line" onclick="hqShotTask(\'' + e(c.slug) + '\',\'' + e(l.id) + '\')">' + ico('task') + 'Send to the field team</button>' : '') + '</div>';
+    } else body = '<div class="empty" style="padding:14px 0">' + ico('clipboard') + 'No shot list yet. Pick the shoot date and write one. It uses this client\'s top posts, what is working in their industry and what is missing from the archive.</div>';
+    return '<div class="panel" style="margin-bottom:16px"><h3>Shot list</h3><p class="hint" style="margin-top:0">Named CLIENT_SHOTLIST_DATE, with the same date as the shoot and the footage. Click a hook to copy it.</p>' + bar + body + '</div>';
+  }
+  function workingPanel(c) {
+    var md = HQ.working[c.slug], admin = HQ.me && HQ.me.role === 'admin';
+    var head = '<div class="ph"><h3>What is working now</h3>' + (admin ? '<a class="lnk" onclick="hqWorkEdit(\'' + e(c.slug) + '\')">Update</a>' : '') + '</div>';
+    if (HQ.workEdit === c.slug) return '<div class="panel" style="margin-bottom:16px">' + head + '<p class="hint">Paste the latest top posts or results. The next shot list will use this.</p><textarea id="wk_t" rows="10" style="width:100%;padding:12px;border:1px solid var(--hair2);border-radius:10px;font:13px/1.5 ui-monospace,Menlo,monospace">' + e(md || '') + '</textarea><div style="margin-top:10px;display:flex;gap:8px"><button class="btn2 red" onclick="hqWorkSave(\'' + e(c.slug) + '\')">Save</button><button class="btn2 line" onclick="hqWorkEdit(\'\')">Cancel</button></div></div>';
+    return '<div class="panel md" style="margin-bottom:16px">' + head + (md ? mdHtml(md) : '<div class="empty" style="padding:10px 0">Nothing pulled yet. Paste this client\'s top posts and the shot list will build on them.</div>') + '</div>';
+  }
+  window.hqShotSel = function (slug, id) { HQ.shotSel[slug] = id; show(navKey); };
+  window.hqWorkEdit = function (slug) { HQ.workEdit = slug; show(navKey); };
+  window.hqWorkSave = async function (slug) { var v = (document.getElementById('wk_t') || {}).value || ''; try { await api('/api/hq/working/' + slug, 'PUT', { md: v }); HQ.working[slug] = v; HQ.workEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
+  window.hqGenShot = async function (slug) {
+    var d = (document.getElementById('sh_d') || {}).value || ''; var b = document.getElementById('sh_b');
+    if (!d) { toast('Pick the shoot date first'); return; }
+    if (b) { b.disabled = true; b.textContent = 'Writing... about 30 seconds'; }
+    try { var r = await api('/api/hq/shotlists/' + slug, 'POST', { date: d }); HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; HQ.shotSel[slug] = r.list.id; toast('Shot list ready'); } catch (er) { toast(er.message); }
+    show(navKey);
+  };
+  window.hqShotTask = async function (slug, id) { try { var r = await api('/api/hq/shotlists/' + slug + '/' + id + '/task', 'POST', {}); await refreshTasks(); toast('Sent to ' + r.owner); } catch (er) { toast(er.message); } };
+  function copyTab(c) {
+    var md = HQ.copy[c.slug];
+    var ideas = factsPanel(c) + shotPanel(c) + workingPanel(c);
+    if (md == null) return ideas + '<div class="sk" style="height:200px"></div>';
+    if (!md) return ideas + '<div class="panel"><div class="empty">' + ico('inbox') + 'No copy research for ' + e(c.name) + ' yet.</div></div>';
+    return ideas + '<div class="panel md"><p class="hint" style="margin-top:0">Click any headline idea to copy it. Anything marked VERIFY needs the client to confirm before it runs.</p>' + mdHtml(md) + '</div>';
+  }
   function brainTab(c) {
     var md = HQ.brain[c.slug];
     if (md == null) return '<div class="sk" style="height:200px"></div>';
     if (!md) return '<div class="panel"><div class="empty">' + ico('inbox') + 'No brain file for ' + e(c.name) + ' yet.</div></div>';
-    return '<div class="panel md">' + mdHtml(md) + '</div>';
+    return factsPanel(c) + '<div class="panel md">' + mdHtml(md) + '</div>';
   }
+  function factsPanel(c) {
+    var f = HQ.facts[c.slug], admin = HQ.me && HQ.me.role === 'admin';
+    var head = '<div class="ph"><h3>' + ico('check') + ' Confirmed facts</h3>' + (admin ? '<a class="lnk" onclick="hqFactsEdit(\'' + e(c.slug) + '\')">Edit</a>' : '') + '</div><p class="hint" style="margin-top:0">What the team has verified about ' + e(c.name) + '. These override everything in the brain below and drive the shot lists.</p>';
+    if (HQ.factsEdit === c.slug) return '<div class="panel" style="margin-bottom:16px;border-left:4px solid var(--ok)">' + head + '<textarea id="fx_t" rows="8" style="width:100%;padding:12px;border:1px solid var(--hair2);border-radius:10px;font:14px/1.5 Inter,sans-serif" placeholder="One fact per line, for example: We do wall graphics, storefronts and wraps.">' + e(f || '') + '</textarea><div style="margin-top:10px;display:flex;gap:8px"><button class="btn2 red" onclick="hqFactsSave(\'' + e(c.slug) + '\')">Save</button><button class="btn2 line" onclick="hqFactsEdit(\'\')">Cancel</button></div></div>';
+    return '<div class="panel md" style="margin-bottom:16px;border-left:4px solid ' + (f ? 'var(--ok)' : 'var(--warn)') + '">' + head + (f ? mdHtml(f) : '<div class="empty" style="padding:6px 0;text-align:left">Not confirmed yet. Add what ' + e(c.name) + ' really does, and the shot lists will follow it.</div>') + '</div>';
+  }
+  window.hqFactsEdit = function (slug) { HQ.factsEdit = slug; show(navKey); };
+  window.hqFactsSave = async function (slug) { var v = (document.getElementById('fx_t') || {}).value || ''; try { await api('/api/hq/facts/' + slug, 'PUT', { md: v }); HQ.facts[slug] = v; HQ.factsEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
   function guidesTab(c) {
     var g = HQ.guides; if (!g) return '<div class="sk" style="height:200px"></div>';
     var cur = HQ.guideKey || (g[0] && g[0].key), doc = HQ.guideDoc[cur];
@@ -539,7 +598,8 @@
         flushP(); closeList(); var cells = function (r) { return r.trim().replace(/^\||\|$/g, '').split('|').map(function (x) { return x.trim(); }); };
         var hd = cells(ln); i += 2; var rows = [];
         while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
-        out.push('<div class="mdt"><table><thead><tr>' + hd.map(function (x) { return '<th>' + mdInline(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + mdInline(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>'); continue;
+        var hcol = hd.map(function (x) { return /headline/i.test(x); });
+        out.push('<div class="mdt"><table><thead><tr>' + hd.map(function (x) { return '<th>' + mdInline(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.map(function (r) { return '<tr>' + r.map(function (x, ci) { return hcol[ci] ? '<td class="cpy" title="Click to copy" data-copy="' + e(x.replace(/^"|"$/g, '')) + '">' + mdInline(x) + '</td>' : '<td>' + mdInline(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>'); continue;
       }
       if ((m = /^\s*[-*]\s+(.*)$/.exec(ln))) { flushP(); if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; } out.push('<li>' + mdInline(m[1]) + '</li>'); i++; continue; }
       if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(ln))) { flushP(); if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; } out.push('<li>' + mdInline(m[1]) + '</li>'); i++; continue; }
@@ -550,6 +610,13 @@
   async function loadClientData(slug) {
     var tab = HQ.ctab;
     if (HQ.ctabSlug !== slug) { HQ.ctabSlug = slug; }
+    if (tab === 'copy') {
+      if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
+      if (HQ.shots[slug] == null) { try { HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; } catch (x) { HQ.shots[slug] = []; } }
+      if (HQ.working[slug] == null) { try { HQ.working[slug] = (await api('/api/hq/working/' + slug)).md; } catch (x) { HQ.working[slug] = ''; } }
+    }
+    if (tab === 'copy' && HQ.copy[slug] == null) { try { HQ.copy[slug] = (await api('/api/hq/copy/' + slug)).md; } catch (x) { HQ.copy[slug] = ''; } }
+    if ((tab === 'brain' || tab === 'copy') && HQ.facts[slug] == null) { try { HQ.facts[slug] = (await api('/api/hq/facts/' + slug)).md; } catch (x) { HQ.facts[slug] = ''; } }
     if (tab === 'brain' && HQ.brain[slug] == null) { try { HQ.brain[slug] = (await api('/api/hq/brain/' + slug)).md; } catch (x) { HQ.brain[slug] = ''; } }
     if (tab === 'guides' && !HQ.guides) { try { HQ.guides = (await api('/api/hq/guidelines')).docs; var k = HQ.guideKey || (HQ.guides[0] && HQ.guides[0].key); if (k && HQ.guideDoc[k] == null) HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guides = []; } }
     if (tab === 'content') {
@@ -557,6 +624,23 @@
       if (HQ.content[slug] == null) { try { HQ.content[slug] = await api('/api/hq/content/' + slug); } catch (x) { HQ.content[slug] = { error: x.message }; } }
     }
   }
+
+
+  function contentWeek() {
+    var d = HQ.cw, head = '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Content</h3><p>What was uploaded each week, what is due, and what is on the film calendar. Every file must be named CLIENT_TYPE_DATE_Subject_LABEL_001.</p></div></div>';
+    var shoots = ((HQ.cal && HQ.cal.events) || []).filter(function (x) { return /shoot|film/i.test(x.title + ' ' + x.cal); }).slice(0, 6);
+    var sh = '<div class="panel" style="margin-bottom:16px"><h3>' + ico('film') + ' Next on the film calendar</h3>' + (shoots.length ? shoots.map(function (x) { var dt = evDate(x); return '<a class="ag" href="' + e(x.link) + '" target="_blank" rel="noopener" style="grid-template-columns:200px 8px minmax(0,1fr)"><span class="at">' + e(dayLabel(dt)) + (x.allDay ? '' : ', ' + e(dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))) + '</span><i style="background:' + e(x.color || '#e22a24') + '"></i><span class="an">' + e(x.title) + '</span></a>'; }).join('') : '<div class="empty" style="padding:10px 0">' + (HQ.cal && HQ.cal.connected ? 'No shoots on the calendar in the next two weeks.' : 'Connect Google on the Mail page to see filming dates.') + '</div>') + '</div>';
+    if (!d) return head + sh + '<div class="sk" style="height:180px"></div>';
+    if (d.legacy || d.connected === false) return head + sh + '<div class="panel"><div class="empty">' + ico('mail') + 'Connect your Google account on the Mail page to see uploads.</div></div>';
+    var st = d.state; if (st && (st.needsDrive || st.error) && !d.rows.length) return head + sh + '<div class="panel"><div class="empty">' + ico('alert') + (st.needsDrive ? (st.apiOff ? 'Google Drive is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Drive API and click Enable.' : 'Drive access was not granted. On the Mail page click Disconnect, then connect Google again and allow Drive.') : e(st.error)) + '</div></div>';
+    var tot = d.rows.reduce(function (a, r) { return a + r.thisWeek; }, 0), ren = d.rows.reduce(function (a, r) { return a + r.unnamed; }, 0);
+    return head + sh + '<div class="panel"><h3>Uploads by client</h3><p class="hint">Week of ' + e(dshort(d.thisWk)) + ': <b>' + tot + '</b> piece' + (tot === 1 ? '' : 's') + ' uploaded' + (ren ? ' · <b style="color:var(--bad)">' + ren + ' file' + (ren > 1 ? 's' : '') + ' need renaming</b>' : '') + '</p>' +
+      '<table class="ttab"><thead><tr><th>Client</th><th>This week</th><th>Last week</th><th>Next due</th><th>Needs rename</th></tr></thead><tbody>' + d.rows.map(function (r) {
+        var c = HQ.data.clients.filter(function (x) { return x.slug === r.slug; })[0] || { name: r.name };
+        return '<tr class="clk" onclick="hqOpenContent(\'' + e(r.slug) + '\')"><td><div class="nm" style="display:flex;align-items:center;gap:10px">' + (c.logo ? '<span class="mini-av" style="background-image:url(' + e(c.logo) + ')"></span>' : '') + e(r.name) + '</div></td><td><b>' + r.thisWeek + '</b></td><td>' + r.lastWeek + '</td><td>' + (r.nextDue ? e(dshort(r.nextDue)) : '<span class="em">None</span>') + '</td><td>' + (r.unnamed ? '<span class="chip st-ending">' + r.unnamed + '</span>' : '<span class="em">0</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  window.hqOpenContent = function (slug) { HQ.ctab = 'content'; navKey = 'hq:client:' + slug; if (typeof renderNav === 'function') renderNav(); show(navKey); };
 
   // Phone bottom bar
   function mnav() {
@@ -567,7 +651,7 @@
 
   async function show(key) {
     document.body.classList.add('hqmode');
-    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:how': 'How We Work' };
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
     document.getElementById('viewTitle').textContent = titles[key] || 'Client';
     var el = root();
@@ -578,6 +662,7 @@
     else if (key === 'hq:onboarding') el.innerHTML = onboarding();
     else if (key === 'hq:mail') { el.innerHTML = mail(); if (!HQ.mail) { await loadMail(); if (navKey === 'hq:mail') el.innerHTML = mail(); } }
     else if (key === 'hq:how') { if (!HQ.how) { try { HQ.how = await (await fetch('/how.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.how = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.how + '</div>'; }
+    else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
     else if (key === 'hq:outreach') el.innerHTML = outreach();
     else if (key === 'hq:team') el.innerHTML = await team();
@@ -595,5 +680,6 @@
     try { await api('/api/hq/client/' + slug + '/link', 'POST', { project: v }); toast('Linked'); window.hqRefresh(); } catch (er) { toast(er.message); }
   };
   window.hqRerender = function () { if (HQ.data && document.body.classList.contains('hqmode')) show(navKey); };
+  document.addEventListener('click', function (ev) { var t = ev.target.closest && ev.target.closest('.cpy'); if (t && navigator.clipboard) { navigator.clipboard.writeText(t.getAttribute('data-copy') || t.textContent).then(function () { toast('Copied'); }); } });
   mnav();
 })();

@@ -3866,6 +3866,30 @@ app.get('/api/hq/brain/:slug', (req, res) => {
   const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, '');
   try { res.json({ md: fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8') }); } catch { res.json({ md: '' }); }
 });
+
+// Ready-to-use copy for a client: pulled from the sections of their Brain that hold headline ideas, hooks, test ideas and customer language.
+function brainCopy(md) {
+  const lines = md.replace(/\r/g, '').split('\n'), heads = [];
+  lines.forEach((l, i) => { const m = /^(#{2,3})\s+(.*)$/.exec(l); if (m) heads.push({ i, level: m[1].length, title: m[2].trim() }); });
+  const blocks = heads.map((h, k) => { let end = lines.length; for (let j = k + 1; j < heads.length; j++) if (heads[j].level <= h.level) { end = heads[j].i; break; } return { ...h, end }; });
+  const find = re => blocks.filter(b => re.test(b.title));
+  const voc = find(/voice-of-customer to copy/i)[0];
+  const parts = [];
+  const take = (b, skip) => { let body = lines.slice(b.i, b.end); if (skip) body = lines.slice(b.i, skip.i).concat(lines.slice(skip.end, b.end)); return body.join('\n').trim(); };
+  if (voc) parts.push(['Headline ideas, ready to use', take({ ...voc, i: voc.i + 1 })]);
+  for (const b of find(/test ideas/i)) parts.push(['Test ideas', take(b)]);
+  for (const b of find(/^\d*\.?\s*what works/i).filter(x => x.level === 2)) parts.push(['What works, and hook patterns to reuse', take({ ...b, i: b.i + 1 }, voc && voc.i > b.i && voc.end <= b.end ? voc : null)]);
+  for (const b of find(/customer language/i)) parts.push(['What customers say, in their words', take({ ...b, i: b.i + 1 })]);
+  for (const b of find(/brand and voice/i)) parts.push(['Brand voice', take({ ...b, i: b.i + 1 })]);
+  for (const b of find(/viral formats/i).filter(x => x.level === 2)) parts.push(['Formats that are working now', take({ ...b, i: b.i + 1 })]);
+  return parts.filter(p => p[1]).map(p => '## ' + p[0] + '\n\n' + p[1].replace(/^#{2,3}\s+/gm, '#### ')).join('\n\n');
+}
+app.get('/api/hq/copy/:slug', (req, res) => {
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, '');
+  let md = ''; try { md = brainCopy(fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8')); } catch {}
+  try { const ex = fs.readFileSync(path.join(__dirname, 'data', 'copy-extra', slug + '.md'), 'utf8').trim(); if (ex && !/^## Headline ideas/m.test(md)) md = '## Headline ideas, ready to use\n\n' + ex + (md ? '\n\n' + md : ''); } catch {}
+  res.json({ md });
+});
 app.get('/api/hq/guidelines', (req, res) => {
   const order = ['content-standards', 'footage-labeling', 'content-frameworks', 'static-ads', 'voice-of-customer'];
   const out = []; for (const k of order) { try { const t = fs.readFileSync(path.join(GUIDE_DIR, k + '.md'), 'utf8'); out.push({ key: k, title: (/^#\s+(.+)$/m.exec(t) || [, k])[1].trim() }); } catch {} }
@@ -3879,14 +3903,11 @@ const FILE_RE = /^([A-Z]{2,6})_(REEL|DRONE|PHOTO)_(\d{8})_([A-Za-z0-9]+)_([A-Z]+
 function addBizDays(d, n) { const x = new Date(d); let c = 0; while (c < n) { x.setDate(x.getDate() + 1); if (x.getDay() !== 0 && x.getDay() !== 6) c++; } return x; }
 function mondayOf(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
 const contentCache = new Map();
-app.get('/api/hq/content/:slug', async (req, res) => {
-  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
-  if (me.legacy) return res.json({ connected: false, legacy: true });
-  const c = loadClients().find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
-  if (!c.drive) return res.json({ connected: true, noFolder: true });
-  const ck = me.id + ':' + c.slug, hit = contentCache.get(ck); if (hit && Date.now() - hit.at < 300e3) return res.json(hit.data);
+async function getContent(me, c) {
+  if (!c.drive) return { connected: true, noFolder: true };
+  const ck = me.id + ':' + c.slug, hit = contentCache.get(ck); if (hit && Date.now() - hit.at < 300e3) return hit.data;
   try {
-    const tok = await userGmailToken(me.id); if (!tok) return res.json({ connected: false, configured: !!GOOGLE_CLIENT_ID });
+    const tok = await userGmailToken(me.id); if (!tok) return { connected: false, configured: !!GOOGLE_CLIENT_ID };
     const auth = { Authorization: 'Bearer ' + tok };
     const list = async (q) => {
       const u = new URL('https://www.googleapis.com/drive/v3/files'); u.searchParams.set('q', q); u.searchParams.set('pageSize', '200');
@@ -3911,12 +3932,157 @@ app.get('/api/hq/content/:slug', async (req, res) => {
     }
     const weeks = [...weeksMap.values()].sort((a, b) => a.week < b.week ? 1 : -1).slice(0, 8);
     const data = { connected: true, folders: folders.map(f => ({ name: f.name, url: f.url })), weeks, unnamed: unnamed.slice(0, 30), total: items.length };
-    contentCache.set(ck, { at: Date.now(), data }); res.json(data);
+    contentCache.set(ck, { at: Date.now(), data }); return data;
   } catch (e) {
-    if (e.status === 401 || e.status === 403) return res.json({ connected: true, needsDrive: true, apiOff: /accessNotConfigured|has not been used|disabled|SERVICE_DISABLED/i.test(e.body || '') });
-    res.json({ connected: true, error: String(e.message).slice(0, 140) });
+    if (e.status === 401 || e.status === 403) return { connected: true, needsDrive: true, apiOff: /accessNotConfigured|has not been used|disabled|SERVICE_DISABLED/i.test(e.body || '') };
+    return { connected: true, error: String(e.message).slice(0, 140) };
   }
+}
+app.get('/api/hq/content/:slug', async (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  if (me.legacy) return res.json({ connected: false, legacy: true });
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  res.json(await getContent(me, c));
 });
+// Every client at a glance: pieces uploaded this week and last, the next due date, files that need renaming.
+app.get('/api/hq/content-week', async (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  if (me.legacy) return res.json({ connected: false, legacy: true });
+  const thisWk = mondayOf(new Date()), last = new Date(); last.setDate(last.getDate() - 7); const lastWk = mondayOf(last), today = new Date().toISOString().slice(0, 10);
+  const clients = loadClients().filter(c => c.drive); const rows = []; let state = null;
+  for (let k = 0; k < clients.length; k += 3) await Promise.all(clients.slice(k, k + 3).map(async c => {
+    const d = await getContent(me, c);
+    if (d.connected === false || d.needsDrive || d.error) { state = state || d; return; }
+    const wk = w => (d.weeks.find(x => x.week === w) || { items: [] }).items;
+    const upcoming = d.weeks.flatMap(w => w.items).map(i => i.due).filter(x => x >= today).sort()[0] || '';
+    rows.push({ slug: c.slug, name: c.name, thisWeek: wk(thisWk).length, lastWeek: wk(lastWk).length, nextDue: upcoming, unnamed: (d.unnamed || []).length, total: d.total });
+  }));
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ connected: true, state, rows, thisWk, lastWk });
+});
+
+
+// ---------- Living brain: shot lists generated from the brain + what is working ----------
+const WORKING_DIR = path.join(__dirname, 'data', 'working');
+const SHOTLISTS_FILE = path.join(DATA_DIR, 'shotlists.json');
+const WORKING_LIVE = path.join(DATA_DIR, 'working');
+function readWorking(slug) {
+  try { return fs.readFileSync(path.join(WORKING_LIVE, slug + '.md'), 'utf8'); } catch {}
+  try { return fs.readFileSync(path.join(WORKING_DIR, slug + '.md'), 'utf8'); } catch {}
+  return '';
+}
+app.get('/api/hq/working/:slug', (req, res) => { const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''); res.json({ md: readWorking(slug) }); });
+app.put('/api/hq/working/:slug', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''); const md = String((req.body && req.body.md) || '').slice(0, 30000);
+  fs.mkdirSync(WORKING_LIVE, { recursive: true }); fs.writeFileSync(path.join(WORKING_LIVE, slug + '.md'), md); res.json({ ok: true });
+});
+function loadShotlists() { return readJson(SHOTLISTS_FILE, {}); }
+app.get('/api/hq/shotlists/:slug', (req, res) => { const all = loadShotlists(); res.json({ lists: (all[String(req.params.slug)] || []).slice(0, 6) }); });
+
+
+// Confirmed facts per client: a short list the team has verified. These override the brain and drive the shot list writer.
+const FACTS_DIR = path.join(__dirname, 'data', 'facts'), FACTS_LIVE = path.join(DATA_DIR, 'facts');
+function readFacts(slug) {
+  try { return fs.readFileSync(path.join(FACTS_LIVE, slug + '.md'), 'utf8'); } catch {}
+  try { return fs.readFileSync(path.join(FACTS_DIR, slug + '.md'), 'utf8'); } catch {}
+  return '';
+}
+app.get('/api/hq/facts/:slug', (req, res) => { res.json({ md: readFacts(String(req.params.slug).replace(/[^a-z0-9-]/g, '')) }); });
+app.put('/api/hq/facts/:slug', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''), md = String((req.body && req.body.md) || '').slice(0, 8000);
+  fs.mkdirSync(FACTS_LIVE, { recursive: true }); fs.writeFileSync(path.join(FACTS_LIVE, slug + '.md'), md); res.json({ ok: true });
+});
+
+const SHOTLIST_RULES = `You are the Open Heart Media content planner. You write ONE shot list for ONE shoot for ONE client. The team will film exactly what you write.
+Rules:
+- CONFIRMED FACTS are verified by the team and override anything in the brain. If they conflict with the brain, follow the confirmed facts. Never narrow what the client does below what the confirmed facts say.
+- Use only facts in the client brain and the confirmed facts. Never invent stats, awards, testimonials, prices, specs, names or dates. If a hook depends on a fact the client has not confirmed, add it to "verify".
+- Obey the client's compliance and claims section in the brain. If it forbids something, do not write it.
+- Hooks are talking-head lines said in one breath (18 words or fewer), to ONE person in ONE moment, with something checkable. Each hook uses a different angle, not a reworded version of the same line.
+- Base hooks and b-roll on what is working: first the client's own top posts, then the formats and hook patterns listed in the brain. Say which pattern each one copies in "mimic".
+- B-roll and photo shots are specific and filmable in one visit (subject, angle, action). No vague items like "great footage".
+- Use the five awareness levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and tag each hook with one.
+- Anything the archive is missing (see ARCHIVE) should get priority in b-roll and photos.
+- "mustgets" are shots a specific calendar post or open item needs, with the post or item it is for. If none are known, use the brain's open items to verify.
+- Copy rules: no em dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer), numbers beat adjectives, front-load the point.
+Return ONLY JSON, no prose, in this shape:
+{"hooks":[{"hook":"","mimic":"","level":1,"why":"","verify":[""]}],"broll":[{"shot":"","why":""}],"photos":[{"shot":"","label":"TEAM|HEADSHOT|JOBSITE|PRODUCT|EVENT|LOCATION"}],"mustgets":[{"shot":"","for":""}],"notes":""}
+Counts: 6 hooks, 8 b-roll, 5 photos, 3 mustgets.`;
+
+function archiveSummary(slug) {
+  for (const [k, v] of contentCache) if (k.endsWith(':' + slug) && v.data && v.data.weeks) {
+    const counts = {}; v.data.weeks.forEach(w => w.items.forEach(i => { const key = i.type + ' ' + i.label; counts[key] = (counts[key] || 0) + 1; }));
+    const all = ['REEL HOOK', 'REEL TALK', 'REEL BROLL', 'REEL PRODUCT', 'REEL EVENT', 'DRONE AERIAL', 'PHOTO TEAM', 'PHOTO JOBSITE', 'PHOTO PRODUCT', 'PHOTO LOCATION'];
+    return 'Recent uploads by label: ' + all.map(a => a + '=' + (counts[a] || 0)).join(', ') + '. Labels at 0 or 1 are missing.';
+  }
+  return 'Archive inventory not available. Do not guess what is missing.';
+}
+async function aiJson(system, user, maxTokens) {
+  if (process.env.FAKE_AI === '1') return JSON.parse(process.env.FAKE_AI_JSON || '{}');
+  const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: maxTokens || 4000, system, messages: [{ role: 'user', content: user }] });
+  let t = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < 0) throw new Error('The AI did not return a shot list. Try again.');
+  return JSON.parse(t.slice(a, b + 1));
+}
+async function makeShotlist(slug, dateStr, who) {
+  const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
+  let brain = ''; try { brain = fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8'); } catch {}
+  if (!brain) throw new Error('This client has no brain file yet.');
+  const sec = (re) => { const m = new RegExp('^## ' + re + '[^\\n]*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))', 'mi').exec(brain); return m ? m[0].slice(0, 9000) : ''; };
+  const context = [sec('1\\.'), sec('3\\.'), sec('4\\.'), sec('5\\.'), brainCopy(brain).slice(0, 14000), sec('9\\.'), sec('12\\.')].filter(Boolean).join('\n\n');
+  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
+  const out = await aiJson(SHOTLIST_RULES, user, 4500);
+  const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
+  const arr = (v, f) => (Array.isArray(v) ? v : []).slice(0, 12).map(f);
+  const item = { id: 'sl_' + crypto.randomBytes(4).toString('hex'), name: `${c.code || c.slug.toUpperCase()}_SHOTLIST_${dateStr.replace(/-/g, '')}`, date: dateStr, at: new Date().toISOString(), by: who || 'auto',
+    hooks: arr(out.hooks, h => ({ hook: clean(h.hook), mimic: clean(h.mimic), level: Number(h.level) || 0, why: clean(h.why), verify: (Array.isArray(h.verify) ? h.verify : []).map(clean).filter(Boolean) })),
+    broll: arr(out.broll, b => ({ shot: clean(b.shot), why: clean(b.why) })), photos: arr(out.photos, p => ({ shot: clean(p.shot), label: clean(p.label) })),
+    mustgets: arr(out.mustgets, m => ({ shot: clean(m.shot), for: clean(m.for) })), notes: clean(out.notes), basis: { working: !!readWorking(slug), archive: archiveSummary(slug).startsWith('Recent') } };
+  const all = loadShotlists(); all[slug] = [item].concat((all[slug] || []).filter(x => x.date !== dateStr)).slice(0, 8);
+  fs.writeFileSync(SHOTLISTS_FILE, JSON.stringify(all, null, 2));
+  return item;
+}
+app.post('/api/hq/shotlists/:slug', async (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  const d = String((req.body && req.body.date) || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Pick the shoot date.' });
+  try { res.json({ list: await makeShotlist(String(req.params.slug), d, me.name) }); } catch (e) { res.status(500).json({ error: String(e.message).slice(0, 200) }); }
+});
+app.post('/api/hq/shotlists/:slug/:id/task', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  const list = (loadShotlists()[req.params.slug] || []).find(x => x.id === req.params.id); if (!list) return res.status(404).json({ error: 'Not found.' });
+  const c = loadClients().find(x => x.slug === req.params.slug), owner = ownerFor(c, 'field'); if (!owner) return res.status(400).json({ error: 'Nobody is set for the Field team.' });
+  const note = ['HOOKS TO FILM', ...list.hooks.map((h, i) => (i + 1) + '. ' + h.hook), 'B-ROLL TO GET', ...list.broll.map((b, i) => (i + 1) + '. ' + b.shot), 'PHOTOS TO GET', ...list.photos.map((p, i) => (i + 1) + '. ' + p.shot), 'MUST-GETS', ...list.mustgets.map((m, i) => (i + 1) + '. ' + m.shot + ' (for ' + m.for + ')')].join('\n').slice(0, 1000);
+  const tasks = loadTasks(); const t = { id: 't_' + crypto.randomBytes(5).toString('hex'), title: `Film: ${list.name}`, client: c.slug, lane: 'field', owner: owner.id, due: list.date, status: 'open', created_at: new Date().toISOString(), created_by: me.id, note, source: { type: 'shotlist', id: list.id } };
+  tasks.push(t); saveTasks(tasks); res.json({ ok: true, owner: owner.name });
+});
+
+
+// When a shoot lands on the film calendar, the shot list writes itself (needs AUTO_IDEAS=1 and a connected Google login).
+async function autoShotlists() {
+  if (process.env.AUTO_IDEAS !== '1' || !GOOGLE_CLIENT_ID) return;
+  for (const uid of Object.keys(gUsers()).slice(0, 2)) {
+    try {
+      const tok = await userGmailToken(uid); if (!tok) continue; const auth = { Authorization: 'Bearer ' + tok };
+      const cl = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader', { headers: auth }); if (!cl.ok) continue;
+      const cals = ((await cl.json()).items || []).filter(c => /film|shoot/i.test(c.summary || '')).slice(0, 3);
+      const now = new Date(), end = new Date(now.getTime() + 10 * 864e5), clients = loadClients().filter(c => c.status !== 'internal');
+      for (const cal of cals) {
+        const u = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events`);
+        u.searchParams.set('timeMin', now.toISOString()); u.searchParams.set('timeMax', end.toISOString()); u.searchParams.set('singleEvents', 'true'); u.searchParams.set('maxResults', '30');
+        const r = await fetch(u, { headers: auth }); if (!r.ok) continue;
+        for (const ev of ((await r.json()).items || [])) {
+          const t = (ev.summary || '').toLowerCase(), date = (ev.start.dateTime || ev.start.date || '').slice(0, 10); if (!date) continue;
+          const c = clients.find(x => (x.match || []).concat([(x.name || '').toLowerCase()]).some(k => k && t.includes(k.toLowerCase())));
+          if (!c) continue; const have = (loadShotlists()[c.slug] || []).some(x => x.date === date); if (have) continue;
+          try { await makeShotlist(c.slug, date, 'auto'); console.log('[shotlist] made', c.slug, date); } catch (e) { console.error('[shotlist] failed', c.slug, e.message); }
+        }
+      }
+    } catch (e) { console.error('[shotlist] auto failed', e.message); }
+  }
+}
+setTimeout(autoShotlists, 90e3); setInterval(autoShotlists, 60 * 60e3);
 
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
