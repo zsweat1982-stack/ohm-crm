@@ -3950,12 +3950,13 @@ const UPLOADS_STATE = path.join(DATA_DIR, 'uploads_state.json');
 async function autoUploads() {
   if (!AUTO_ON() || !GOOGLE_CLIENT_ID) return;
   const uid = Object.keys(gUsers())[0]; if (!uid) return;
-  const prev = readJson(UPLOADS_STATE, null), first = !prev, seen = new Set((prev && prev.seen) || []), tasks = loadTasks(); let changed = false;
+  const freshBySlug = {}; const prev = readJson(UPLOADS_STATE, null), first = !prev, seen = new Set((prev && prev.seen) || []), tasks = loadTasks(); let changed = false;
   for (const c of loadClients().filter(x => x.drive)) {
     try {
       contentCache.delete(uid + ':' + c.slug); const d = await getContent({ id: uid }, c); if (!d.weeks) continue;
       const items = d.weeks.flatMap(w => w.items), fresh = items.filter(i => i.id && !seen.has(i.id));
       if (!fresh.length) continue; fresh.forEach(i => seen.add(i.id)); changed = true; if (first) continue;
+      freshBySlug[c.slug] = fresh.map(i => `${i.shot || ''} ${i.type || ''} ${i.label || ''} ${i.name || ''}`.trim()).slice(0, 30).join('\n');
       const byShot = new Map(); fresh.forEach(i => { (byShot.get(i.shot) || byShot.set(i.shot, []).get(i.shot)).push(i); });
       for (const [shot, list] of byShot) {
         const nice = shot.slice(4, 6) + '/' + shot.slice(6, 8), fd = fridayDue(), sl = (loadShotlists()[c.slug] || []).find(x => x.date === shot.slice(0, 4) + '-' + shot.slice(4, 6) + '-' + shot.slice(6, 8));
@@ -3973,6 +3974,7 @@ async function autoUploads() {
       }
     } catch (e) { console.error('[uploads] failed', c.slug, e.message); }
   }
+  for (const [sl, txt] of Object.entries(freshBySlug)) if (!first) rebuildForNewContent(sl, uid, txt).catch(e => console.error('[pack] rebuild failed', sl, e.message));
   if (changed || first) { saveTasks(tasks); fs.writeFileSync(UPLOADS_STATE, JSON.stringify({ seen: [...seen].slice(-6000), at: new Date().toISOString() })); }
 }
 setTimeout(autoUploads, process.env.AUTO_FAST ? 12e3 : 150e3); setInterval(autoUploads, process.env.AUTO_FAST ? 10e3 : 15 * 60e3);
@@ -4127,7 +4129,7 @@ async function makeShotlist(slug, dateStr, who) {
   const sec = (re) => { const m = new RegExp('^## ' + re + '[^\\n]*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))', 'mi').exec(brain); return m ? m[0].slice(0, 9000) : ''; };
   const context = [sec('1\\.'), sec('3\\.'), sec('4\\.'), sec('5\\.'), brainCopy(brain).slice(0, 14000), sec('9\\.'), sec('12\\.')].filter(Boolean).join('\n\n');
   let invTextShot = 'Drive inventory not available.'; try { const u2 = Object.keys(gUsers())[0]; if (u2) invTextShot = inventoryText(await getInventory(u2, c)); } catch {}
-  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nFOOTAGE IN THE CLIENT'S DRIVE FOLDER NOW:\n${invTextShot}\n\nFORMAT AND TEXT-ON-SCREEN RULES:\n${formatRules(slug)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
+  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}${opts.newFiles ? '\n\nNEW CONTENT JUST RECEIVED (build from this first):\n' + opts.newFiles : ''}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nFOOTAGE IN THE CLIENT'S DRIVE FOLDER NOW:\n${invTextShot}\n\nFORMAT AND TEXT-ON-SCREEN RULES:\n${formatRules(slug)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
   const out = await aiJson(SHOTLIST_RULES, user, 4500);
   const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
   const arr = (v, f) => (Array.isArray(v) ? v : []).slice(0, 12).map(f);
@@ -4239,6 +4241,8 @@ Rules:
 - The plan's topics are the starting point, not a cage. NEW FOOTAGE comes first: if footage in the Drive folder (see FOOTAGE) fits a slot better than the planned topic, change that slot's topic to use it and say so in "change_reason" (set "changed" to true). Never move or drop a holiday, key-date or promo slot, and never break a client guardrail. In "uses" name the footage a Reel or graphic is built from (folder, subject or label). If a visit folder holds footage that is not named to standard, still plan around it and add to "verify" that it needs renaming and a look.
 - When a Reel has no talking-head hook, the hook is text on screen in the first second: write it in "onscreen".
 - For a Carousel, "onscreen" holds the copy for each card, written as Card 1, Card 2 and so on. For a Graphic it is the text on the graphic. Only Reels and talking heads use true on-screen video text.
+- Never leave a slot empty. With no recent footage, build from graphics and static ads, text-on-screen Reels, and the best footage already in the Drive folder (name it in "uses"), using proven topics from the brain and what is working.
+- If NEW CONTENT JUST RECEIVED is given, replace the 1 or 2 weakest non-fixed slots with posts built from it (set "changed" true and "change_reason" to "New content received"). Do not change any other slot.
 - Follow the FORMAT AND TEXT-ON-SCREEN RULES for this client exactly.
 - Captions: work in one or two target keywords naturally, main keyword in the first line. Set "hashtags" to at most 5 tags per post (Instagram and Facebook), local and service tags first, then working tags from the list. Never invent a trending claim.
 - If the slots come from the team's plan, keep each slot's date and type. (Topic may change only as described above.) If a topic says "Chris picks the clip" or "Pull from footage", the client picks existing footage: do not invent a topic. Write a hook frame and a caption with fill-in blanks marked VERIFY, and say what to look for in the archive.
@@ -4251,7 +4255,8 @@ Rules:
 - Copy rules: no em dashes or en dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer, "it's not just X, it's Y"), numbers beat adjectives, front-load the point, sound unmistakably like this brand.
 Return ONLY JSON in this shape, one row per slot, in date order:
 {"theme":"","rows":[{"date":"YYYY-MM-DD","type":"Reel|Graphic|Carousel|Talking head|Testimonial","platforms":"","time":"","level":1,"idea":"","hook":"","shots":[""],"onscreen":"","design":"","caption":{"hook":"","body":"","cta":""},"basis":"","gates":[""],"verify":[""],"editing":"","trigger":"holiday name or promo name, or empty","keywords":[""],"hashtags":["#tag"],"uses":"footage used","changed":false,"change_reason":""}],"notes":""}`;
-async function makePack(slug, monday, who, uid) {
+async function makePack(slug, monday, who, uid, opts) {
+  opts = opts || {};
   const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
   const cad = c.cadence || {}, PL = loadPlans(), sundayD = addDaysStr(monday, 6);
   const planRows = (PL.clients[slug] || []).filter(r => r.date >= monday && r.date <= sundayD).sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -4275,8 +4280,9 @@ async function makePack(slug, monday, who, uid) {
       design: (t === 'Graphic' || t === 'Carousel') ? clean(r.design) : '', topic: pr ? pr.topic : '', planned: !!pr, caption: { hook: clean(r.caption && r.caption.hook), body: clean(r.caption && r.caption.body), cta: clean(r.caption && r.caption.cta) },
       basis: clean(r.basis), gates: strs(r.gates), verify: strs(r.verify), editing: clean(r.editing), trigger: clean(r.trigger), uses: clean(r.uses), keywords: strs(r.keywords).slice(0, 3), hashtags: cleanTags(r.hashtags), changed: !!r.changed && !(pr && pr.flag), change_reason: clean(r.change_reason), missing: !byDate.has(d) };
   });
+  if (opts.prev) { const todayS = ymdLocal(etNow()), pm = new Map((opts.prev.rows || []).map(r => [r.date, r])); rows.forEach((r, i) => { const o = pm.get(r.date); const take = r.changed && r.date >= todayS && !(o && o.trigger); if (!take && o) rows[i] = o; }); }
   const pack = { week: monday, at: new Date().toISOString(), by: who || 'auto', theme: clean(out.theme), notes: clean(out.notes), rows, basis: { working: !!readWorking(slug), facts: !!readFacts(slug) }, inputs: { holidays: hols.filter(h => h.date <= sunday).map(h => h.name), promoStamp: c.promos_updated || '' }, released: null };
-  const all = loadPacks(); all[slug] = Object.assign({}, all[slug] || {}); const prev = all[slug][monday]; if (prev && prev.released) pack.released = prev.released; all[slug][monday] = pack;
+  const all = loadPacks(); all[slug] = Object.assign({}, all[slug] || {}); const prev = all[slug][monday]; if (prev && prev.released) pack.released = prev.released; if (opts.prev) { pack.theme = opts.prev.theme || pack.theme; pack.notes = opts.prev.notes || pack.notes; } all[slug][monday] = pack;
   fs.writeFileSync(PACKS_FILE, JSON.stringify(all, null, 2)); return pack;
 }
 app.get('/api/hq/packs/:slug', (req, res) => {
@@ -4321,6 +4327,25 @@ async function autoPacks() {
       if (!have && (dow === 0 || dow >= 4 || dow === 1)) { have = await makePack(c.slug, T, 'auto'); console.log('[pack] made', c.slug, T); }
       if (dow === 1 && hr >= 6 && have && !have.released) { releasePack(c.slug, T, 'auto'); console.log('[pack] released', c.slug, T); }
     } catch (e) { console.error('[pack] failed', c.slug, e.message); }
+  }
+}
+
+// New content arrived: swap it into this week's or next week's calendar, replacing the weakest open slot. Already-released packs get a task for each swapped post.
+async function rebuildForNewContent(slug, uid, filesText) {
+  const todayS = ymdLocal(etNow()), cur = mondayOf(etNow()), c = loadClients().find(x => x.slug === slug); if (!c) return;
+  invCache.delete(uid + ':' + slug);
+  for (const monday of [cur, addDaysStr(cur, 7)]) {
+    const prev = (loadPacks()[slug] || {})[monday]; if (!prev) continue;
+    const before = new Map(prev.rows.map(r => [r.date, JSON.stringify(r)]));
+    const pack = await makePack(slug, monday, 'auto: new content', uid, { newFiles: filesText, prev });
+    const swapped = pack.rows.filter(r => before.get(r.date) !== JSON.stringify(r) && r.changed);
+    if (!swapped.length) continue;
+    console.log('[pack] swapped', slug, monday, swapped.map(r => r.date).join(','));
+    if (pack.released) {
+      const tasks = loadTasks(), fd = fridayDue();
+      for (const r of swapped) for (const lane of [r.type === 'Reel' ? 'content' : 'graphics', 'copy']) { const owner = ownerFor(c, lane); if (!owner) continue; tasks.push({ id: 't_' + crypto.randomBytes(5).toString('hex'), title: `Changed post, ${r.date}: ${c.name}`, client: slug, lane, owner: owner.id, due: fd.due, due_time: fd.due_time, status: 'open', created_at: new Date().toISOString(), created_by: 'pack', note: `New content received. ${r.change_reason}\n${String(r.hook || r.idea).slice(0, 200)}\nUses: ${r.uses}`, source: { type: 'pack', slug, week: monday } }); }
+      saveTasks(tasks);
+    }
   }
 }
 setTimeout(autoPacks, process.env.AUTO_FAST ? 16e3 : 120e3); setInterval(autoPacks, process.env.AUTO_FAST ? 60e3 : 30 * 60e3);
