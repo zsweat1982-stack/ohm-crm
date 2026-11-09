@@ -308,7 +308,9 @@ function renderNav(){
         <span class="ic">${ic}</span><span class="t">${label}</span>
         ${n!==null?`<span class="n">${n}</span>`:''}</button>`;
     }).join('')
-  ).join('');
+  ).join('') + `<div class="sb-sec">Clients</div>
+    <button class="nv" onclick="window.open('/admin/onboarding','_blank')"><span class="ic">\u2709</span><span class="t">Onboarding answers</span></button>
+    <button class="nv" onclick="window.open('/onboarding','_blank')"><span class="ic">\u2197</span><span class="t">Open client form</span></button>`;
 }
 function navTo(k){
   navKey = k;
