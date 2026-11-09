@@ -120,7 +120,7 @@
     return '<div class="panel agenda">' + head + order.slice(0, 5).map(function (k) {
       return '<div class="day"><div class="dl">' + e(dayLabel(groups[k][0].start)) + '</div>' + groups[k].slice(0, 6).map(function (x) {
         var tm = x.allDay ? 'All day' : new Date(x.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + (/film/i.test(x.cal) ? '#e22a24' : /meeting/i.test(x.cal) ? '#2f6fd0' : '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.cal) + '</em></a>';
+        return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.cal) + '</em></a>';
       }).join('') + '</div>';
     }).join('') + '</div>';
   }

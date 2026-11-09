@@ -3681,17 +3681,17 @@ app.get('/api/me/calendar', async (req, res) => {
       return res.json({ connected: true, needsCalendar: true, apiOff, detail: body.slice(0, 200) });
     }
     if (!cl.ok) throw new Error('Calendar list failed ' + cl.status);
-    const cals = ((await cl.json()).items || []).filter(c => c.primary || /ohm|open heart/i.test(c.summary || '') || c.selected && /meeting|film|schedule/i.test(c.summary || ''));
+    const cals = ((await cl.json()).items || []).filter(c => c.selected !== false && !/holiday/i.test(c.id || '') && !/^transferred from/i.test(c.summary || '')).sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0));
     const now = new Date(), end = new Date(now.getTime() + 14 * 864e5);
     const events = [];
-    for (const c of cals.slice(0, 6)) {
+    for (const c of cals.slice(0, 12)) {
       const u = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.id)}/events`);
       u.searchParams.set('timeMin', new Date(now.getTime() - 3 * 36e5).toISOString()); u.searchParams.set('timeMax', end.toISOString());
       u.searchParams.set('singleEvents', 'true'); u.searchParams.set('orderBy', 'startTime'); u.searchParams.set('maxResults', '25');
       const r = await fetch(u, { headers: auth }); if (!r.ok) continue;
       for (const ev of ((await r.json()).items || [])) {
         if (ev.status === 'cancelled') continue;
-        events.push({ id: ev.id + c.id, title: ev.summary || '(no title)', start: ev.start.dateTime || ev.start.date, end: ev.end && (ev.end.dateTime || ev.end.date), allDay: !ev.start.dateTime, where: (ev.location || '').slice(0, 80), link: ev.htmlLink, cal: c.primary ? 'Mine' : (c.summary || '').trim() });
+        events.push({ id: ev.id + c.id, title: ev.summary || '(no title)', start: ev.start.dateTime || ev.start.date, end: ev.end && (ev.end.dateTime || ev.end.date), allDay: !ev.start.dateTime, where: (ev.location || '').slice(0, 80), link: ev.htmlLink, cal: c.primary ? 'Mine' : (c.summary || '').trim(), color: c.backgroundColor || '' });
       }
     }
     events.sort((a, b) => new Date(a.start) - new Date(b.start));
