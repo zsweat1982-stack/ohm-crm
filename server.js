@@ -3980,6 +3980,31 @@ async function autoUploads() {
 }
 setTimeout(autoUploads, process.env.AUTO_FAST ? 12e3 : 150e3); setInterval(autoUploads, process.env.AUTO_FAST ? 10e3 : 15 * 60e3);
 
+
+// Weekly board: every piece that is due, per client, for last week and this week, with what is done, late or still open.
+app.get('/api/hq/week-board', (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  const cur = mondayOf(etNow()), last = addDaysStr(cur, -7), users = loadUsers(), nm = id => (users.find(u => u.id === id) || {}).name || '', tasks = loadTasks(), packs = loadPacks(), clients = loadClients();
+  const nowET = etNow();
+  const mk = (start) => {
+    const end = addDaysStr(start, 6), out = [];
+    for (const c of clients) {
+      const mine = tasks.filter(t => t.client === c.slug && t.due && t.due >= start && t.due <= end && t.status !== 'dropped');
+      if (!mine.length) continue;
+      const items = mine.map(t => {
+        let pieces = []; if (t.source && t.source.type === 'pack') { const pk = (packs[c.slug] || {})[t.source.week]; if (pk) pieces = (pk.rows || []).filter(r => t.lane === 'content' ? r.type === 'Reel' : t.lane === 'graphics' ? r.type !== 'Reel' : true).map(r => ({ date: r.date, type: r.type, what: String(r.hook || r.idea || '').slice(0, 110) })); }
+        const done = t.status === 'done', todayS = ymdLocal(nowET), late = !done && (t.due < todayS || (t.due === todayS && nowET.getHours() >= 17));
+        return { id: t.id, title: t.title, lane: t.lane, owner: nm(t.owner), due: t.due, status: done ? 'done' : late ? 'late' : 'open', pieces };
+      });
+      const verdict = items.every(i => i.status === 'done') ? 'good' : items.some(i => i.status === 'late') ? 'missing' : 'progress';
+      out.push({ slug: c.slug, name: c.name, logo: c.logo || '', verdict, items });
+    }
+    const rank = { missing: 0, progress: 1, good: 2 }; out.sort((a, b) => rank[a.verdict] - rank[b.verdict] || a.name.localeCompare(b.name));
+    return { start, end, clients: out };
+  };
+  res.json({ weeks: [{ label: 'Due this week', ...mk(cur) }, { label: 'Last week: good to go or missing', ...mk(last) }] });
+});
+
 // Every client at a glance: pieces uploaded this week and last, the next due date, files that need renaming.
 app.get('/api/hq/content-week', async (req, res) => {
   const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });

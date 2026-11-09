@@ -710,15 +710,34 @@
   }
 
 
+
+  function weekBoard() {
+    var w = HQ.wb; if (!w) return '<div class="sk" style="height:120px;margin-bottom:16px"></div>';
+    var VC = { good: ['Good to go', 'var(--ok,#17935f)'], missing: ['Missing', 'var(--bad,#d6342d)'], progress: ['In progress', '#8a94a6'] };
+    return w.weeks.map(function (wk) {
+      var body = wk.clients.length ? wk.clients.map(function (c) {
+        var up = ((HQ.cw && HQ.cw.rows) || []).filter(function (r) { return r.slug === c.slug; })[0], v = VC[c.verdict];
+        var upl = up ? (wk.label.indexOf('Last') === 0 ? up.lastWeek : up.thisWeek) : null;
+        return '<div class="panel" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' + (c.logo ? '<span class="mini-av" style="background-image:url(' + e(c.logo) + ')"></span>' : '') + '<b style="font-size:15px">' + e(c.name) + '</b><span style="font-size:12px;font-weight:700;color:' + v[1] + '">' + v[0] + '</span>' + (upl !== null ? '<span class="hint" style="margin:0">' + upl + ' file' + (upl === 1 ? '' : 's') + ' uploaded to Drive that week</span>' : '') + '</div>' +
+          c.items.map(function (i) {
+            var col = i.status === 'done' ? '#17935f' : i.status === 'late' ? '#d6342d' : '#8a94a6', lbl = i.status === 'done' ? 'Done' : i.status === 'late' ? 'Late' : 'Open';
+            return '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--hair2,#e6e9f0)"><div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><span><b style="color:' + col + '">' + lbl + '</b> · ' + e(i.title) + '</span><span class="hint" style="margin:0">' + e(i.owner || 'Unassigned') + ' · due ' + e(dshort(i.due)) + ' 5 PM</span></div>' +
+              (i.pieces.length ? '<ul style="margin:6px 0 0 18px;padding:0;font-size:13px;color:#4a5468">' + i.pieces.map(function (p) { return '<li>' + e(dshort(p.date)) + ' ' + e(p.type) + (p.what ? ': ' + e(p.what) : '') + '</li>'; }).join('') + '</ul>' : '') + '</div>';
+          }).join('') + '</div>';
+      }).join('') : '<div class="panel"><div class="empty">Nothing was due ' + (wk.label.indexOf('Last') === 0 ? 'last week' : 'this week') + ' yet.</div></div>';
+      return '<h3 style="margin:18px 0 8px">' + e(wk.label) + ' <span class="hint" style="font-weight:400">' + e(dshort(wk.start)) + ' to ' + e(dshort(wk.end)) + '</span></h3>' + body;
+    }).join('');
+  }
   function contentWeek() {
     var d = HQ.cw, head = '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Content</h3><p>What was uploaded each week, what is due, and what is on the film calendar. Every file must be named CLIENT_TYPE_DATE_Subject_LABEL_001.</p></div></div>';
     var shoots = ((HQ.cal && HQ.cal.events) || []).filter(function (x) { return /shoot|film/i.test(x.title + ' ' + x.cal); }).slice(0, 6);
     var sh = '<div class="panel" style="margin-bottom:16px"><h3>' + ico('film') + ' Next on the film calendar</h3>' + (shoots.length ? shoots.map(function (x) { var dt = evDate(x); return '<a class="ag" href="' + e(x.link) + '" target="_blank" rel="noopener" style="grid-template-columns:200px 8px minmax(0,1fr)"><span class="at">' + e(dayLabel(dt)) + (x.allDay ? '' : ', ' + e(dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))) + '</span><i style="background:' + e(x.color || '#e22a24') + '"></i><span class="an">' + e(x.title) + '</span></a>'; }).join('') : '<div class="empty" style="padding:10px 0">' + (HQ.cal && HQ.cal.connected ? 'No shoots on the calendar in the next two weeks.' : 'Connect Google on the Mail page to see filming dates.') + '</div>') + '</div>';
-    if (!d) return head + sh + '<div class="sk" style="height:180px"></div>';
+    var bd = weekBoard();
+    if (!d) return head + sh + bd + '<div class="sk" style="height:180px"></div>';
     if (d.legacy || d.connected === false) return head + sh + '<div class="panel"><div class="empty">' + ico('mail') + 'Connect your Google account on the Mail page to see uploads.</div></div>';
     var st = d.state; if (st && (st.needsDrive || st.error) && !d.rows.length) return head + sh + '<div class="panel"><div class="empty">' + ico('alert') + (st.needsDrive ? (st.apiOff ? 'Google Drive is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Drive API and click Enable.' : 'Drive access was not granted. On the Mail page click Disconnect, then connect Google again and allow Drive.') : e(st.error)) + '</div></div>';
     var tot = d.rows.reduce(function (a, r) { return a + r.thisWeek; }, 0), ren = d.rows.reduce(function (a, r) { return a + r.unnamed; }, 0);
-    return head + sh + '<div class="panel"><h3>Uploads by client</h3><p class="hint">Week of ' + e(dshort(d.thisWk)) + ': <b>' + tot + '</b> piece' + (tot === 1 ? '' : 's') + ' uploaded' + (ren ? ' · <b style="color:var(--bad)">' + ren + ' file' + (ren > 1 ? 's' : '') + ' need renaming</b>' : '') + '</p>' +
+    return head + sh + bd + '<div class="panel"><h3>Uploads by client</h3><p class="hint">Week of ' + e(dshort(d.thisWk)) + ': <b>' + tot + '</b> piece' + (tot === 1 ? '' : 's') + ' uploaded' + (ren ? ' · <b style="color:var(--bad)">' + ren + ' file' + (ren > 1 ? 's' : '') + ' need renaming</b>' : '') + '</p>' +
       '<table class="ttab"><thead><tr><th>Client</th><th>This week</th><th>Last week</th><th>Next due</th><th>Needs rename</th></tr></thead><tbody>' + d.rows.map(function (r) {
         var c = HQ.data.clients.filter(function (x) { return x.slug === r.slug; })[0] || { name: r.name };
         return '<tr class="clk" onclick="hqOpenContent(\'' + e(r.slug) + '\')"><td><div class="nm" style="display:flex;align-items:center;gap:10px">' + (c.logo ? '<span class="mini-av" style="background-image:url(' + e(c.logo) + ')"></span>' : '') + e(r.name) + '</div></td><td><b>' + r.thisWeek + '</b></td><td>' + r.lastWeek + '</td><td>' + (r.nextDue ? e(dshort(r.nextDue)) : '<span class="em">None</span>') + '</td><td>' + (r.unnamed ? '<span class="chip st-ending">' + r.unnamed + '</span>' : '<span class="em">0</span>') + '</td></tr>';
@@ -746,7 +765,7 @@
     else if (key === 'hq:onboarding') el.innerHTML = onboarding();
     else if (key === 'hq:mail') { el.innerHTML = mail(); if (!HQ.mail) { await loadMail(); if (navKey === 'hq:mail') el.innerHTML = mail(); } }
     else if (key === 'hq:how') { if (!HQ.how) { try { HQ.how = await (await fetch('/how.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.how = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.how + '</div>'; }
-    else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
+    else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.wb) { try { HQ.wb = await api('/api/hq/week-board'); } catch (x) { HQ.wb = { weeks: [] }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
     else if (key === 'hq:outreach') el.innerHTML = outreach();
     else if (key === 'hq:team') el.innerHTML = await team();
