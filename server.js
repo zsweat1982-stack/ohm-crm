@@ -2313,7 +2313,8 @@ app.post('/api/login', (req, res) => {
 });
 app.post('/api/logout', (req, res) => { const o = cookieOpts(req); res.setHeader('Set-Cookie', [`ohm_auth=; ${o}; Max-Age=0`, `ohm_sess=; ${o}; Max-Age=0`]); res.json({ ok: true }); });
 
-app.get('/api/me', (req, res) => { const u = authedUser(req); if (!u) return res.status(401).json({ error: 'auth required' }); res.json({ id: u.id, name: u.name, email: u.email, role: u.role, must_change: !!u.must_change, legacy: !!u.legacy }); });
+app.get('/api/me', (req, res) => { const u = authedUser(req); if (!u) return res.status(401).json({ error: 'auth required' }); const full = u.id && u.id !== 'legacy' ? (loadUsers().find(x => x.id === u.id) || {}) : {};
+  res.json({ id: u.id, name: u.name, email: u.email, title: full.title || '', role: u.role, must_change: !!u.must_change, legacy: !!u.legacy }); });
 app.post('/api/me/password', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(401).json({ error: 'Sign in with your own email to change a password.' });
   const { current, next } = req.body || {};
@@ -2331,7 +2332,7 @@ ${u && u.legacy ? '<p>You are signed in with the shared team password. Ask Zac f
 <script>var f=document.getElementById('f');if(f)f.onsubmit=async function(e){e.preventDefault();var r=await fetch('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current:cur.value,next:nw.value})});var j=await r.json();document.getElementById('m').textContent=r.ok?'Saved. Taking you to the CRM...':(j.error||'Could not save.');if(r.ok)setTimeout(function(){location.href='/'},900)}</script>`);
 });
 function requireAdmin(req, res) { const u = authedUser(req); if (u && u.role === 'admin') return u; res.status(403).json({ error: 'Admins only.' }); return null; }
-const pubUser = u => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active !== false, must_change: !!u.must_change, last_login: u.last_login || '' });
+const pubUser = u => ({ id: u.id, name: u.name, email: u.email, title: u.title || '', role: u.role, active: u.active !== false, must_change: !!u.must_change, last_login: u.last_login || '' });
 app.get('/api/admin/users', (req, res) => { if (!requireAdmin(req, res)) return; res.json({ users: loadUsers().map(pubUser) }); });
 app.post('/api/admin/users', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -2340,7 +2341,8 @@ app.post('/api/admin/users', (req, res) => {
   if (!name || !looksLikeEmail(email)) return res.status(400).json({ error: 'Add a name and a valid email.' });
   const users = loadUsers(); if (users.some(x => x.email === email)) return res.status(400).json({ error: 'That email already has a login.' });
   const temp = tempPassword();
-  const u = { id: 'u_' + crypto.randomBytes(4).toString('hex'), email, name, role, active: true, must_change: true, created_at: new Date().toISOString(), ...hashPw(temp) };
+  const title = String((req.body && req.body.title) || '').trim().slice(0, 80);
+  const u = { id: 'u_' + crypto.randomBytes(4).toString('hex'), email, name, title, role, active: true, must_change: true, created_at: new Date().toISOString(), ...hashPw(temp) };
   users.push(u); saveUsers(users); res.json({ user: pubUser(u), temp_password: temp });
 });
 app.post('/api/admin/users/:id/reset', (req, res) => {
@@ -2353,6 +2355,11 @@ app.post('/api/admin/users/:id/active', (req, res) => {
   if (me.id === req.params.id) return res.status(400).json({ error: 'You cannot turn off your own login.' });
   const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
   u.active = !!(req.body && req.body.active); saveUsers(users); res.json({ ok: true });
+});
+app.post('/api/admin/users/:id/title', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
+  u.title = String((req.body && req.body.title) || '').trim().slice(0, 80); saveUsers(users); res.json({ ok: true });
 });
 app.post('/api/admin/users/:id/role', (req, res) => {
   const me = requireAdmin(req, res); if (!me) return;
@@ -3548,6 +3555,8 @@ app.get('/api/gmail/connect', (req, res) => {
 app.get('/api/gmail/callback', async (req, res) => {
   const code = req.query.code;
   if (!code) return res.status(400).send('No code returned.');
+  const stUid = readGmailState(String(req.query.state || ''));
+  if (stUid) return personalGmailCallback(String(code), stUid, res);
   try {
     const body = new URLSearchParams({
       code: String(code), client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET,
@@ -3560,6 +3569,98 @@ app.get('/api/gmail/callback', async (req, res) => {
     console.log('[gmail] connected');
     res.send('<body style="font:16px -apple-system,sans-serif;padding:40px">Gmail connected. Replies will now stop the follow up sequence automatically. You can close this tab.</body>');
   } catch (e) { res.status(500).send('Failed: ' + e.message); }
+});
+
+
+// ---------- Personal Gmail: each person connects their own, we show mail from client addresses ----------
+const GMAIL_USERS_FILE = path.join(DATA_DIR, 'gmail_users.json');
+function gUsers() { return readJson(GMAIL_USERS_FILE, {}); }
+function saveGUsers(o) { fs.writeFileSync(GMAIL_USERS_FILE, JSON.stringify(o), { mode: 0o600 }); }
+function signGmailState(uid) { const body = `u.${uid}.${Date.now()}`; return body + '.' + crypto.createHmac('sha256', SESS_SECRET).update(body).digest('hex').slice(0, 32); }
+function readGmailState(st) {
+  const m = /^u\.(u_[a-f0-9]+)\.(\d+)\.([a-f0-9]{32})$/.exec(st || ''); if (!m) return null;
+  const want = crypto.createHmac('sha256', SESS_SECRET).update(`u.${m[1]}.${m[2]}`).digest('hex').slice(0, 32);
+  if (!crypto.timingSafeEqual(Buffer.from(m[3]), Buffer.from(want)) || Date.now() - +m[2] > 15 * 60e3) return null;
+  return m[1];
+}
+app.get('/api/me/gmail/connect', (req, res) => {
+  const me = authedUser(req);
+  if (!me || me.legacy) return res.status(400).send('Sign in with your own email first (not the shared password).');
+  if (!GOOGLE_CLIENT_ID) return res.status(400).send('Google is not set up on this service yet (GOOGLE_CLIENT_ID).');
+  const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  u.searchParams.set('client_id', GOOGLE_CLIENT_ID); u.searchParams.set('redirect_uri', GMAIL_REDIRECT);
+  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly');
+  u.searchParams.set('access_type', 'offline'); u.searchParams.set('prompt', 'consent');
+  u.searchParams.set('state', signGmailState(me.id)); if (me.email) u.searchParams.set('login_hint', me.email);
+  res.redirect(u.toString());
+});
+async function personalGmailCallback(code, uid, res) {
+  try {
+    const body = new URLSearchParams({ code, client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, redirect_uri: GMAIL_REDIRECT, grant_type: 'authorization_code' });
+    const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body }); const j = await r.json();
+    if (!j.refresh_token) return res.status(400).send('Google did not return access. Remove the app at myaccount.google.com/permissions and try again.');
+    const pr = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: 'Bearer ' + j.access_token } }); const pj = await pr.json().catch(() => ({}));
+    const all = gUsers(); all[uid] = { refresh_token: j.refresh_token, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000, account: pj.emailAddress || '' };
+    saveGUsers(all); mailCache.delete(uid);
+    res.send(`<body style="font:16px -apple-system,sans-serif;padding:40px;max-width:520px">Your Gmail is connected. You can close this tab and go back to the CRM, then open <b>Mail</b>.<br><br><a href="${CRM_URL}/">Open the CRM</a></body>`);
+  } catch (e) { res.status(500).send('Failed: ' + e.message); }
+}
+async function userGmailToken(uid) {
+  const all = gUsers(), t = all[uid]; if (!t || !t.refresh_token) return null;
+  if (t.access_token && t.expires_at && Date.now() < t.expires_at - 60000) return t.access_token;
+  const body = new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, refresh_token: t.refresh_token, grant_type: 'refresh_token' });
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
+  if (!r.ok) { console.error('[gmail-user] refresh failed', r.status); return null; }
+  const j = await r.json(); all[uid] = { ...t, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 }; saveGUsers(all); return j.access_token;
+}
+const mailCache = new Map();
+const AUTOMATED = /(no-?reply|donotreply|do-not-reply|notifications?@|mailer-daemon|postmaster|bounce|newsletter|marketing@|updates@|support@(?:google|facebook|meta))/i;
+async function mailFor(uid) {
+  const hit = mailCache.get(uid); if (hit && Date.now() - hit.at < 180e3) return hit.data;
+  const tok = await userGmailToken(uid); if (!tok) return { connected: false };
+  const auth = { Authorization: 'Bearer ' + tok };
+  const clients = loadClients().filter(c => c.status !== 'internal');
+  const byDom = new Map(), byAddr = new Map(), terms = [];
+  for (const c of clients) for (const d of (c.domains || [])) { const x = String(d).toLowerCase().trim(); if (!x) continue; if (x.includes('@')) { byAddr.set(x, c); terms.push(x); } else { byDom.set(x, c); terms.push('@' + x); } }
+  const base = 'newer_than:14d -in:sent -in:chats -in:drafts';
+  const lists = [`${base}`]; if (terms.length) lists.push(`${base} from:(${terms.join(' OR ')})`);
+  const ids = new Map();
+  for (const q of lists) {
+    const lr = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${q === base ? 60 : 50}&q=${encodeURIComponent(q)}`, { headers: auth });
+    if (!lr.ok) throw new Error('Gmail list failed ' + lr.status);
+    for (const m of ((await lr.json()).messages || [])) ids.set(m.id, m.threadId);
+  }
+  const arr = [...ids.entries()], msgs = [];
+  for (let i = 0; i < arr.length; i += 10) {
+    await Promise.all(arr.slice(i, i + 10).map(async ([id, threadId]) => {
+      const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, { headers: auth });
+      if (!r.ok) return; const d = await r.json();
+      const h = Object.fromEntries((d.payload && d.payload.headers || []).map(x => [x.name.toLowerCase(), x.value]));
+      const m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(h.from || ''); const addr = String((m ? m[2] : h.from) || '').toLowerCase().trim(); const name = (m && m[1].trim()) || addr;
+      msgs.push({ id, threadId, addr, name, subject: h.subject || '(no subject)', snippet: d.snippet || '', date: Number(d.internalDate) || 0, unread: (d.labelIds || []).includes('UNREAD') });
+    }));
+  }
+  const own = /@openheartmediaco\.com$/i; const matched = [], unm = new Map();
+  for (const x of msgs) {
+    const dom = x.addr.split('@')[1] || ''; if (!dom) continue;
+    let c = byAddr.get(x.addr) || byDom.get(dom); if (!c) for (const [k, v] of byDom) if (dom.endsWith('.' + k)) { c = v; break; }
+    if (c) { matched.push({ id: x.id, thread: x.threadId, name: x.name, addr: x.addr, subject: x.subject, snippet: x.snippet.slice(0, 160), date: x.date, unread: x.unread, client: { slug: c.slug, name: c.name } }); continue; }
+    if (own.test(x.addr) || FREEMAIL.test(dom) || AUTOMATED.test(x.addr)) continue;
+    const u = unm.get(dom) || { domain: dom, count: 0, example: x.subject, from: x.name }; u.count++; unm.set(dom, u);
+  }
+  matched.sort((a, b) => b.date - a.date);
+  const data = { connected: true, account: (gUsers()[uid] || {}).account || '', matched: matched.slice(0, 60), unread: matched.filter(m => m.unread).length,
+    unmatched: [...unm.values()].sort((a, b) => b.count - a.count).slice(0, 12) };
+  mailCache.set(uid, { at: Date.now(), data }); return data;
+}
+app.get('/api/me/mail', async (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  if (me.legacy) return res.json({ connected: false, legacy: true });
+  try { res.json({ ...(await mailFor(me.id)), configured: !!GOOGLE_CLIENT_ID }); } catch (e) { res.json({ connected: !!gUsers()[me.id], error: e.message.slice(0, 160), configured: !!GOOGLE_CLIENT_ID }); }
+});
+app.post('/api/me/gmail/disconnect', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
+  const all = gUsers(); delete all[me.id]; saveGUsers(all); mailCache.delete(me.id); res.json({ ok: true });
 });
 
 const STOP_RE = /^\s*(stop|unsubscribe|remove me|take me off|opt out|no thanks,? ?stop)\b/i;
@@ -4458,30 +4559,37 @@ async function provisionBasecamp(row) {
 // ---------- Open Heart Media CRM: client hub (Home, Clients, Onboarding) ----------
 const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
 const CLIENT_SEED = [
-  { slug: 'sun-and-shield', name: 'Sun and Shield', status: 'active', services: ['Website', 'Ads', 'Social', 'CRM'], match: ['sun and shield', 'sun & shield'] },
-  { slug: 'matchett-homes', name: 'Matchett Homes', status: 'active', services: ['Website', 'Ads', 'Social'], match: ['matchett'] },
-  { slug: 'ifab', name: 'iFab', status: 'active', services: ['Website', 'Social'], match: ['ifab'] },
-  { slug: 'vnphc', name: 'Visiting Nurse', status: 'active', services: ['Website', 'Ads'], match: ['vnphc', 'visiting nurse'] },
-  { slug: 'adnormous', name: 'Adnormous', status: 'active', services: ['Website', 'Ads'], match: ['adnormous'] },
-  { slug: 'cisga', name: 'CISGA', status: 'active', services: ['Website', 'Social'], match: ['cisga', 'communities in school'] },
-  { slug: 'nitro', name: 'Nitro', status: 'active', services: ['Social', 'Ads'], match: ['nitro', 'nitro pro racing'] },
-  { slug: 'bkvf', name: 'Brothers Keeper', status: 'ads_off', services: ['Social'], match: ['bkvf', 'brothers keeper'] },
-  { slug: 'urc', name: 'Universal Roofing & Construction', status: 'active', services: ['Social'], match: ['urc', 'universal roofing'] },
-  { slug: 'open-heart-media', name: 'Open Heart Media', status: 'internal', services: ['Our own marketing'], match: ['open heart media'] },
-  { slug: 'abls', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: ['Ads'], match: ['best lighting', 'abls'] },
-  { slug: 'nabs', name: 'North Atlanta Birth Services', status: 'ending', note: 'Ending Nov 25.', services: ['Ads'], match: ['nabs', 'north atlanta birth'] },
-].map(c => ({ website_owner: 'Frank', ads_owner: 'Ariel', ...c }));
+  { slug: 'sun-and-shield', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
+  { slug: 'matchett-homes', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
+  { slug: 'ifab', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
+  { slug: 'vnphc', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
+  { slug: 'adnormous', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
+  { slug: 'cisga', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
+  { slug: 'nitro', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
+  { slug: 'bkvf', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
+  { slug: 'urc', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
+  { slug: 'open-heart-media', name: 'Open Heart Media', status: 'internal', services: [], match: ['open heart media'] },
+  { slug: 'abls', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
+  { slug: 'nabs', name: 'North Atlanta Birth Services', status: 'ending', note: 'Ending Nov 25.', services: [], match: ['nabs', 'north atlanta birth'] },
+  { slug: 'sm-crocker', name: 'S.M Crocker', status: 'active', kind: 'website', services: [], match: ['crocker'] },
+  { slug: 'jl-adams', name: 'JL Adams Inc.', status: 'active', kind: 'website', services: [], match: ['jl adams'] },
+  { slug: 'ts-wiring', name: 'TS Wiring', status: 'active', kind: 'website', services: [], match: ['ts wiring'] },
+  { slug: 'carver-plumbing', name: 'Carver Plumbing', status: 'active', kind: 'website', services: [], match: ['carver plumbing'] },
+  { slug: 'ontraxx', name: 'OnTraxx', status: 'returning', kind: 'returning', note: 'Coming back.', services: [], match: ['ontraxx'] },
+  { slug: 'zach-haines', name: 'Zach Haines', status: 'proposal', kind: 'proposal', note: 'Proposal pending approval.', services: [], match: ['zach haines'] },
+].map(c => ({ website_owner: '', ads_owner: '', account_owner: '', kind: 'retainer', domains: [], ...c }));
 function loadClients() {
   let c = readJson(CLIENTS_FILE, null);
   if (!c) { c = CLIENT_SEED; try { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c, null, 2)); } catch {} }
   // keep match names fresh: add any new names from the built-in list to a saved client
-  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; } }
+  for (const sd of CLIENT_SEED) { if (!c.find(y => y.slug === sd.slug)) c.push({ ...sd }); }
+  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
   // clients that only exist because they submitted the onboarding form
   const known = new Set(c.map(x => x.slug));
   for (const r of loadOnboarding()) {
     if (r.client && r.client !== 'unassigned' && !known.has(r.client)) {
       known.add(r.client);
-      c.push({ slug: r.client, name: r.business || r.client, status: 'onboarding', services: [], match: [String(r.business || r.client).toLowerCase()], website_owner: 'Frank', ads_owner: 'Ariel' });
+      c.push({ slug: r.client, name: r.business || r.client, status: 'onboarding', services: [], kind: 'retainer', match: [String(r.business || r.client).toLowerCase()], website_owner: '', ads_owner: '', account_owner: '' });
     }
   }
   return c;
@@ -4549,6 +4657,23 @@ app.post('/api/hq/client/:slug/link', (req, res) => {
   const all = loadClients(); const c = all.find(x => x.slug === req.params.slug);
   if (!c) return res.status(404).json({ error: 'Unknown client.' });
   c.bc_project_id = pid; c.saved = true; saveClients(all); workCache.delete(c.slug); res.json({ ok: true });
+});
+app.put('/api/hq/client/:slug', (req, res) => {
+  const me = requireAdmin(req, res); if (!me) return;
+  const all = loadClients(); const c = all.find(x => x.slug === req.params.slug);
+  if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  const b = req.body || {};
+  const SERV = ['Website', 'Local SEO and Google profile', 'Paid ads', 'Social content', 'Video and photo', 'Email and SMS', 'CRM'];
+  const KINDS = ['retainer', 'website', 'returning', 'proposal'];
+  const STAT = ['active', 'ending', 'seasonal', 'ads_off', 'onboarding', 'internal', 'returning', 'proposal'];
+  if (KINDS.includes(b.kind)) c.kind = b.kind;
+  if (STAT.includes(b.status)) c.status = b.status;
+  if (Array.isArray(b.services)) c.services = b.services.filter(x => SERV.includes(x));
+  for (const k of ['website_owner', 'ads_owner', 'account_owner']) if (typeof b[k] === 'string') c[k] = b[k].slice(0, 80);
+  if (typeof b.note === 'string') c.note = b.note.slice(0, 300);
+  if (Array.isArray(b.domains)) c.domains = Array.from(new Set(b.domains.map(x => String(x).toLowerCase().trim()).filter(x => /^[a-z0-9.@_+-]{3,80}$/.test(x)))).slice(0, 12);
+  c.edited = true; c.saved = true; saveClients(all); workCache.delete(c.slug);
+  res.json({ ok: true });
 });
 app.get('/api/hq/refresh', (req, res) => { if (!teamOnly(req, res)) return; workCache.clear(); bcProjCache = { at: 0, list: [] }; res.json({ ok: true }); });
 
