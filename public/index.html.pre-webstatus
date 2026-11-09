@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<title>Open Heart Media — Outreach Dashboard</title>
+<style>
+  :root{
+    --ink:#0b1220; --nav:#0f1b30; --nav2:#16243d; --navtxt:#8fa3c0;
+    --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f6; --line:#e4e8ef; --line2:#d4dae4;
+    --txt:#111a2b; --mut:#6b7789; --red:#e22a24; --accent:#2f6fd0;
+    --green:#1c7a52; --amber:#b3730c; --purple:#6b5bd2;
+    --sh:0 1px 2px rgba(11,18,32,.05),0 6px 18px -12px rgba(11,18,32,.22);
+    --r:10px; --sb:236px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.55 "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex}
+  button{font:inherit;cursor:pointer}
+  input,select,textarea{font:inherit}
+
+  /* ---------- sidebar ---------- */
+  .sb{width:var(--sb);flex:0 0 var(--sb);background:var(--nav);color:#fff;display:flex;flex-direction:column;
+      position:sticky;top:0;height:100vh;z-index:30}
+  .sb-top{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .sb-top img{height:26px;display:block}
+  .sb-top .tag{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--navtxt);margin-top:9px}
+  .sb-nav{padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
+  .sb-sec{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#5b6c88;padding:14px 10px 6px}
+  .nv{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;color:#c3d0e4;
+      font-size:13.5px;font-weight:500;border:0;background:none;text-align:left;width:100%;position:relative}
+  .nv:hover{background:rgba(255,255,255,.07);color:#fff}
+  .nv.on{background:rgba(255,255,255,.11);color:#fff;font-weight:600}
+  .nv.on::before{content:"";position:absolute;left:-10px;top:8px;bottom:8px;width:3px;background:var(--red);border-radius:0 3px 3px 0}
+  .nv .ic{width:17px;text-align:center;flex:none;opacity:.9;font-size:14px}
+  .nv .n{margin-left:auto;font-size:11px;font-weight:700;color:#8fa3c0;background:rgba(255,255,255,.09);
+         padding:1px 7px;border-radius:20px;font-variant-numeric:tabular-nums}
+  .nv.on .n{background:rgba(255,255,255,.18);color:#fff}
+  .sb-foot{padding:12px;border-top:1px solid rgba(255,255,255,.08)}
+  .sb-foot button{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);
+      color:#c3d0e4;font-size:12.5px;padding:8px;border-radius:8px}
+  .sb-foot button:hover{background:rgba(255,255,255,.12);color:#fff}
+
+  /* ---------- main ---------- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .top{height:62px;flex:0 0 62px;background:var(--panel);border-bottom:1px solid var(--line);
+       display:flex;align-items:center;gap:12px;padding:0 22px;position:sticky;top:0;z-index:20}
+  .top h1{font-size:16.5px;font-weight:700;letter-spacing:-.01em;margin:0}
+  .search{position:relative;flex:1;max-width:400px;margin-left:8px}
+  .search input{width:100%;padding:8px 12px 8px 33px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+  .search input:focus{outline:none;border-color:var(--accent);background:#fff}
+  .search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:15px;height:15px;opacity:.42}
+  .top .sp{margin-left:auto}
+  button{background:#fff;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 13px;font-size:13px;font-weight:500}
+  button:hover{border-color:var(--line2)}
+  button.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+  button.primary:hover{background:#1b2740}
+  button.green{background:var(--green);border-color:var(--green);color:#fff;font-weight:600}
+  button.red{background:var(--red);border-color:var(--red);color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  select{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--txt)}
+
+  .sub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .viewtabs{display:inline-flex;background:var(--panel2);border-radius:8px;padding:3px;gap:3px}
+  .viewtabs button{border:0;background:none;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:600;color:var(--mut)}
+  .viewtabs button.on{background:#fff;color:var(--ink);box-shadow:var(--sh)}
+  .muted{color:var(--mut);font-size:12.5px}
+
+  /* ---------- metric cards ---------- */
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:12px;padding:16px 22px 4px}
+  .m{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px;box-shadow:var(--sh)}
+  .m i{font-style:normal;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);display:block}
+  .m b{display:block;font-size:24px;font-weight:700;letter-spacing:-.025em;margin-top:5px;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .m.good b{color:var(--green)} .m.bad b{color:var(--red)} .m.warn b{color:var(--amber)}
+  .metrics a{display:none}
+
+  /* ---------- pipeline ---------- */
+  .deadbar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:11px 22px;font-size:12px;color:var(--mut)}
+  .deadbar b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+  .deadbar .dchip{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer;box-shadow:var(--sh)}
+  .deadbar .dchip:hover{border-color:var(--accent)}
+  .board{display:flex;gap:13px;overflow-x:auto;padding:6px 22px 40px;align-items:flex-start;flex:1}
+  .col{flex:0 0 268px;background:var(--panel2);border-radius:12px;padding:10px;max-height:calc(100vh - 290px);display:flex;flex-direction:column}
+  .col.inbound{background:#fdecea;box-shadow:inset 0 3px 0 var(--red)}
+  .colhead{display:flex;align-items:center;gap:8px;padding:3px 5px 2px}
+  .colhead .ct{font-size:12.5px;font-weight:700;color:var(--ink);letter-spacing:-.005em}
+  .colhead .cn{margin-left:auto;background:#fff;border:1px solid var(--line);border-radius:20px;font-size:11px;
+       font-weight:700;color:var(--mut);padding:1px 8px;font-variant-numeric:tabular-nums}
+  .col.inbound .cn{border-color:#f2b7b3;color:var(--red)}
+  .col.giveaway{background:#e8f0fb;box-shadow:inset 0 3px 0 #2b6cd9}
+  .col.giveaway .cn{border-color:#b6cdf2;color:#2b6cd9}
+  .colhint{font-size:10.5px;color:var(--mut);padding:3px 5px 9px}
+  .colbody{overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:1px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:9px;padding:11px 12px;cursor:pointer;
+        transition:.12s;box-shadow:0 1px 2px rgba(11,18,32,.05)}
+  .card:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(11,18,32,.35)}
+  .card .cb{font-weight:650;color:var(--ink);font-size:13px;line-height:1.3}
+  .card .cs{font-size:11.5px;color:var(--mut);margin-top:3px}
+  .card .cf{display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .src{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#fdecea;color:var(--red)}
+  .days{font-size:10.5px;color:var(--mut);background:var(--panel2);border-radius:5px;padding:2px 6px;font-variant-numeric:tabular-nums}
+  .days.stale{background:#fdf3e2;color:var(--amber);font-weight:600}
+  .own{width:20px;height:20px;border-radius:50%;background:var(--ink);color:#fff;font-size:9px;font-weight:700;
+       display:grid;place-items:center;letter-spacing:.02em}
+  .card .cv{margin-left:auto;font-weight:700;color:var(--ink);font-size:12px;font-variant-numeric:tabular-nums}
+  .colempty{font-size:12px;color:var(--mut);padding:9px 5px;font-style:italic}
+
+  /* ---------- table ---------- */
+  .wrap{padding:6px 22px 50px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);padding:10px 13px;border-bottom:1px solid var(--line);background:var(--panel2)}
+  td{padding:11px 13px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr{cursor:pointer} tbody tr:hover td{background:#fafbfd}
+  tbody tr:last-child td{border-bottom:none}
+  .biz{font-weight:650;color:var(--ink)}
+  .sub2,.sub{color:var(--mut);font-size:12px}
+  .pill{font-size:10px;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;display:inline-block}
+  .s-new{background:#eef1f6;color:#6b7789} .s-drafted{background:#efeaff;color:#6b5bd2}
+  .s-approved{background:#e2f5ea;color:#1c7a52} .s-sent{background:#e8effc;color:#2f6fd0}
+  .s-clicked{background:#f2e9fb;color:#8a5bd2} .s-audited{background:#e6f5fb;color:#2b8fc0}
+  .s-replied{background:#fdf3e2;color:#b3730c} .s-booked{background:#e0f3e8;color:#1c7a52}
+  .s-won{background:#1c7a52;color:#fff} .s-lost{background:#eceff3;color:#8a94a6}
+  .s-rejected{background:#fdecea;color:#e22a24} .s-subscriber{background:#e6f5fb;color:#2b8fc0}
+  .s-lead{background:#fdf3e2;color:#b3730c} .s-unreachable{background:#eceff3;color:#8a94a6}
+  .warn{color:var(--red);font-size:12px} .handled{font-size:11px;color:var(--green);font-weight:600}
+  input,textarea{width:100%;background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px}
+  input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{min-height:70px;resize:vertical}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--ink);color:#fff;padding:12px 16px;border-radius:9px;
+     opacity:0;transition:.3s;box-shadow:0 12px 30px rgba(11,18,32,.3);z-index:100}
+  .toast.show{opacity:1}
+
+  /* ---------- drawer ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(11,18,32,.42);opacity:0;pointer-events:none;transition:.25s;z-index:40}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--bg);
+     box-shadow:-12px 0 40px rgba(11,18,32,.22);transform:translateX(100%);
+     transition:transform .28s cubic-bezier(.16,1,.3,1);z-index:41;display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  #drawerContent{display:flex;flex-direction:column;height:100%;min-height:0}
+  .dhead{background:var(--nav);color:#fff;padding:20px 24px 18px;position:relative;flex:0 0 auto}
+  .dhead::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--red)}
+  .dhead h2{margin:0;font-size:19px} .dhead .dsub{color:var(--navtxt);font-size:13px;margin-top:3px}
+  .dclose{position:absolute;top:16px;right:18px;background:rgba(255,255,255,.12);border:0;color:#fff;width:30px;height:30px;border-radius:8px;font-size:17px}
+  .dbody{padding:20px 24px;overflow-y:auto;flex:1 1 auto;min-height:0}
+  .dbody .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;cursor:default;box-shadow:none}
+  .dbody .card:hover{transform:none;border-color:var(--line);box-shadow:none}
+  .dbody .card h4{margin:0 0 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut)}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:13px}
+  .kv span{color:var(--mut)} .kv b{font-weight:600;text-align:right;word-break:break-word}
+  .actions{display:flex;gap:8px;flex-wrap:wrap} .actions button{flex:1;min-width:120px}
+  .row2{display:flex;gap:10px} .row2>div{flex:1}
+  .fld label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin-bottom:5px}
+  .timeline{position:relative;padding-left:18px}
+  .timeline .ev{position:relative;padding:0 0 12px 4px;font-size:13px}
+  .timeline .ev::before{content:"";position:absolute;left:-14px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .timeline .ev:not(:last-child)::after{content:"";position:absolute;left:-11px;top:13px;bottom:-2px;width:2px;background:var(--line)}
+  @media(max-width:900px){
+    :root{--sb:60px}
+    .sb-top .tag,.nv .t,.nv .n,.sb-sec,.sb-foot button span{display:none}
+    .sb-top img{height:22px} .nv{justify-content:center;padding:10px 0}
+  }
+</style>
+</head>
+<body>
+<aside class="sb">
+  <div class="sb-top">
+    <img src="/media/logo-white.png" alt="Open Heart Media"/>
+    <div class="tag">Outreach CRM</div>
+  </div>
+  <nav class="sb-nav" id="sbnav"></nav>
+  <div class="sb-foot"><button onclick="logout()"><span>Log out</span></button></div>
+</aside>
+
+<div class="main">
+  <div class="top">
+    <h1 id="viewTitle">Pipeline</h1>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" placeholder="Search business, city, email, category" oninput="render()"/>
+    </div>
+    <span class="sp"></span>
+    <button id="autosendBtn" onclick="toggleAutosend()" title="Automatic daily sending">checking…</button>
+    <button onclick="rescanNext()" title="Re-run the audit scan for the next 40 leads the daily sender will email">Rescan next 40</button>
+    <button class="primary" onclick="generateAll()">Draft next 25</button>
+    <button class="green" onclick="sendApproved()">Send approved</button>
+  </div>
+
+  <div class="sub">
+    <span class="viewtabs"><button id="tabBoard" class="on" onclick="setView('board')">Pipeline</button><button id="tabTable" onclick="setView('table')">Table</button></span>
+    <label class="muted">Filter
+      <select id="filter" onchange="render()">
+        <option value="all">All</option>
+        <option value="needsresponse">Needs response</option>
+        <option value="new">New</option><option value="drafted">Drafted</option>
+        <option value="approved">Approved</option><option value="sent">Sent</option>
+        <option value="clicked">Clicked</option><option value="audited">Audited</option>
+        <option value="audit_requested">Audit started</option>
+        <option value="audit_failed">Audit failed</option><option value="audit_held">Audit held</option>
+        <option value="subscriber">Guide subscriber</option><option value="lead">Form lead</option>
+        <option value="replied">Replied</option><option value="booked">Booked</option>
+        <option value="won">Won</option><option value="lost">Lost</option>
+        <option value="rejected">Rejected</option><option value="unreachable">Unreachable</option>
+        <option value="needsemail">Missing email</option>
+      </select>
+    </label>
+    <span class="muted" id="capnote"></span>
+    <span class="sp" style="margin-left:auto"></span>
+    <span class="muted" id="stats" style="display:none"></span>
+  </div>
+
+  <div class="metrics" id="metrics"></div>
+  <div class="deadbar" id="deadbar"></div>
+<div class="board" id="board"></div>
+<div class="wrap" id="tablewrap" style="display:none">
+  <table>
+    <thead><tr><th>Business</th><th>Email</th><th>Status</th><th>On it</th><th>Value</th><th>Updated</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+</div>
+
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer"><div id="drawerContent"></div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function logout(){ fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login'); }
+
+/* ---------- sidebar ---------- */
+// The nav doubles as the count of everything, so the shape of the business is readable
+// without opening a single view.
+const NAV = [
+  ['Pipeline', [
+    ['board',       '\u25A6', 'Pipeline',       null],
+    ['giveaway',    '\u{1F381}', 'Giveaway',       p => p.source==='giveaway'],
+    ['inbound',     '\u2605', 'Inbound',        p => isInbound(p)],
+    ['sent',        '\u2709', 'Awaiting reply', p => p.status==='sent'],
+    ['replied',     '\u21A9', 'Replied',        p => p.status==='replied'],
+    ['booked',      '\u2713', 'Booked',         p => p.status==='booked'],
+    ['won',         '\u2691', 'Won',            p => p.status==='won'],
+  ]],
+  ['List', [
+    ['all',         '\u2261', 'All leads',      p => true],
+    ['new',         '\u25CB', 'Queue',          p => p.status==='new'],
+    ['drafted',     '\u270E', 'Drafted',        p => p.status==='drafted'],
+    ['unreachable', '\u2298', 'Unreachable',    p => p.status==='unreachable'],
+    ['rejected',    '\u2715', 'Rejected',       p => p.status==='rejected'],
+  ]],
+];
+let navKey = 'board';
+function renderNav(){
+  const live = state.prospects.filter(p => !p.internal && p.status !== 'test');
+  document.getElementById('sbnav').innerHTML = NAV.map(([sec, items]) =>
+    `<div class="sb-sec">${sec}</div>` + items.map(([k, ic, label, fn]) => {
+      const n = fn ? live.filter(fn).length : null;
+      return `<button class="nv${navKey===k?' on':''}" onclick="navTo('${k}')">
+        <span class="ic">${ic}</span><span class="t">${label}</span>
+        ${n!==null?`<span class="n">${n}</span>`:''}</button>`;
+    }).join('')
+  ).join('');
+}
+function navTo(k){
+  navKey = k;
+  const titles = {board:'Pipeline', giveaway:'Giveaway', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
+                  booked:'Booked', won:'Won', all:'All leads', new:'Queue', drafted:'Drafted',
+                  unreachable:'Unreachable', rejected:'Rejected'};
+  document.getElementById('viewTitle').textContent = titles[k] || 'Pipeline';
+  if (k==='board'){ document.getElementById('filter').value='all'; setView('board'); }
+  else if (k==='inbound' || k==='giveaway'){ document.getElementById('filter').value='all'; setView('board'); }
+  else { document.getElementById('filter').value = (k==='all'?'all':k); setView('table'); }
+  renderNav();
+}
+
+let state = { prospects: [], counts: {}, sentToday: 0, dailyCap: 40, team: ['Zac','Michelle'], wonValue:0, openValue:0 };
+let openId = null;
+
+async function api(url, method='GET', body) {
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined });
+  if (!r.ok) { const e = await r.json().catch(()=>({error:'error'})); throw new Error(e.error||'error'); }
+  return r.json();
+}
+function toast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function money(n){ n=Number(n)||0; return n? '$'+n.toLocaleString() : ''; }
+function ago(iso){ if(!iso) return ''; const d=(Date.now()-new Date(iso))/86400000; if(d<1) return 'today'; if(d<2) return 'yesterday'; return Math.floor(d)+'d ago'; }
+function when(iso){ if(!iso) return ''; return new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+
+async function load() {
+  state = await api('/api/prospects');
+  renderStats(); renderNav(); render(); loadMetrics(); loadAutosend();
+  if (openId) { const p = state.prospects.find(x=>x.id===openId); if(p) renderDrawer(p); }
+}
+// Automatic sending had two switches and no display. AUTOSEND is an environment
+// variable read once at boot, so changing it means a Render visit and a redeploy. The
+// pause file is the fast one and survives restarts, but nothing showed it, so the only
+// honest answer to "is this sending tomorrow?" was to read the server logs. This puts
+// the real state on the screen and makes the fast switch clickable.
+let autosendState = null;
+async function loadAutosend() {
+  const b = document.getElementById('autosendBtn');
+  try {
+    const s = await api('/api/autosend-status');
+    autosendState = s;
+    if (!s.enabled) {
+      b.textContent = '🚫 Autosend off (Render)';
+      b.title = 'AUTOSEND is not set to 1 in the environment. Set it there to allow sending at all.';
+      b.disabled = true;
+    } else if (s.paused) {
+      b.textContent = '⏸️ Paused — click to resume';
+      b.title = (s.pausedReason ? 'Reason: ' + s.pausedReason + '\n' : '') + 'Sending is held. Click to resume.';
+      b.disabled = false;
+    } else {
+      b.textContent = '▶️ Sending daily — click to pause';
+      b.title = 'Sends ' + s.window + '. Cold left today: ' + s.coldBudgetLeft + '.';
+      b.disabled = false;
+    }
+  } catch (e) { b.textContent = '⚠️ Autosend unknown'; b.disabled = true; }
+}
+async function rescanNext() {
+  if (!confirm('Re-run the audit scan for the next 40 leads that will be emailed? It runs in the background and uses API credits.')) return;
+  try {
+    const r = await api('/api/prescan', 'POST', { limit: 40, force: true, mailableOnly: true });
+    toast('Rescan started for ' + (r.queued || 0) + ' leads');
+  } catch (e) { toast('Could not start the rescan: ' + (e.message || e)); }
+}
+
+async function toggleAutosend() {
+  if (!autosendState || !autosendState.enabled) return;
+  const pausing = !autosendState.paused;
+  let reason = '';
+  if (pausing) {
+    reason = prompt('Pause automatic sending. Why? (shows in the log)', '') || '';
+  } else if (!confirm('Resume automatic daily sending?')) return;
+  try {
+    await api('/api/autosend-pause', 'POST', { paused: pausing, reason });
+    await loadAutosend();
+    toast(pausing ? 'Automatic sending paused' : 'Automatic sending resumed');
+  } catch (e) { toast(e.message); }
+}
+async function loadMetrics() {
+  try {
+    const m = await api('/api/metrics'); const t = m.totals;
+    document.getElementById('metrics').innerHTML =
+      `<div class="m"><i>Emails sent</i><b>${t.sent}</b></div>`
+    + `<div class="m"><i>Delivered</i><b>${t.delivered!=null?t.delivered:t.sent}</b></div>`
+    + `<div class="m${(t.bounceRate||0)>=5?' bad':''}"><i>Bounced</i><b>${t.bounced||0}${t.sent?' ('+(t.bounceRate||0)+'%)':''}</b></div>`
+    + `<div class="m"><i>Report opened</i><b>${t.uniqueVisitors}</b></div>`
+    + `<div class="m"><i>Book clicks</i><b>${t.clicks}</b></div>`
+    + `<div class="m${(t.booked||0)?' good':' warn'}"><i>Calls booked</i><b>${t.booked||0}</b></div>`
+    + `<div class="m"><i>Open rate</i><b>${t.visitRate!=null?t.visitRate:0}%</b></div>`
+    + `<a href="/go?ref=PREVIEW" target="_blank">↗ View the live landing page</a>`;
+  } catch(e){}
+}
+function renderStats() {
+  const c = state.counts;
+  const order = [['new','New'],['drafted','Drafted'],['approved','Approved'],['sent','Sent'],['replied','Replied'],['booked','Booked']];
+  let h = order.map(([k,l])=>`<div class="stat">${l}<b>${c[k]||0}</b></div>`).join('');
+  h += `<div class="stat win">Won<b>${c.won||0}</b></div>`;
+  h += `<div class="stat val">Pipeline<b>${money(state.openValue)||'$0'}</b></div>`;
+  h += `<div class="stat val">Won $<b>${money(state.wonValue)||'$0'}</b></div>`;
+  document.getElementById('stats').innerHTML = h;
+  document.getElementById('capnote').textContent = `Sent today ${state.sentToday}/${state.dailyCap}. ${Math.max(0,state.dailyCap-state.sentToday)} sends left.`;
+}
+function needsResponse(p){ return p.status==='replied' || (p.status==='booked' && !p.handled_by); }
+/* ---------- Pipeline board ---------- */
+let view = 'board';
+function setView(v){
+  view = v;
+  document.getElementById('tabBoard').classList.toggle('on', v==='board');
+  document.getElementById('tabTable').classList.toggle('on', v==='table');
+  document.getElementById('board').style.display = v==='board' ? 'flex' : 'none';
+  document.getElementById('tablewrap').style.display = v==='table' ? 'block' : 'none';
+  document.getElementById('deadbar').style.display = v==='board' ? 'flex' : 'none';
+  render();
+}
+// Somebody who came to us, and who we have never cold emailed. Both halves matter: a cold
+// prospect who later got audited is still a cold prospect, and our own team testing is neither.
+function isInbound(p){
+  if (p.internal || p.status==='test') return false;
+  if (p.source==='giveaway') return false;     // giveaway entries have their own column
+  if (p.sent_at) return false;
+  return ['guide','website-form','self_serve'].includes(p.source)
+      || ['subscriber','lead','audit_requested','audited'].includes(p.status);
+}
+const COLS = [
+  {k:'giveaway',label:'Giveaway',  hint:'Entered the Content Day giveaway'},
+  {k:'inbound', label:'Inbound',   hint:'They came to you'},
+  {k:'queue',   label:'Queue',     hint:'Drafted and approved'},
+  {k:'sent',    label:'Awaiting reply', hint:'Emailed, nothing back yet'},
+  {k:'engaged', label:'Engaged',   hint:'Opened or clicked'},
+  {k:'replied', label:'Replied',   hint:'Waiting on you'},
+  {k:'booked',  label:'Booked',    hint:'Call on the calendar'},
+  {k:'won',     label:'Won',       hint:''},
+];
+function stageOf(p){
+  if (p.internal || p.status==='test') return null;
+  if (p.source==='giveaway' && !['booked','won'].includes(p.status)) return 'giveaway';
+  if (isInbound(p)) return 'inbound';
+  const st = p.status;
+  if (st==='drafted' || st==='approved') return 'queue';
+  if (st==='sent') return 'sent';
+  if (st==='clicked' || st==='opened' || st==='audited') return 'engaged';
+  if (st==='replied') return 'replied';
+  if (st==='booked') return 'booked';
+  if (st==='won') return 'won';
+  return null;                       // new, unreachable, rejected, lost: counted, not shown
+}
+function srcLabel(p){
+  if (p.source==='giveaway') return 'giveaway';
+  if (p.source==='guide') return 'guide';
+  if (p.source==='website-form') return 'form';
+  if (p.source==='self_serve') return 'audit';
+  if (p.status==='subscriber') return 'guide';
+  if (p.status==='lead') return 'form';
+  return 'audit';
+}
+function cardHtml(p){
+  const inb = isInbound(p);
+  const flag = needsResponse(p) ? '\u{1F525} ' : '';
+  const sub = [p.category, p.city].filter(Boolean).join(' \u00b7 ');
+  const d = p.updated_at ? Math.floor((Date.now()-new Date(p.updated_at))/86400000) : null;
+  const stale = d!==null && d>=14;
+  const own = (p.handled_by||'').trim();
+  const ini = own ? own.split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase() : '';
+  return `<div class="card" onclick="openDrawer('${p.id}')">
+    <div class="cb">${flag}${esc(p.business) || esc(p.email) || 'No name'}</div>
+    <div class="cs">${esc(sub) || esc(p.email)}</div>
+    <div class="cf">
+      ${inb?`<span class="src">${srcLabel(p)}</span>`:''}
+      ${d!==null?`<span class="days${stale?' stale':''}">${d===0?'today':d+'d'}</span>`:''}
+      ${ini?`<span class="own" title="${esc(own)}">${ini}</span>`:''}
+      <span class="cv">${money(p.deal_value)}</span></div>
+  </div>`;
+}
+function renderBoard(list){
+  if (navKey==='inbound') list = list.filter(isInbound);
+  if (navKey==='giveaway') list = list.filter(p=>p.source==='giveaway');
+  const by = {}; COLS.forEach(c=>by[c.k]=[]);
+  const dead = {'new':0,'unreachable':0,'rejected':0,'lost':0,'internal':0};
+  for (const p of state.prospects){
+    if (p.internal || p.status==='test') { dead.internal++; continue; }
+    const st = stageOf(p);
+    if (st) { if (by[st]) by[st].push(p); }
+    else if (dead[p.status]!==undefined) dead[p.status]++;
+  }
+  const show = new Set(list.map(p=>p.id));
+  document.getElementById('board').innerHTML = COLS.map(c=>{
+    let items = by[c.k].filter(p=>show.has(p.id));
+    items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
+    return `<div class="col${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}">
+      <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
+      ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
+      <div class="colbody">${items.slice(0,120).map(cardHtml).join('') || '<div class="colempty">Nothing here</div>'}</div>
+    </div>`;
+  }).join('');
+  const contactedEver = state.prospects.filter(p=>p.sent_at).length;
+  const fups = state.prospects.reduce((n,p)=>n+(p.followup_step||0),0);
+  document.getElementById('deadbar').innerHTML =
+      `<span title="Board columns are live stages. These are all-time totals.">`
+    + `<b>${contactedEver}</b> contacted all time \u00b7 <b>${contactedEver+fups}</b> emails out \u00b7 `
+    + `<b>${state.prospects.filter(p=>p.status==='sent').length}</b> still awaiting a reply</span>`
+    + `<span style="width:1px;height:18px;background:#d6dde8"></span>`
+    + `<span>Not on the board:</span>`
+    + `<span class="dchip" onclick="jump('new')">Un-worked queue <b>${dead['new']}</b></span>`
+    + `<span class="dchip" onclick="jump('unreachable')">Bounced / unreachable <b>${dead.unreachable}</b></span>`
+    + `<span class="dchip" onclick="jump('rejected')">Rejected <b>${dead.rejected}</b></span>`
+    + `<span class="dchip" onclick="jump('lost')">Lost <b>${dead.lost}</b></span>`
+    + `<span style="margin-left:auto">${dead.internal} internal test rows excluded</span>`;
+}
+function jump(status){
+  document.getElementById('filter').value = status;
+  setView('table');
+}
+
+function render() {
+  const f = document.getElementById('filter').value;
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  let list = state.prospects.slice();
+  if (f==='needsemail') list = list.filter(p=>!p.email||!p.email.includes('@'));
+  else if (f==='needsresponse') list = list.filter(needsResponse);
+  else if (f!=='all') list = list.filter(p=>p.status===f);
+  if (q) list = list.filter(p => [p.business,p.city,p.category,p.email].some(v=>(v||'').toLowerCase().includes(q)));
+  // sort: needs-response first, then most recently updated
+  list.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
+  if (view==='board') renderBoard(list);
+  document.getElementById('rows').innerHTML = list.slice(0,400).map(rowHtml).join('') || '<tr><td colspan=6 class="muted">No leads in this view.</td></tr>';
+  document.getElementById('capnote').setAttribute('title', list.length+' matching');
+}
+function rowHtml(p) {
+  const hasEmail = p.email && p.email.includes('@');
+  const flag = needsResponse(p) ? '🔥 ' : '';
+  return `<tr onclick="openDrawer('${p.id}')">
+    <td><div class="biz">${flag}${esc(p.business)}</div><div class="sub">${esc(p.category)} · ${esc(p.city)}${p.rating?' · ⭐'+esc(p.rating):''}</div></td>
+    <td class="sub">${hasEmail?esc(p.email):'<span class="warn">needs email</span>'}</td>
+    <td><span class="pill s-${p.status}">${p.status}</span></td>
+    <td class="handled">${p.handled_by?esc(p.handled_by):''}</td>
+    <td class="sub" style="font-weight:700;color:var(--navy)">${money(p.deal_value)}</td>
+    <td class="sub">${ago(p.updated_at)}</td>
+  </tr>`;
+}
+
+/* ---------- Lead detail drawer ---------- */
+function openDrawer(id){ openId=id; const p=state.prospects.find(x=>x.id===id); if(!p)return; renderDrawer(p); document.getElementById('drawer').classList.add('open'); document.getElementById('scrim').classList.add('open'); }
+function closeDrawer(){ openId=null; document.getElementById('drawer').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
+
+function renderDrawer(p){
+  const hasEmail = p.email && p.email.includes('@');
+  const teamOpts = ['<option value="">Unassigned</option>'].concat(state.team.map(t=>`<option value="${esc(t)}" ${p.handled_by===t?'selected':''}>${esc(t)}</option>`)).join('');
+  // timeline
+  const evs = [
+    ['Added', p.created_at],
+    ['Entered giveaway', p.giveaway_entered_at],
+    ['Drafted', p.status!=='new'&&p.body? (p.drafted_at||null):null],
+    ['Sent', p.sent_at],
+    ['Opened landing page', p.viewed_at],
+    ['Clicked book', p.clicked_at],
+    ['Ran audit', p.audited_at],
+    p.last_followup_at?[`Follow-up ${p.followup_step||''} sent`, p.last_followup_at]:null,
+    ['Replied', p.replied_at],
+    ['Booked call', p.booked_at],
+    ['Won', p.won_at],
+    ['Lost', p.lost_at],
+    ['Rejected', p.rejected_at],
+  ].filter(x=>x&&x[1]).sort((a,b)=>new Date(a[1])-new Date(b[1]));
+  const tl = evs.length? evs.map(e=>`<div class="ev"><div>${esc(e[0])}</div><div class="when">${when(e[1])}</div></div>`).join('') : '<div class="muted" style="font-size:13px">No activity yet.</div>';
+  const notes = (p.notes||[]).slice().reverse().map(n=>`<div class="note">${esc(n.text)}<div class="meta">${n.by?esc(n.by)+' · ':''}${when(n.ts)}</div></div>`).join('') || '<div class="muted" style="font-size:13px">No notes yet.</div>';
+  const st = p.status;
+  document.getElementById('drawerContent').innerHTML = `
+  <div class="dhead">
+    <button class="dclose" onclick="closeDrawer()">×</button>
+    <h2>${esc(p.business)}</h2>
+    <div class="dsub">${esc(p.category)} · ${esc(p.city)}, GA ${p.rating?'· ⭐'+esc(p.rating)+' ('+esc(p.reviews)+')':''}</div>
+    <div style="margin-top:10px"><span class="pill s-${st}">${st}</span></div>
+  </div>
+  <div class="dbody">
+    ${p.source==='giveaway'?`<div class="card"><h4>Giveaway entry</h4>
+      <div style="font-size:13px;line-height:1.7">
+        <div><b>Contact:</b> ${esc(p.contact_name||'')} (${esc(p.giveaway_role||'')})</div>
+        <div><b>Email:</b> ${esc(p.email||'')} &nbsp; <b>Phone:</b> ${esc(p.phone||'')}</div>
+        <div><b>Website:</b> ${esc(p.website||'')}</div>
+        <div><b>Industry:</b> ${esc(p.giveaway_industry||'')}</div>
+        <div><b>Biggest challenge:</b> ${esc(p.giveaway_challenge||'')}</div>
+        <div><b>Posts video:</b> ${esc(p.giveaway_posts_video||'')} &nbsp; <b>Budget:</b> ${esc(p.giveaway_budget||'')}</div>
+        <div><b>Prize preference:</b> ${esc(p.giveaway_prize||'')}</div>
+        <div><b>Referral:</b> ${esc(p.giveaway_referral||'')}</div>
+        <div><b>Source:</b> ${esc(p.giveaway_source||'')}</div>
+        <div><b>Wants updates:</b> ${p.giveaway_opt_in_updates?'yes':'no'}${p.giveaway_duplicates?' &nbsp; <b>Repeat entries:</b> '+p.giveaway_duplicates:''}</div>
+      </div></div>`:''}
+    <div class="card">
+      <h4>Move this lead</h4>
+      <div class="actions">
+        ${p.body&&st!=='approved'?`<button class="green" onclick="setStatus('${p.id}','approved')">✓ Approve</button>`:''}
+        ${st==='approved'?`<button class="primary" onclick="sendOne('${p.id}')" ${!hasEmail?'disabled':''}>📤 Send now</button>`:''}
+        ${['sent','clicked','audited'].includes(st)?`<button class="green" onclick="setStatus('${p.id}','replied')">💬 They replied</button>`:''}
+        ${['sent','clicked','audited','replied'].includes(st)?`<button onclick="setStatus('${p.id}','booked')">📅 Booked a call</button>`:''}
+        ${['replied','booked','audited','clicked'].includes(st)?`<button class="green" onclick="markWon('${p.id}')">🏆 Won</button>`:''}
+        ${st!=='lost'&&st!=='won'?`<button onclick="setStatus('${p.id}','lost')">Lost</button>`:''}
+        ${st!=='rejected'?`<button class="red" onclick="setStatus('${p.id}','rejected')">Reject</button>`:''}
+        ${st==='new'||!p.body?`<button class="primary" onclick="gen('${p.id}')">✍️ Generate email</button>`:''}
+        ${p.body?`<div style="margin:12px 0;padding:10px 12px;background:#f5f7fb;border-left:3px solid #df3131;border-radius:4px">
+          <div style="font-size:10px;letter-spacing:.12em;color:#8a97ad;font-weight:700;margin-bottom:4px">INBOX PREVIEW</div>
+          <div style="font-size:12.5px;color:#57607a;line-height:1.5">${esc(p.preview||p.body.replace(/\s+/g,' ').trim().slice(0,110))}…</div>
+        </div>`:''}
+        ${(st==='audit_held'||st==='audit_failed')?`<button class="primary" onclick="rerunAudit('${p.id}')">🔁 Re-run audit and send</button>`:''}
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Response &amp; deal</h4>
+      <div class="row2">
+        <div class="fld"><label>Who's on it (responses)</label>
+          <select onchange="patch('${p.id}',{handled_by:this.value})">${teamOpts}</select></div>
+        <div class="fld"><label>Deal value</label>
+          <input value="${p.deal_value?esc(p.deal_value):''}" placeholder="$0" onchange="patch('${p.id}',{deal_value:this.value})"/></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>Contact</h4>
+      <div class="fld"><label>Email</label>
+        <input value="${esc(p.email)}" placeholder="add email…" onchange="patch('${p.id}',{email:this.value})"/></div>
+      <div class="kv"><span>Phone</span><b>${esc(p.phone)||'—'}</b></div>
+      <div class="kv"><span>Website</span><b>${p.website?`<a href="${esc(p.website)}" target="_blank">${esc(p.website)}</a>`:'—'}</b></div>
+      <div class="kv"><span>Landing page</span><b><a href="/go?ref=${p.id}" target="_blank">open ↗</a></b></div>
+    </div>
+
+    ${p.body?`<div class="card"><h4>Outreach email</h4>
+      <div class="fld"><label>Subject</label><input value="${esc(p.subject)}" onchange="patch('${p.id}',{subject:this.value})"/></div>
+      <div class="fld" style="margin-top:10px"><label>Body</label><textarea onchange="patch('${p.id}',{body:this.value})" style="min-height:150px">${esc(p.body)}</textarea></div>
+      <button style="margin-top:10px" onclick="gen('${p.id}')">🔄 Regenerate</button>
+    </div>`:''}
+
+    ${p.audit_report?`<div class="card"><h4>Audit results</h4>
+      ${p.audit_report.categories?`<div class="kv"><span>Overall score</span><b>${(function(){var c=p.audit_report.categories;return c.length?Math.round(c.reduce(function(s,x){return s+(Number(x.score)||0);},0)/c.length):0;})()}/100</b></div>`+p.audit_report.categories.map(c=>`<div class="kv"><span>${esc(c.name)}</span><b>${esc(c.score)}/100</b></div>`).join(''):''}
+      ${p.audit_email?`<div class="kv"><span>Audit email</span><b>${esc(p.audit_email)}</b></div>`:''}
+    </div>`:''}
+
+    <div class="card">
+      <h4>Timeline</h4>
+      <div class="timeline">${tl}</div>
+    </div>
+
+    <div class="card">
+      <h4>Notes</h4>
+      <textarea id="noteInput" placeholder="Log a call, a reply, next step…"></textarea>
+      <div class="row2" style="margin-top:8px;align-items:center">
+        <select id="noteBy" style="flex:0 0 130px">${['<option value="">— by —</option>'].concat(state.team.map(t=>`<option>${esc(t)}</option>`)).join('')}</select>
+        <button class="primary" onclick="addNote('${p.id}')">Add note</button>
+      </div>
+      <div style="margin-top:14px">${notes}</div>
+    </div>
+  </div>`;
+}
+
+async function patch(id, body){ try{ await api('/api/prospects/'+id,'PATCH',body); await load(); }catch(e){toast(e.message);} }
+async function setStatus(id, status){ await patch(id,{status}); toast('Moved to '+status); }
+async function markWon(id){ const v=prompt('Deal value for this win? (numbers only)',''); const body={status:'won'}; if(v!==null&&v.trim())body.deal_value=v; await patch(id,body); toast('🏆 Marked won'); }
+async function addNote(id){ const t=document.getElementById('noteInput').value.trim(); const by=document.getElementById('noteBy').value; if(!t){toast('Write a note first');return;} try{ await api('/api/prospects/'+id+'/note','POST',{text:t,by}); document.getElementById('noteInput').value=''; await load(); toast('Note added'); }catch(e){toast(e.message);} }
+async function rerunAudit(id){
+  if(!confirm('Re-run this audit and email it to the lead?')) return;
+  const r = await fetch('/api/prospects/'+id+'/rerun-audit',{method:'POST'});
+  const j = await r.json();
+  if(j.error){ alert(j.error); return; }
+  alert('Started. It takes a couple of minutes, then it sends automatically if the report comes back clean.');
+  load();
+}
+async function gen(id) { toast('Drafting…'); try { await api('/api/prospects/'+id+'/generate','POST'); await load(); toast('Draft ready'); } catch(e){toast(e.message);} }
+async function generateAll() { toast('Drafting next 25 (may take a minute)…'); try { const r=await api('/api/generate-all','POST',{limit:25}); await load(); toast('Drafted '+r.drafted); } catch(e){toast(e.message);} }
+async function sendOne(id) { try { await api('/api/prospects/'+id+'/send','POST'); await load(); toast('Sent'); } catch(e){toast('Send failed: '+e.message);} }
+async function sendApproved() { if(!confirm('Send all approved emails now (up to your daily cap)?'))return; toast('Sending…'); try { const r=await api('/api/send-approved','POST'); await load(); toast('Sent '+r.sent+(r.errors&&r.errors.length?' ('+r.errors.length+' failed)':'')); } catch(e){toast(e.message);} }
+load();
+</script>
+</body>
+</html>

@@ -1,35 +1,44 @@
 /* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
 (function () {
-  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], workTab: '' };
+  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], workTab: '', ctab: 'overview', ctabSlug: '', brain: {}, content: {}, guides: null, guideDoc: {} };
   var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
   // One icon family: 24px grid, 1.8 stroke, round caps.
+  // Icons: Lucide (ISC license), 24px grid, round caps and joins.
   var P = {
-    home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
-    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 010 6.8"/><path d="M18 14.8c2 .6 3.2 2.3 3.5 5.2"/>',
-    clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 11h6M9 15h4"/>',
-    kanban: '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/>',
-    gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8h14v-8"/><path d="M12 8C10 4 6.5 4.5 7 6.5 7.4 8 12 8 12 8zM12 8c2-4 5.5-3.5 5-1.5C16.6 8 12 8 12 8z"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
-    star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
-    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
-    reply: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 016 6v3"/>',
-    check: '<path d="M4 12.5l5 5L20 6.5"/>',
-    flag: '<path d="M5 21V4"/><path d="M5 5h12l-2 4 2 4H5"/>',
-    list: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
-    circle: '<circle cx="12" cy="12" r="8"/>',
-    edit: '<path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z"/>',
-    ban: '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
-    x: '<path d="M6 6l12 12M18 6L6 18"/>',
-    alert: '<path d="M12 4l9.5 16h-19z"/><path d="M12 10v4M12 17.5h.01"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    link: '<path d="M10 14a4 4 0 005.6 0l3-3a4 4 0 00-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 00-5.6 0l-3 3A4 4 0 0011 18.6l1-1"/>',
-    back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
-    refresh: '<path d="M20 11a8 8 0 00-14-4L4 9"/><path d="M4 4v5h5"/><path d="M4 13a8 8 0 0014 4l2-2"/><path d="M20 20v-5h-5"/>',
-    book: '<path d="M4 5a2 2 0 012-2h13v15H6a2 2 0 00-2 2z"/><path d="M4 20a2 2 0 012-2h13"/><path d="M9 7h6"/>',
-    inbox: '<path d="M3 13l3-8h12l3 8"/><path d="M3 13v6h18v-6h-5l-1.5 2h-5L8 13z"/>'
+    home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    building: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+    task: '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+    clipboard: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+    kanban: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>',
+    plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    reply: '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
+    list: '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>',
+    circle: '<circle cx="12" cy="12" r="10"/>',
+    edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+    ban: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+    arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+    inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+    team: '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
+    chevron: '<path d="m9 18 6-6-6-6"/>',
+    sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+    external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
   };
-  var ALIAS = { '▣': 'home', '✦': 'users', '✉': 'clipboard', '▦': 'kanban', '\u{1F381}': 'gift', '✚': 'plus', '☎': 'phone', '★': 'star', '↩': 'reply', '✓': 'check', '⚑': 'flag', '≡': 'list', '○': 'circle', '✎': 'edit', '⊘': 'ban', '✕': 'x' };
+  var ALIAS = { '\u25A3': 'home', '\u2726': 'building', '\u2709': 'clipboard', '\u25A6': 'kanban', '\u{1F381}': 'gift', '\u271A': 'plus', '\u260E': 'phone', '\u2605': 'star', '\u21A9': 'reply', '\u2713': 'task', '\u2691': 'flag', '\u2261': 'list', '\u25CB': 'circle', '\u270E': 'edit', '\u2298': 'ban', '\u2715': 'x' };
   function ico(n, cls) { return '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (P[n] || '') + '</svg>'; }
   window.hqIcon = function (n) { n = ALIAS[n] || n; return P[n] ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + P[n] + '</svg>' : null; };
 
@@ -120,23 +129,44 @@
     return x.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   }
   function agenda() {
-    var c = HQ.cal, me = HQ.me, head = '<div class="ph"><h3>' + ico('clock') + ' Coming up</h3><span><a class="lnk" onclick="hqCalPick()">Calendars</a> &nbsp;·&nbsp; <a class="lnk" href="https://calendar.google.com" target="_blank" rel="noopener">Open</a></span></div>' + (HQ.calPick && c && c.calendars ? '<div class="calpick">' + c.calendars.map(function (k, i) { return '<label class="cb"><input type="checkbox" ' + (k.hidden ? '' : 'checked') + ' onchange="hqCalToggle()" data-cid="' + e(k.id) + '"> <i style="background:' + e(k.color || '#999') + '"></i> ' + e(k.name) + '</label>'; }).join('') + '</div>' : '');
-    if (!me || me.legacy) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Sign in with your own email to see your calendar.</div></div>';
-    if (!c) return '<div class="panel agenda">' + head + '<div class="sk" style="height:200px"></div></div>';
-    if (!c.connected) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Connect your Google account to see meetings and shoots here.<br><br><a class="btn2 red" href="/api/me/gmail/connect">Connect Google</a></div></div>';
-    if (c.needsCalendar) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + (c.apiOff ? 'Google Calendar is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Calendar API and click Enable. Then refresh this page.' : 'Calendar access was not granted. On the Mail page click Disconnect, then connect Google again and allow the calendar permission.') + '</div></div>';
-    if (c.error) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + e(c.error) + '</div></div>';
-    var ev = c.events || [];
-    if (!ev.length) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('check') + 'Nothing on the calendar for the next two weeks.</div></div>';
-    var groups = {}, order = [];
-    ev.forEach(function (x) { var k = evDate(x).toDateString(); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
-    return '<div class="panel agenda">' + head + order.slice(0, 5).map(function (k) {
-      return '<div class="day"><div class="dl">' + e(dayLabel(evDate(groups[k][0]))) + '</div>' + groups[k].slice(0, 6).map(function (x) {
-        var tm = x.allDay ? 'All day' : new Date(x.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.project || x.cal) + '</em></a>';
-      }).join('') + '</div>';
-    }).join('') + '</div>';
+    var c = HQ.cal, me = HQ.me, view = HQ.calView || 'two';
+    var seg = '<div class="seg"><button class="' + (view === 'two' ? 'on' : '') + '" onclick="hqCalView(\'two\')">Next 2 days</button><button class="' + (view === 'week' ? 'on' : '') + '" onclick="hqCalView(\'week\')">This week</button></div>';
+    var head = '<div class="ph2"><h3>' + ico('calendar') + 'Schedule</h3>' + seg + '<span class="acts2"><a class="ib" title="Choose calendars" onclick="hqCalPick()">' + ico('sliders') + '</a><a class="ib" title="Open Google Calendar" href="https://calendar.google.com" target="_blank" rel="noopener">' + ico('external') + '</a></span></div>' +
+      (HQ.calPick && c && c.calendars ? '<div class="calpick">' + c.calendars.map(function (k) { return '<label class="cb"><input type="checkbox" ' + (k.hidden ? '' : 'checked') + ' onchange="hqCalToggle()" data-cid="' + e(k.id) + '"> <i style="background:' + e(k.color || '#999') + '"></i> ' + e(k.name) + '</label>'; }).join('') + '</div>' : '');
+    var wrap = function (b) { return '<div class="panel agenda">' + head + b + '</div>'; };
+    if (!me || me.legacy) return wrap('<div class="empty">' + ico('calendar') + 'Sign in with your own email to see your calendar.</div>');
+    if (!c) return wrap('<div class="sk" style="height:150px"></div>');
+    if (!c.connected) return wrap('<div class="empty">' + ico('calendar') + 'Connect your Google account to see meetings and shoots here.<br><br><a class="btn2 red" href="/api/me/gmail/connect">Connect Google</a></div>');
+    if (c.needsCalendar) return wrap('<div class="empty">' + ico('alert') + (c.apiOff ? 'Google Calendar is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Calendar API and click Enable.' : 'Calendar access was not granted. On the Mail page click Disconnect, then connect Google again and allow the calendar permission.') + '</div>');
+    if (c.error) return wrap('<div class="empty">' + ico('alert') + e(c.error) + '</div>');
+    var ev = c.events || [], today = new Date(); today.setHours(0, 0, 0, 0);
+    var sameDay = function (x, d) { var a = evDate(x); return a.getFullYear() === d.getFullYear() && a.getMonth() === d.getMonth() && a.getDate() === d.getDate(); };
+    var row = function (x) {
+      var tm = x.allDay ? 'All day' : evDate(x).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', ' ');
+      return '<a class="ag" href="' + e(x.link) + '" target="_blank" rel="noopener"><span class="at' + (x.allDay ? ' ad' : '') + '">' + e(tm) + '</span><i style="background:' + e(x.color || '#13233f') + '"></i><span class="an">' + e(x.title) + '</span><span class="ap">' + e(x.project || '') + '</span></a>';
+    };
+    if (view === 'week') {
+      var mon = new Date(today); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); if (today.getDay() === 0 || today.getDay() === 6) mon.setDate(mon.getDate() + 7);
+      var cols = '';
+      for (var k = 0; k < 7; k++) {
+        var d = new Date(mon); d.setDate(mon.getDate() + k);
+        var list = ev.filter(function (x) { return sameDay(x, d); });
+        if (k >= 5 && !list.length) continue;
+        var isT = d.getTime() === today.getTime();
+        cols += '<div class="wk' + (isT ? ' today' : '') + '"><div class="wh2"><b>' + d.toLocaleDateString('en-US', { weekday: 'short' }) + '</b><span>' + d.getDate() + '</span>' + (list.length ? '<em>' + list.length + '</em>' : '') + '</div>' +
+          (list.length ? list.slice(0, 4).map(function (x) { return '<a class="wv" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span>' + e(x.allDay ? 'All day' : evDate(x).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', ' ')) + '</span>' + e(x.title) + '</a>'; }).join('') + (list.length > 4 ? '<div class="wm">+' + (list.length - 4) + ' more</div>' : '') : '<div class="wn">Clear</div>') + '</div>';
+      }
+      return wrap('<div class="wkgrid">' + cols + '</div>');
+    }
+    var tom = new Date(today), out = ''; tom.setDate(tom.getDate() + 1);
+    [[today, 'Today'], [tom, 'Tomorrow']].forEach(function (p) {
+      var list = ev.filter(function (x) { return sameDay(x, p[0]); }).sort(function (a, b) { return (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0); });
+      out += '<div class="dsec"><div class="dh"><b>' + p[1] + '</b><span>' + p[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</span></div>' +
+        (list.length ? list.slice(0, 5).map(row).join('') + (list.length > 5 ? '<a class="ag more" onclick="hqCalView(\'week\')">+' + (list.length - 5) + ' more, see the week</a>' : '') : '<div class="dn2">Nothing scheduled</div>') + '</div>';
+    });
+    return wrap('<div class="dgrid">' + out + '</div>');
   }
+  window.hqCalView = function (v) { HQ.calView = v; var el = root(); if (el && navKey === 'hq:home') el.innerHTML = home(); };
   window.hqCalPick = function () { HQ.calPick = !HQ.calPick; var el = root(); if (el && document.body.classList.contains('hqmode')) el.innerHTML = home(); };
   window.hqCalToggle = async function () {
     var hidden = []; document.querySelectorAll('.calpick input').forEach(function (i) { if (!i.checked) hidden.push(i.getAttribute('data-cid')); });
@@ -166,7 +196,7 @@
       (d.connected ? '' : '<a class="btn2 red" href="/api/basecamp/connect">' + ico('link') + 'Connect Basecamp</a>') +
       '<button class="btn2 glass" onclick="hqRefresh()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button></div></div>' +
       '<div class="stats">' +
-      stat(fn ? 'My work' : 'Open work', 'check', fn ? mine.length : tasks.all.length, mineLate.length ? mineLate.length + ' late' : 'open to-dos', "hqNav('hq:work')", mineLate.length ? 'bad' : '') +
+      stat(fn ? 'My work' : 'Open work', 'task', fn ? mine.length : tasks.all.length, mineLate.length ? mineLate.length + ' late' : 'open to-dos', "hqNav('hq:work')", mineLate.length ? 'bad' : '') +
       stat('Late', 'alert', d.connected ? late.length : '-', 'across all clients', "hqNav('hq:work')", late.length ? 'bad' : 'ok') +
       stat('Client mail', 'mail', mm && mm.connected ? (mm.unread || 0) : '-', mm && mm.connected ? 'unread' : 'not connected', "hqNav('hq:mail')", mm && mm.connected && mm.unread ? 'warn' : '') +
       stat('Clients', 'users', activeC.length, 'active now', "hqNav('hq:clients')") +
@@ -249,12 +279,12 @@
       '<div class="chips" style="margin-top:10px"><span class="chip">' + e(STATUS[c.status] || c.status) + '</span>' + (c.services || []).map(function (s) { return '<span class="chip">' + e(s) + '</span>'; }).join('') + '</div></div>' +
       '<div class="hl ' + h.k + '" style="font-size:14px"><i style="width:10px;height:10px"></i>' + e(h.t) + '</div></div></div>' +
       (c.note ? '<div class="banner">' + ico('alert') + '<div>' + e(c.note) + '</div></div>' : '') +
-      '<div class="two"><div class="panel"><h3>Work</h3>' + lists + '</div><div style="display:grid;gap:16px">' +
+      tabsBar(c) + (HQ.ctab && HQ.ctab !== 'overview' ? tabBody(c) : '<div class="two"><div class="panel"><h3>Work</h3>' + lists + '</div><div style="display:grid;gap:16px">' +
       '<div class="panel"><h3>Who handles it</h3>' + ownerRow('Website', c.website_owner) + ownerRow('Ads', c.ads_owner) + ownerRow('Account manager', c.account_owner) +
       (w && w.linked ? '<div class="kv"><span>Basecamp</span><a class="lnk" href="' + e(w.project.url) + '" target="_blank" rel="noopener">Open project</a></div>' : '') + '</div>' +
       ((mine.length || c.status === 'onboarding') ? '<div class="panel"><h3>Onboarding answers</h3>' + onb + '</div>' : '') +
-      editPanel(c) +
-      '<div class="panel"><h3>Activity</h3><div class="tl" style="margin-top:12px">' + tl + '</div></div></div></div>';
+      linksPanel(c) + editPanel(c) +
+      '<div class="panel"><h3>Activity</h3><div class="tl" style="margin-top:12px">' + tl + '</div></div></div></div>');
   }
   function ownerRow(l, v) { return '<div class="kv"><span>' + e(l) + '</span><b>' + (v ? e(v) : '<span style="font-weight:500;color:var(--mut)">Not assigned</span>') + '</b></div>'; }
   var SERV = ['Website', 'Local SEO and Google profile', 'Paid ads', 'Social content', 'Video and photo', 'Email and SMS', 'CRM'];
@@ -433,6 +463,101 @@
     try { await api('/api/hq/client/' + slug, 'PUT', { domains: (c.domains || []).concat([domain]) }); toast('Linked'); HQ.data = null; HQ.mail = null; await fetchHq(false); show('hq:mail'); } catch (er) { toast(er.message); }
   };
 
+
+  // ---- client page tabs: Overview, Content, Brain, Guidelines ----
+  var DRIVE_ROOT = 'https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK';
+  function tabsBar(c) {
+    var t = function (k, l) { return '<button class="tb ' + ((HQ.ctab || 'overview') === k ? 'on' : '') + '" onclick="hqCTab(\'' + k + '\')">' + l + '</button>'; };
+    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
+  }
+  window.hqCTab = function (k) { HQ.ctab = k; show(navKey); };
+  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
+  function linksPanel(c) {
+    var rows = [];
+    if (c.drive) rows.push(['Drive: ' + c.name, 'https://drive.google.com/drive/folders/' + c.drive]);
+    rows.push(['Drive: all clients', DRIVE_ROOT]);
+    if (c.work && c.work.linked) rows.push(['Basecamp project', c.work.project.url]);
+    if (c.website) rows.push(['Website', c.website]);
+    return '<div class="panel"><h3>Folders and links</h3>' + rows.map(function (r) { return '<div class="kv"><span>' + e(r[0]) + '</span><a class="lnk" href="' + e(r[1]) + '" target="_blank" rel="noopener">Open</a></div>'; }).join('') + '</div>';
+  }
+  function clientEvents(c) {
+    var ev = (HQ.cal && HQ.cal.events) || [], keys = (c.match || []).concat([(c.name || '').toLowerCase()]).filter(Boolean).map(function (k) { return k.toLowerCase(); });
+    return ev.filter(function (x) { var t = (x.title + ' ' + (x.project || '')).toLowerCase(); return keys.some(function (k) { return t.indexOf(k) > -1; }); });
+  }
+  function contentTab(c) {
+    var d = HQ.content[c.slug], me = HQ.me, cal = HQ.cal;
+    var evs = clientEvents(c), calHtml;
+    if (!me || me.legacy) calHtml = '<div class="empty">Sign in with your own login to see the calendar.</div>';
+    else if (!cal || !cal.connected) calHtml = '<div class="empty">' + ico('clock') + 'Connect Google on the Mail page to see filming dates.</div>';
+    else if (!evs.length) calHtml = '<div class="empty">' + ico('check') + 'Nothing on the calendar for ' + e(c.name) + ' in the next two weeks.</div>';
+    else calHtml = evs.slice(0, 8).map(function (x) { var dt = evDate(x); return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(dayLabel(dt) + (x.allDay ? '' : ', ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.project || x.cal) + '</em></a>'; }).join('');
+    var body;
+    if (!d) body = '<div class="sk" style="height:160px"></div>';
+    else if (d.legacy || d.connected === false) body = '<div class="empty">' + ico('mail') + 'Connect your Google account on the Mail page to see uploads.</div>';
+    else if (d.noFolder) body = '<div class="empty">' + ico('inbox') + 'No Drive folder is linked to this client yet.</div>';
+    else if (d.needsDrive) body = '<div class="empty">' + ico('alert') + (d.apiOff ? 'Google Drive is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Drive API and click Enable.' : 'Drive access was not granted. On the Mail page click Disconnect, then connect Google again and allow Drive.') + '</div>';
+    else if (d.error) body = '<div class="empty">' + ico('alert') + e(d.error) + '</div>';
+    else if (!d.weeks.length && !(d.unnamed || []).length) body = '<div class="empty">' + ico('check') + 'No files in the Reels, Drone or Photos folders.</div>';
+    else body = d.weeks.map(function (w) {
+      return '<div style="margin-bottom:20px"><div class="list-h"><b>Week of ' + e(dshort(w.week)) + '</b><span>' + w.items.length + ' piece' + (w.items.length > 1 ? 's' : '') + '</span></div>' + w.items.map(function (x) {
+        return '<div class="td"><span class="pn">' + x.n + '</span><div style="min-width:0"><a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.subject) + ' · ' + e(x.label) + '</a><div class="who"><span class="chip">' + e(x.type) + '</span> uploaded ' + e(dshort(x.uploaded)) + '</div></div><span class="due">Due ' + e(dshort(x.due)) + '</span></div>';
+      }).join('') + '</div>';
+    }).join('') + ((d.unnamed || []).length ? '<div class="note2" style="margin-top:6px"><b>' + d.unnamed.length + ' file' + (d.unnamed.length > 1 ? 's' : '') + ' need renaming</b> to the standard (CLIENT_TYPE_DATE_Subject_LABEL_001) before they can be filed: ' + d.unnamed.slice(0, 5).map(function (u) { return '<a class="lnk" href="' + e(u.url) + '" target="_blank" rel="noopener">' + e(u.name) + '</a>'; }).join(', ') + '</div>' : '');
+    var folders = (d && d.folders && d.folders.length ? d.folders.map(function (f) { return '<a class="chip" style="text-decoration:none" href="' + e(f.url) + '" target="_blank" rel="noopener">' + e(f.name) + '</a>'; }).join(' ') : '');
+    return '<div class="two"><div class="panel"><h3>Content by week</h3><p class="hint">Uploaded footage, numbered by the week it landed. Due is 10 business days after upload.</p>' + body + '</div><div style="display:grid;gap:16px">' +
+      '<div class="panel"><h3>Next on the calendar</h3>' + calHtml + '</div>' + linksPanel(c) + (folders ? '<div class="panel"><h3>Drive folders</h3><div class="chips" style="margin-top:6px">' + folders + '</div></div>' : '') + '</div></div>';
+  }
+  function brainTab(c) {
+    var md = HQ.brain[c.slug];
+    if (md == null) return '<div class="sk" style="height:200px"></div>';
+    if (!md) return '<div class="panel"><div class="empty">' + ico('inbox') + 'No brain file for ' + e(c.name) + ' yet.</div></div>';
+    return '<div class="panel md">' + mdHtml(md) + '</div>';
+  }
+  function guidesTab(c) {
+    var g = HQ.guides; if (!g) return '<div class="sk" style="height:200px"></div>';
+    var cur = HQ.guideKey || (g[0] && g[0].key), doc = HQ.guideDoc[cur];
+    return '<div class="two" style="grid-template-columns:260px 1fr"><div class="panel"><h3>Guidelines</h3><p class="hint">One system for every client.</p>' + g.map(function (x) { return '<a class="gl ' + (x.key === cur ? 'on' : '') + '" onclick="hqGuide(\'' + e(x.key) + '\')">' + e(x.title) + '</a>'; }).join('') + '</div><div class="panel md">' + (doc == null ? '<div class="sk" style="height:200px"></div>' : mdHtml(doc)) + '</div></div>';
+  }
+  window.hqGuide = async function (k) { HQ.guideKey = k; if (HQ.guideDoc[k] == null) { try { HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guideDoc[k] = ''; } } show(navKey); };
+  // Small markdown renderer: headings, lists, bold, code, links, tables, rules.
+  function mdInline(t) {
+    t = e(t);
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])_([^_]+)_(?=[\s).,]|$)/g, '$1<i>$2</i>');
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a class="lnk" href="$2" target="_blank" rel="noopener">$1</a>').replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a class="lnk" href="$2" target="_blank" rel="noopener">$2</a>');
+    return t;
+  }
+  function mdHtml(src) {
+    var lines = String(src).replace(/\r/g, '').split('\n'), out = [], i = 0, list = null, para = [];
+    function flushP() { if (para.length) { out.push('<p>' + mdInline(para.join(' ')) + '</p>'); para = []; } }
+    function closeList() { if (list) { out.push('</' + list + '>'); list = null; } }
+    while (i < lines.length) {
+      var ln = lines[i], m;
+      if (/^\s*$/.test(ln)) { flushP(); closeList(); i++; continue; }
+      if ((m = /^(#{1,4})\s+(.*)$/.exec(ln))) { flushP(); closeList(); var lv = Math.min(m[1].length + 1, 5); out.push('<h' + lv + '>' + mdInline(m[2]) + '</h' + lv + '>'); i++; continue; }
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(ln)) { flushP(); closeList(); out.push('<hr>'); i++; continue; }
+      if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1])) {
+        flushP(); closeList(); var cells = function (r) { return r.trim().replace(/^\||\|$/g, '').split('|').map(function (x) { return x.trim(); }); };
+        var hd = cells(ln); i += 2; var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+        out.push('<div class="mdt"><table><thead><tr>' + hd.map(function (x) { return '<th>' + mdInline(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + mdInline(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>'); continue;
+      }
+      if ((m = /^\s*[-*]\s+(.*)$/.exec(ln))) { flushP(); if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; } out.push('<li>' + mdInline(m[1]) + '</li>'); i++; continue; }
+      if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(ln))) { flushP(); if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; } out.push('<li>' + mdInline(m[1]) + '</li>'); i++; continue; }
+      closeList(); para.push(ln.trim()); i++;
+    }
+    flushP(); closeList(); return out.join('');
+  }
+  async function loadClientData(slug) {
+    var tab = HQ.ctab;
+    if (HQ.ctabSlug !== slug) { HQ.ctabSlug = slug; }
+    if (tab === 'brain' && HQ.brain[slug] == null) { try { HQ.brain[slug] = (await api('/api/hq/brain/' + slug)).md; } catch (x) { HQ.brain[slug] = ''; } }
+    if (tab === 'guides' && !HQ.guides) { try { HQ.guides = (await api('/api/hq/guidelines')).docs; var k = HQ.guideKey || (HQ.guides[0] && HQ.guides[0].key); if (k && HQ.guideDoc[k] == null) HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guides = []; } }
+    if (tab === 'content') {
+      if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
+      if (HQ.content[slug] == null) { try { HQ.content[slug] = await api('/api/hq/content/' + slug); } catch (x) { HQ.content[slug] = { error: x.message }; } }
+    }
+  }
+
   // Phone bottom bar
   function mnav() {
     var el = document.getElementById('mnav'); if (!el) { el = document.createElement('nav'); el.id = 'mnav'; el.setAttribute('aria-label', 'Main'); document.body.appendChild(el); }
@@ -456,11 +581,12 @@
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
     else if (key === 'hq:outreach') el.innerHTML = outreach();
     else if (key === 'hq:team') el.innerHTML = await team();
-    else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = clientPage(key.slice(10)); }
+    else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } await loadClientData(key.slice(10)); el.innerHTML = clientPage(key.slice(10)); }
     window.scrollTo(0, 0); mnav();
   }
   window.hqNav = function (key) {
     if (String(key).indexOf('hq:') !== 0) { document.body.classList.remove('hqmode', 'hqout'); document.body.classList.add('outdetail'); navKey = key; mnav(); if (typeof renderNav === 'function') renderNav(); return false; }
+    if (String(key).indexOf('hq:client:') === 0 && navKey !== key) HQ.ctab = 'overview';
     navKey = key; if (typeof renderNav === 'function') renderNav(); show(key); return true;
   };
   window.hqRefresh = async function () { HQ.data = null; root().innerHTML = skeleton(); await fetchHq(true); show(navKey); };

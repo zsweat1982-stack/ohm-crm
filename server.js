@@ -3595,7 +3595,7 @@ app.get('/api/me/gmail/connect', (req, res) => {
   if (!GOOGLE_CLIENT_ID) return res.status(400).send('Google is not set up on this service yet (GOOGLE_CLIENT_ID).');
   const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   u.searchParams.set('client_id', GOOGLE_CLIENT_ID); u.searchParams.set('redirect_uri', GMAIL_REDIRECT);
-  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly');
+  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.readonly');
   u.searchParams.set('access_type', 'offline'); u.searchParams.set('prompt', 'consent');
   u.searchParams.set('state', signGmailState(me.id)); if (me.email) u.searchParams.set('login_hint', me.email);
   res.redirect(u.toString());
@@ -3858,6 +3858,65 @@ async function sendTaskDigests() {
   }
 }
 setInterval(sendTaskDigests, 15 * 60e3);
+
+
+// ---------- Client brain, guidelines, and content by week ----------
+const BRAIN_DIR = path.join(__dirname, 'data', 'brains'), GUIDE_DIR = path.join(__dirname, 'data', 'guidelines');
+app.get('/api/hq/brain/:slug', (req, res) => {
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, '');
+  try { res.json({ md: fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8') }); } catch { res.json({ md: '' }); }
+});
+app.get('/api/hq/guidelines', (req, res) => {
+  const order = ['content-standards', 'footage-labeling', 'content-frameworks', 'static-ads', 'voice-of-customer'];
+  const out = []; for (const k of order) { try { const t = fs.readFileSync(path.join(GUIDE_DIR, k + '.md'), 'utf8'); out.push({ key: k, title: (/^#\s+(.+)$/m.exec(t) || [, k])[1].trim() }); } catch {} }
+  res.json({ docs: out });
+});
+app.get('/api/hq/guidelines/:key', (req, res) => {
+  const k = String(req.params.key).replace(/[^a-z0-9-]/g, '');
+  try { res.json({ md: fs.readFileSync(path.join(GUIDE_DIR, k + '.md'), 'utf8') }); } catch { res.json({ md: '' }); }
+});
+const FILE_RE = /^([A-Z]{2,6})_(REEL|DRONE|PHOTO)_(\d{8})_([A-Za-z0-9]+)_([A-Z]+)_(\d{3})\.[A-Za-z0-9]+$/;
+function addBizDays(d, n) { const x = new Date(d); let c = 0; while (c < n) { x.setDate(x.getDate() + 1); if (x.getDay() !== 0 && x.getDay() !== 6) c++; } return x; }
+function mondayOf(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
+const contentCache = new Map();
+app.get('/api/hq/content/:slug', async (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  if (me.legacy) return res.json({ connected: false, legacy: true });
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  if (!c.drive) return res.json({ connected: true, noFolder: true });
+  const ck = me.id + ':' + c.slug, hit = contentCache.get(ck); if (hit && Date.now() - hit.at < 300e3) return res.json(hit.data);
+  try {
+    const tok = await userGmailToken(me.id); if (!tok) return res.json({ connected: false, configured: !!GOOGLE_CLIENT_ID });
+    const auth = { Authorization: 'Bearer ' + tok };
+    const list = async (q) => {
+      const u = new URL('https://www.googleapis.com/drive/v3/files'); u.searchParams.set('q', q); u.searchParams.set('pageSize', '200');
+      u.searchParams.set('fields', 'files(id,name,mimeType,createdTime,webViewLink)'); u.searchParams.set('orderBy', 'createdTime desc'); u.searchParams.set('supportsAllDrives', 'true'); u.searchParams.set('includeItemsFromAllDrives', 'true');
+      const r = await fetch(u, { headers: auth }); if (!r.ok) { const b = await r.text().catch(() => ''); const e = new Error('drive ' + r.status); e.status = r.status; e.body = b; throw e; }
+      return (await r.json()).files || [];
+    };
+    const kids = await list(`'${c.drive}' in parents and trashed = false`);
+    const folders = kids.filter(f => f.mimeType === 'application/vnd.google-apps.folder').map(f => ({ name: f.name, url: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`, id: f.id }));
+    const items = [];
+    for (const f of folders.filter(f => /^(reels|drone|photos)$/i.test(f.name))) {
+      for (const file of await list(`'${f.id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`)) items.push({ ...file, folder: f.name });
+    }
+    const weeksMap = new Map(), unnamed = [];
+    for (const f of items.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))) {
+      const m = FILE_RE.exec(f.name);
+      if (!m) { unnamed.push({ name: f.name, url: f.webViewLink, folder: f.folder, uploaded: f.createdTime }); continue; }
+      const due = addBizDays(f.createdTime, 10).toISOString().slice(0, 10), wk = mondayOf(f.createdTime);
+      const w = weeksMap.get(wk) || { week: wk, items: [] };
+      w.items.push({ n: w.items.length + 1, name: f.name, type: m[2], subject: m[4], label: m[5], shot: m[3], uploaded: f.createdTime.slice(0, 10), due, url: f.webViewLink });
+      weeksMap.set(wk, w);
+    }
+    const weeks = [...weeksMap.values()].sort((a, b) => a.week < b.week ? 1 : -1).slice(0, 8);
+    const data = { connected: true, folders: folders.map(f => ({ name: f.name, url: f.url })), weeks, unnamed: unnamed.slice(0, 30), total: items.length };
+    contentCache.set(ck, { at: Date.now(), data }); res.json(data);
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) return res.json({ connected: true, needsDrive: true, apiOff: /accessNotConfigured|has not been used|disabled|SERVICE_DISABLED/i.test(e.body || '') });
+    res.json({ connected: true, error: String(e.message).slice(0, 140) });
+  }
+});
 
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
@@ -4760,17 +4819,17 @@ async function provisionBasecamp(row) {
 // ---------- Open Heart Media CRM: client hub (Home, Clients, Onboarding) ----------
 const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
 const CLIENT_SEED = [
-  { slug: 'sun-and-shield', logo: '/logos/sun-and-shield.png', color: '#1f2c78', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
-  { slug: 'matchett-homes', logo: '/logos/matchett-homes.png', color: '#90b040', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
-  { slug: 'ifab', logo: '/logos/ifab.png', color: '#921c1f', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
-  { slug: 'vnphc', logo: '/logos/vnphc.png', color: '#bad230', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
-  { slug: 'adnormous', logo: '/logos/adnormous.png', color: '#a71619', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
-  { slug: 'cisga', logo: '/logos/cisga.png', color: '#dc332c', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
-  { slug: 'nitro', logo: '/logos/nitro.png', color: '#6c0f14', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
-  { slug: 'bkvf', logo: '/logos/bkvf.png', color: '#1a1a1a', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
-  { slug: 'urc', logo: '/logos/urc.png', color: '#1d2749', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
-  { slug: 'open-heart-media', logo: '/logos/open-heart-media.png', color: '#1a2b4c', name: 'Open Heart Media', status: 'internal', services: [], match: ['open heart media'] },
-  { slug: 'abls', logo: '/logos/abls.png', color: '#eab831', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
+  { slug: 'sun-and-shield', code: 'SS', drive: '1XMWaL-O8WStjYgOhuzUWnDMiRIu1cGX7', logo: '/logos/sun-and-shield.png', color: '#1f2c78', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
+  { slug: 'matchett-homes', code: 'MTCH', drive: '1QaDvSYRYmwDJyVWme2a104Wz645NJEX1', logo: '/logos/matchett-homes.png', color: '#90b040', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
+  { slug: 'ifab', code: 'IFAB', drive: '1tN7KiLRzkrJTrVfEaWrwzGC0UEt6DR98', logo: '/logos/ifab.png', color: '#921c1f', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
+  { slug: 'vnphc', code: 'VNPHC', drive: '1kmrBVMF-ZETl_-LEUwI0M8X9R7RrOYLh', logo: '/logos/vnphc.png', color: '#bad230', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
+  { slug: 'adnormous', code: 'ADN', drive: '15AaQ-I5nrWGZ_mH3Bw8jtkZ_2sycu3Oa', logo: '/logos/adnormous.png', color: '#a71619', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
+  { slug: 'cisga', code: 'CISGA', drive: '1ktR5iqpuM0fI_rkw0YtqqEFlLdeM9xFr', logo: '/logos/cisga.png', color: '#dc332c', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
+  { slug: 'nitro', code: 'NITRO', drive: '18IEZgfAyWgbtsFGc0A-a82JcTeXNH3V4', logo: '/logos/nitro.png', color: '#6c0f14', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
+  { slug: 'bkvf', code: 'BKVF', drive: '1FTen0mIG36C8DIAYWOSS4cGRScsBKrnm', logo: '/logos/bkvf.png', color: '#1a1a1a', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
+  { slug: 'urc', code: 'URC', drive: '1vTvEJedXaL3P06iL6JODAJbciz9gdYUw', logo: '/logos/urc.png', color: '#1d2749', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
+  { slug: 'open-heart-media', code: 'OHM', logo: '/logos/open-heart-media.png', color: '#1a2b4c', name: 'Open Heart Media', status: 'internal', services: [], match: ['open heart media'] },
+  { slug: 'abls', code: 'ABLS', logo: '/logos/abls.png', color: '#eab831', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
   { slug: 'nabs', logo: '/logos/nabs.png', color: '#8c8f96', name: 'North Atlanta Birth Services', status: 'ending', note: 'Ending Nov 25.', services: [], match: ['nabs', 'north atlanta birth'] },
   { slug: 'sm-crocker', logo: '/logos/sm-crocker.png', color: '#a52c23', name: 'S.M Crocker', status: 'active', kind: 'website', services: [], match: ['crocker'] },
   { slug: 'jl-adams', logo: '/logos/jl-adams.png', color: '#641012', name: 'JL Adams Inc.', status: 'active', kind: 'website', services: [], match: ['jl adams'] },
@@ -4784,7 +4843,7 @@ function loadClients() {
   if (!c) { c = CLIENT_SEED; try { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c, null, 2)); } catch {} }
   // keep match names fresh: add any new names from the built-in list to a saved client
   for (const sd of CLIENT_SEED) { if (!c.find(y => y.slug === sd.slug)) c.push({ ...sd }); }
-  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (sd.logo) { x.logo = sd.logo; x.color = sd.color; } if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
+  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (sd.logo) { x.logo = sd.logo; x.color = sd.color; } if (sd.code) x.code = sd.code; if (sd.drive) x.drive = sd.drive; if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
   // clients that only exist because they submitted the onboarding form
   const known = new Set(c.map(x => x.slug));
   for (const r of loadOnboarding()) {
