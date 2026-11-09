@@ -2187,6 +2187,53 @@ app.use(express.urlencoded({ extended: true }));
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'ohm-default-secret';
 const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-access-v1').digest('hex');
+
+// ---------- Individual logins ----------
+// Each person has their own email + password. Passwords are stored as scrypt hashes, never in clear.
+// Sessions are signed with a random secret kept on the data disk (not derived from AUTH_SECRET).
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SESS_SECRET_FILE = path.join(DATA_DIR, 'session_secret.txt');
+let SESS_SECRET = '';
+try { SESS_SECRET = fs.readFileSync(SESS_SECRET_FILE, 'utf8').trim(); } catch {}
+if (!SESS_SECRET) { SESS_SECRET = crypto.randomBytes(32).toString('hex'); try { fs.writeFileSync(SESS_SECRET_FILE, SESS_SECRET, { mode: 0o600 }); } catch {} }
+function loadUsers() { try { return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { return []; } }
+function saveUsers(u) { fs.writeFileSync(USERS_FILE, JSON.stringify(u, null, 2), { mode: 0o600 }); }
+function hashPw(pw, salt) { salt = salt || crypto.randomBytes(16).toString('hex'); return { salt, hash: crypto.scryptSync(String(pw), salt, 64).toString('hex') }; }
+function checkPw(user, pw) {
+  if (!user || !user.salt || !user.hash) return false;
+  const h = crypto.scryptSync(String(pw), user.salt, 64);
+  const b = Buffer.from(user.hash, 'hex');
+  return b.length === h.length && crypto.timingSafeEqual(b, h);
+}
+function tempPassword() { const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let o = ''; for (const b of crypto.randomBytes(12)) o += a[b % a.length]; return o.slice(0, 4) + '-' + o.slice(4, 8) + '-' + o.slice(8, 12); }
+(function seedUsers() {
+  if (loadUsers().length) return;
+  const seed = { id: 'u_' + crypto.randomBytes(4).toString('hex'), email: 'zac@openheartmediaco.com', name: 'Zac Sweat', role: 'admin', active: true, created_at: new Date().toISOString(), must_change: true };
+  Object.assign(seed, hashPw(process.env.APP_PASSWORD || tempPassword()));
+  try { saveUsers([seed]); console.log('[users] seeded zac@openheartmediaco.com (uses the current shared team password until changed)'); } catch (e) { console.error('[users] seed failed -', e.message); }
+})();
+function signSession(uid, days) { const exp = Date.now() + days * 864e5; const body = uid + '.' + exp; return body + '.' + crypto.createHmac('sha256', SESS_SECRET).update(body).digest('hex'); }
+function readSession(tok) {
+  const m = /^(u_[a-f0-9]+)\.(\d+)\.([a-f0-9]{64})$/.exec(tok || ''); if (!m) return null;
+  const want = crypto.createHmac('sha256', SESS_SECRET).update(m[1] + '.' + m[2]).digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(m[3]), Buffer.from(want)) || Date.now() > +m[2]) return null;
+  const u = loadUsers().find(x => x.id === m[1]); return u && u.active !== false ? u : null;
+}
+function cookieOpts(req) { return 'HttpOnly; Path=/; SameSite=Lax' + (String(req.headers['x-forwarded-proto'] || '').includes('https') ? '; Secure' : ''); }
+// Returns the signed-in user (or the legacy shared-password user) and sets req.user.
+function authedUser(req) {
+  if (req.user) return req.user;
+  const u = readSession(getCookie(req, 'ohm_sess'));
+  if (u) { req.user = { id: u.id, name: u.name, email: u.email, role: u.role, must_change: !!u.must_change }; return req.user; }
+  if (getCookie(req, 'ohm_auth') === AUTH_TOKEN) { req.user = { id: 'legacy', name: 'Team', email: '', role: 'member', legacy: true }; return req.user; }
+  return null;
+}
+const loginHits = new Map();
+function loginLimited(key) {
+  const now = Date.now(), win = 15 * 60e3, hits = (loginHits.get(key) || []).filter(t => now - t < win);
+  if (hits.length >= 8) { loginHits.set(key, hits); return true; }
+  hits.push(now); loginHits.set(key, hits); return false;
+}
 // Prospect-facing routes + login stay open; everything else needs the cookie (when APP_PASSWORD set).
 // Prospect-facing routes stay open: the landing page, its live-scan audit submit, tracking
 // beacon, and the Calendly webhook. Everything else needs the team login cookie.
@@ -2205,50 +2252,114 @@ app.use((req, res, next) => {
   if (!APP_PASSWORD) return next();                                   // no lock if unset (local dev)
   if (req.path.startsWith('/media/')) return next();                 // assets used by public /go page
   if (PUBLIC_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
-  if (getCookie(req, 'ohm_auth') === AUTH_TOKEN) return next();
+  if (authedUser(req)) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'auth required' });
   return res.redirect('/login');
 });
 
 function renderLogin(err) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Open Heart Media CRM</title><style>
-:root{--ink:#0f1a30;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff}
+<title>Open Heart Media CRM</title><meta name="theme-color" content="#0f1b30"><style>
+:root{--ink:#0b1220;--red:#e22a24}
 *{box-sizing:border-box}
-body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#f5f7fb;color:var(--ink);display:flex;align-items:center;justify-content:center;min-height:100vh}
-.card{width:360px;background:#fff;border:1px solid #e4e9f2;border-radius:18px;padding:40px 36px 34px;text-align:center;box-shadow:0 12px 40px rgba(26,43,76,.10)}
-.card::before{content:"";display:block;height:3px;width:46px;background:var(--red);border-radius:3px;margin:0 auto 26px}
-.logo{height:40px;margin-bottom:24px}
-h1{font-size:19px;font-weight:700;margin:0 0 6px;color:var(--ink)}
-p.sub{color:#68758c;font-size:13px;margin:0 0 24px}
-input{width:100%;padding:13px 14px;border:1px solid #d3dbe8;border-radius:11px;background:#fbfcfe;color:var(--ink);font:inherit;margin-bottom:12px}
-input:focus{outline:none;border-color:var(--blue);background:#fff}
-button{width:100%;padding:14px;border:0;border-radius:11px;background:var(--red);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
-button:hover{background:#c92626}
-.err{color:var(--red);font-size:13px;margin-top:12px;min-height:16px}
-.foot{margin-top:22px;color:#9aa7bd;font-size:11px;letter-spacing:.3px}
+body{margin:0;font:15px/1.5 Inter,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+ background:radial-gradient(60% 80% at 100% 0%,rgba(226,42,36,.35),transparent 60%),radial-gradient(60% 80% at 0% 100%,rgba(47,111,208,.35),transparent 60%),linear-gradient(135deg,#13264a,#0a1226)}
+.card{width:100%;max-width:400px;background:#fff;border-radius:22px;padding:38px 34px 30px;box-shadow:0 30px 80px -20px rgba(0,0,0,.6)}
+.logo{height:38px;margin-bottom:22px}
+h1{font-size:23px;font-weight:800;letter-spacing:-.025em;margin:0 0 4px}
+p.sub{color:#68758c;font-size:14px;margin:0 0 22px}
+label{display:block;font-size:12px;font-weight:600;color:#3a465c;margin:0 0 6px;letter-spacing:.02em}
+input{width:100%;padding:13px 14px;border:1px solid #d5dce8;border-radius:12px;background:#fbfcfe;font:inherit;margin-bottom:16px;min-height:46px}
+input:focus{outline:2px solid #6aa0ff;outline-offset:1px;background:#fff}
+button{width:100%;padding:14px;border:0;border-radius:12px;background:var(--red);color:#fff;font-weight:700;font-size:15px;cursor:pointer;min-height:48px;box-shadow:0 10px 24px -10px rgba(226,42,36,.8)}
+button:hover{background:#f03a34}
+.err{color:#c4261d;font-size:13.5px;margin:-4px 0 14px;min-height:18px}
+.alt{display:block;margin-top:18px;text-align:center;font-size:13px;color:#68758c;cursor:pointer;text-decoration:underline}
+.foot{margin-top:22px;text-align:center;color:#9aa7bd;font-size:11px;letter-spacing:.14em}
 </style></head><body>
 <div class="card">
   <img class="logo" src="/media/logo-navy.png" alt="Open Heart Media"/>
-  <h1>Team sign in</h1><p class="sub">Enter the shared team password to open the Open Heart Media CRM.</p>
-  <form method="POST" action="/api/login">
-    <input type="password" name="password" placeholder="Team password" autofocus/>
+  <h1>Welcome back</h1><p class="sub">Sign in to the Open Heart Media CRM.</p>
+  <form method="POST" action="/api/login" id="f">
+    <div id="emailRow"><label for="email">Email</label><input id="email" type="email" name="email" autocomplete="username" placeholder="you@openheartmediaco.com" autofocus/></div>
+    <label for="pw" id="pwl">Password</label><input id="pw" type="password" name="password" autocomplete="current-password"/>
+    <div class="err">${err ? 'That email and password did not match. Try again.' : ''}</div>
     <button type="submit">Sign in</button>
   </form>
-  <div class="err">${err ? 'Wrong password. Try again.' : ''}</div>
+  <a class="alt" id="alt" onclick="var r=document.getElementById('emailRow');var on=r.style.display==='none';r.style.display=on?'':'none';document.getElementById('email').disabled=!on;document.getElementById('pwl').textContent=on?'Password':'Shared team password';this.textContent=on?'Use the shared team password instead':'Sign in with your email instead'">Use the shared team password instead</a>
   <div class="foot">OPEN HEART MEDIA CRM</div>
 </div></body></html>`;
 }
 app.get('/login', (_, res) => res.send(renderLogin(false)));
 app.post('/api/login', (req, res) => {
-  const password = (req.body && req.body.password) || '';
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase().slice(0, 254);
+  const password = String((req.body && req.body.password) || '').slice(0, 200);
+  const key = (req.ip || 'x') + '|' + email;
+  if (loginLimited(key)) return res.status(429).send('Too many attempts. Wait 15 minutes and try again.');
+  if (email) {
+    const u = loadUsers().find(x => x.email === email && x.active !== false);
+    if (u && checkPw(u, password)) {
+      u.last_login = new Date().toISOString(); try { saveUsers(loadUsers().map(x => x.id === u.id ? u : x)); } catch {}
+      res.setHeader('Set-Cookie', `ohm_sess=${signSession(u.id, 30)}; ${cookieOpts(req)}; Max-Age=${60 * 60 * 24 * 30}`);
+      return res.redirect(u.must_change ? '/account?first=1' : '/');
+    }
+    return res.status(401).send(renderLogin(true));
+  }
   if (APP_PASSWORD && password === APP_PASSWORD) {
-    res.setHeader('Set-Cookie', `ohm_auth=${AUTH_TOKEN}; HttpOnly; Path=/; Max-Age=${60 * 60 * 24 * 30}; SameSite=Lax`);
+    res.setHeader('Set-Cookie', `ohm_auth=${AUTH_TOKEN}; ${cookieOpts(req)}; Max-Age=${60 * 60 * 24 * 30}`);
     return res.redirect('/');
   }
   res.status(401).send(renderLogin(true));
 });
-app.post('/api/logout', (_, res) => { res.setHeader('Set-Cookie', 'ohm_auth=; HttpOnly; Path=/; Max-Age=0'); res.json({ ok: true }); });
+app.post('/api/logout', (req, res) => { const o = cookieOpts(req); res.setHeader('Set-Cookie', [`ohm_auth=; ${o}; Max-Age=0`, `ohm_sess=; ${o}; Max-Age=0`]); res.json({ ok: true }); });
+
+app.get('/api/me', (req, res) => { const u = authedUser(req); if (!u) return res.status(401).json({ error: 'auth required' }); res.json({ id: u.id, name: u.name, email: u.email, role: u.role, must_change: !!u.must_change, legacy: !!u.legacy }); });
+app.post('/api/me/password', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(401).json({ error: 'Sign in with your own email to change a password.' });
+  const { current, next } = req.body || {};
+  const users = loadUsers(), u = users.find(x => x.id === me.id);
+  if (!u || !checkPw(u, current || '')) return res.status(400).json({ error: 'Your current password is not right.' });
+  if (String(next || '').length < 10) return res.status(400).json({ error: 'Use at least 10 characters.' });
+  Object.assign(u, hashPw(next)); u.must_change = false; saveUsers(users); res.json({ ok: true });
+});
+app.get('/account', (req, res) => {
+  const u = authedUser(req);
+  res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your account</title>
+<style>body{font:15px/1.5 Inter,-apple-system,sans-serif;background:#f3f5f9;margin:0;display:flex;justify-content:center;padding:40px 16px;color:#0b1220}.c{max-width:420px;width:100%;background:#fff;border:1px solid #e6eaf1;border-radius:18px;padding:30px;box-shadow:0 12px 40px -18px rgba(11,18,32,.3)}h1{margin:0 0 4px;font-size:22px;letter-spacing:-.02em}p{color:#667489;margin:0 0 18px}label{display:block;font-size:12px;font-weight:600;margin:0 0 6px}input{width:100%;padding:12px;border:1px solid #d5dce8;border-radius:10px;margin-bottom:14px;font:inherit}button{padding:12px 18px;border:0;border-radius:10px;background:#e22a24;color:#fff;font-weight:700;cursor:pointer;font-size:15px}a{color:#2f6fd0}#m{margin-top:12px;font-size:14px}</style>
+<div class="c"><h1>${esc(u && u.name || 'Account')}</h1><p>${req.query.first ? 'Welcome. Pick your own password to finish setting up.' : esc(u && u.email || '')}</p>
+${u && u.legacy ? '<p>You are signed in with the shared team password. Ask Zac for your own login.</p><a href="/">Back to the CRM</a>' : `<form id="f"><label>Current password</label><input type="password" id="cur" autocomplete="current-password" required><label>New password (10 or more characters)</label><input type="password" id="nw" autocomplete="new-password" minlength="10" required><button>Save password</button><div id="m"></div></form><p style="margin-top:18px"><a href="/">Back to the CRM</a></p>`}</div>
+<script>var f=document.getElementById('f');if(f)f.onsubmit=async function(e){e.preventDefault();var r=await fetch('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current:cur.value,next:nw.value})});var j=await r.json();document.getElementById('m').textContent=r.ok?'Saved. Taking you to the CRM...':(j.error||'Could not save.');if(r.ok)setTimeout(function(){location.href='/'},900)}</script>`);
+});
+function requireAdmin(req, res) { const u = authedUser(req); if (u && u.role === 'admin') return u; res.status(403).json({ error: 'Admins only.' }); return null; }
+const pubUser = u => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active !== false, must_change: !!u.must_change, last_login: u.last_login || '' });
+app.get('/api/admin/users', (req, res) => { if (!requireAdmin(req, res)) return; res.json({ users: loadUsers().map(pubUser) }); });
+app.post('/api/admin/users', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 80), email = String((req.body && req.body.email) || '').trim().toLowerCase().slice(0, 254);
+  const role = (req.body && req.body.role) === 'admin' ? 'admin' : 'member';
+  if (!name || !looksLikeEmail(email)) return res.status(400).json({ error: 'Add a name and a valid email.' });
+  const users = loadUsers(); if (users.some(x => x.email === email)) return res.status(400).json({ error: 'That email already has a login.' });
+  const temp = tempPassword();
+  const u = { id: 'u_' + crypto.randomBytes(4).toString('hex'), email, name, role, active: true, must_change: true, created_at: new Date().toISOString(), ...hashPw(temp) };
+  users.push(u); saveUsers(users); res.json({ user: pubUser(u), temp_password: temp });
+});
+app.post('/api/admin/users/:id/reset', (req, res) => {
+  const me = requireAdmin(req, res); if (!me) return;
+  const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
+  const temp = tempPassword(); Object.assign(u, hashPw(temp)); u.must_change = true; saveUsers(users); res.json({ temp_password: temp });
+});
+app.post('/api/admin/users/:id/active', (req, res) => {
+  const me = requireAdmin(req, res); if (!me) return;
+  if (me.id === req.params.id) return res.status(400).json({ error: 'You cannot turn off your own login.' });
+  const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
+  u.active = !!(req.body && req.body.active); saveUsers(users); res.json({ ok: true });
+});
+app.post('/api/admin/users/:id/role', (req, res) => {
+  const me = requireAdmin(req, res); if (!me) return;
+  if (me.id === req.params.id) return res.status(400).json({ error: 'Ask another admin to change your role.' });
+  const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
+  u.role = (req.body && req.body.role) === 'admin' ? 'admin' : 'member'; saveUsers(users); res.json({ ok: true });
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -4482,7 +4593,7 @@ app.post('/api/onboarding', async (req, res) => {
 });
 
 function teamOnly(req, res) {
-  if (!APP_PASSWORD || getCookie(req, 'ohm_auth') === AUTH_TOKEN) return true;
+  if (!APP_PASSWORD || authedUser(req)) return true;
   res.status(401).json({ error: 'auth required' }); return false;
 }
 app.get('/api/onboarding', (req, res) => { if (!teamOnly(req, res)) return; res.json({ responses: loadOnboarding().slice().reverse() }); });

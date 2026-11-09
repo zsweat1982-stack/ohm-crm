@@ -176,3 +176,34 @@ details.sm pre{white-space:pre-wrap;font:12.5px/1.6 ui-monospace,Menlo,monospace
   #mnav button.on{color:#fff;background:rgba(255,255,255,.1)}
   #mnav button.on .ico{color:#ff5a52}
 }
+
+/* ---- outreach overview ---- */
+.obk{display:none;align-items:center;gap:6px;background:#f3f5f9;border:1px solid var(--hair);color:var(--ink2);font-weight:600;border-radius:10px;padding:7px 12px;font-size:13px}
+body.outdetail .obk{display:inline-flex}
+body.hqout .obtn{display:inline-flex !important}
+body.hqout .top .sp{display:block}
+.og{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-bottom:26px}
+.oc{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--surface);border:1px solid var(--hair);border-radius:var(--r-md);padding:18px;box-shadow:var(--e1);cursor:pointer;transition:transform .2s var(--ease),box-shadow .2s var(--ease),border-color .2s;font:inherit;color:inherit;animation:rise .35s var(--ease) both}
+.oc:hover{transform:translateY(-3px);box-shadow:var(--e3);border-color:#cfd8e6}
+.oc .top2{display:flex;align-items:center;justify-content:space-between}
+.oc .ci{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#e8f0fd;color:#2f6fd0}
+.oc .arrow{color:#aab4c5;transition:transform .2s var(--ease),color .2s}.oc:hover .arrow{transform:translateX(3px);color:var(--ink)}
+.oc .n{font-size:32px;font-weight:800;letter-spacing:-.03em;line-height:1.05;margin-top:8px}
+.oc .lb{font-weight:600;font-size:14.5px}.oc .ds{font-size:12.5px;color:var(--mut);line-height:1.4}
+.oc.hot .ci{background:#fdf0d4;color:#c98a0b}.oc.win .ci{background:#e0f4ea;color:#17935f}.oc.cold .ci{background:#eef1f6;color:#667489}
+.funnel{display:flex;align-items:stretch;gap:0;margin:4px 0 26px;background:var(--surface);border:1px solid var(--hair);border-radius:var(--r-md);box-shadow:var(--e1);overflow:hidden}
+.funnel>button{flex:1;background:none;border:0;border-right:1px solid var(--hair);padding:16px 18px;text-align:left;border-radius:0;cursor:pointer;font:inherit;color:inherit}
+.funnel>button:last-child{border-right:0}.funnel>button:hover{background:#f7f9fc}
+.funnel b{display:block;font-size:26px;letter-spacing:-.03em;font-weight:800}.funnel span{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.ttab{width:100%;border-collapse:collapse;font-size:14px}
+.ttab th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);text-align:left;padding:8px 10px;border-bottom:1px solid var(--hair)}
+.ttab td{padding:13px 10px;border-bottom:1px solid var(--hair);vertical-align:middle}
+.ttab .nm{font-weight:600}.ttab .em{color:var(--mut);font-size:12.5px}
+.mini{padding:6px 10px;font-size:12.5px;min-height:34px;border-radius:9px}
+.tempbox{background:#0f1b30;color:#fff;border-radius:14px;padding:18px 20px;margin:0 0 16px}
+.tempbox code{font-size:20px;letter-spacing:.06em;background:rgba(255,255,255,.1);padding:4px 10px;border-radius:8px}
+.frm{display:grid;grid-template-columns:1.2fr 1.4fr .8fr auto;gap:10px;align-items:end}
+.frm label{font-size:12px;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px}
+.frm input,.frm select{width:100%;padding:10px 12px;border:1px solid var(--hair2);border-radius:10px;min-height:42px;font:inherit}
+@media(max-width:760px){.frm{grid-template-columns:1fr}.funnel{flex-wrap:wrap}.funnel>button{flex:1 1 45%;border-bottom:1px solid var(--hair)}.ttab .em{display:none}
+  .top .obk{padding:6px 10px}}

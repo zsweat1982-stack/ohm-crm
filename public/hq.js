@@ -1,6 +1,6 @@
 /* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
 (function () {
-  var HQ = { data: null, onb: null, loading: false };
+  var HQ = { data: null, onb: null, loading: false, me: null };
   var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
   // One icon family: 24px grid, 1.8 stroke, round caps.
   var P = {
@@ -73,10 +73,11 @@
 
   async function fetchHq(force) {
     if (HQ.loading) return; HQ.loading = true;
-    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); HQ.onb = (await api('/api/onboarding')).responses || []; }
+    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} }
     catch (err) { HQ.err = err.message; }
     HQ.loading = false;
   }
+  function firstName() { return HQ.me && !HQ.me.legacy && HQ.me.name ? String(HQ.me.name).split(' ')[0] : ''; }
   function greeting() { var h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
   function skeleton() { return '<div class="sk" style="height:210px;margin-bottom:16px"></div><div class="bento"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>'; }
   function tile(l, v, s, icon, cls) { return '<div class="tile rise ' + cls + '"><div class="chipi">' + ico(icon) + '</div><div class="l">' + e(l) + '</div><div class="v">' + e(v) + '</div><div class="s">' + e(s) + '</div></div>'; }
@@ -104,7 +105,7 @@
     var sub = !d.connected ? 'Connect Basecamp and every client\'s work shows up here.' : need ? need + ' thing' + (need > 1 ? 's' : '') + ' need you today.' : 'Nothing is late and nobody is waiting on you.';
     var trackPct = linked ? ontrack / linked * 100 : null, workPct = tot ? done / tot * 100 : null;
     return '<div class="hero rise"><div><div class="eyebrow">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</div>' +
-      '<h2>' + greeting() + ', Zac</h2><p>' + e(sub) + '</p><div class="acts">' +
+      '<h2>' + greeting() + (firstName() ? ', ' + e(firstName()) : '') + '</h2><p>' + e(sub) + '</p><div class="acts">' +
       (d.connected ? '<button class="btn2 red" onclick="hqNav(\'hq:clients\')">' + ico('users') + 'All clients</button>' : '<a class="btn2 red" href="/api/basecamp/connect">' + ico('link') + 'Connect Basecamp</a>') +
       '<a class="btn2 glass" href="/onboarding" target="_blank" rel="noopener">' + ico('clipboard') + 'Client form</a>' +
       '<button class="btn2 glass" onclick="hqRefresh()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button></div></div>' +
@@ -172,16 +173,73 @@
       }).join('') : '<div class="empty">' + ico('inbox') + 'No submissions yet. Add <code>?client=their-name</code> to the form link so answers file under that client.</div>') + '</div>';
   }
 
+
+  var OUT_INFO = {
+    board: ['Pipeline board', 'Every lead on one board by stage.', 'kanban', ''],
+    replied: ['Replied', 'They wrote back. Answer these first.', 'reply', 'hot'], booked: ['Booked', 'Calls on the calendar.', 'check', 'win'],
+    won: ['Won', 'Closed deals.', 'flag', 'win'], sent: ['Awaiting reply', 'Emailed, nothing back yet.', 'mail', ''],
+    inbound: ['Inbound', 'People who came to us.', 'star', 'hot'], giveaway: ['Giveaway', 'Entrants from the giveaway.', 'gift', ''],
+    manual: ['Manual', 'Added by hand, never auto-emailed.', 'plus', ''], nosite: ['No Website', 'Call list of businesses without a site.', 'phone', ''],
+    new: ['Queue', 'Waiting to be drafted.', 'circle', 'cold'], drafted: ['Drafted', 'Written, waiting for approval.', 'edit', ''],
+    all: ['All leads', 'The full list in a table.', 'list', 'cold'], unreachable: ['Unreachable', 'No working email or phone.', 'ban', 'cold'], rejected: ['Rejected', 'Pulled from outreach.', 'x', 'cold']
+  };
+  function outCount(k) {
+    var live = (state.prospects || []).filter(function (p) { return !p.internal && p.status !== 'test'; });
+    for (var i = 0; i < NAV.length; i++) for (var j = 0; j < NAV[i][1].length; j++) { var it = NAV[i][1][j]; if (it[0] === k) return it[3] ? live.filter(it[3]).length : live.length; }
+    return live.length;
+  }
+  function ocard(k, i) {
+    var o = OUT_INFO[k]; return '<button class="oc ' + o[3] + '" style="animation-delay:' + i * 30 + 'ms" onclick="navTo(\'' + k + '\')"><div class="top2"><div class="ci">' + ico(o[2]) + '</div><span class="arrow">' + ico('arrow') + '</span></div><div class="n">' + outCount(k).toLocaleString() + '</div><div class="lb">' + e(o[0]) + '</div><div class="ds">' + e(o[1]) + '</div></button>';
+  }
+  function outreach() {
+    var g = function (title, sub, keys) { return '<div class="sec"><div><h3>' + title + '</h3><p>' + sub + '</p></div></div><div class="og">' + keys.map(ocard).join('') + '</div>'; };
+    var f = function (k, l) { return '<button onclick="navTo(\'' + k + '\')"><b>' + outCount(k).toLocaleString() + '</b><span>' + l + '</span></button>'; };
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Outreach</h3><p>Cold email and new business. Click any box to open it.</p></div></div>' +
+      '<div class="funnel">' + f('all', 'Leads') + f('sent', 'Contacted') + f('replied', 'Replied') + f('booked', 'Booked') + f('won', 'Won') + '</div>' +
+      g('Pipeline', 'Where each conversation stands.', ['replied', 'sent', 'booked', 'won']) +
+      g('Where leads come from', 'Different lists, different rules.', ['inbound', 'giveaway', 'nosite', 'manual']) +
+      g('The list', 'Everything behind the scenes.', ['board', 'new', 'drafted', 'all', 'unreachable', 'rejected']);
+  }
+  async function team() {
+    var me = HQ.me; var box = '';
+    if (!me || me.role !== 'admin') return '<div class="sec"><div><h3 style="font-size:28px">Team</h3><p>Only admins can manage logins.</p></div></div><div class="panel"><div class="empty">' + ico('alert') + 'Ask Zac or Griffin to add or reset a login.</div></div>';
+    var r = await api('/api/admin/users'); HQ.users = r.users;
+    var rows = r.users.map(function (u) {
+      return '<tr><td><div class="nm">' + e(u.name) + '</div><div class="em">' + e(u.email) + '</div></td><td><span class="chip st-' + (u.role === 'admin' ? 'internal' : 'active') + '">' + (u.role === 'admin' ? 'Admin' : 'Member') + '</span>' + (u.active ? '' : ' <span class="chip st-ending">Off</span>') + (u.must_change ? ' <span class="chip need">Needs new password</span>' : '') + '</td>' +
+        '<td class="em">' + (u.last_login ? e(new Date(u.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : 'Never') + '</td><td style="text-align:right;white-space:nowrap">' +
+        '<button class="btn2 line mini" onclick="hqReset(\'' + e(u.id) + '\')">Reset password</button> ' +
+        (me.id !== u.id ? '<button class="btn2 line mini" onclick="hqActive(\'' + e(u.id) + '\',' + (u.active ? 'false' : 'true') + ')">' + (u.active ? 'Turn off' : 'Turn on') + '</button>' : '') + '</td></tr>';
+    }).join('');
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team</h3><p>Everyone who can log in. Each person sees their own name.</p></div></div><div id="tempbox"></div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>Add a person</h3><div class="frm" style="margin-top:12px"><div><label for="nu_n">Name</label><input id="nu_n" placeholder="Full name"></div><div><label for="nu_e">Email</label><input id="nu_e" type="email" placeholder="name@openheartmediaco.com"></div><div><label for="nu_r">Role</label><select id="nu_r"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn2 red" onclick="hqAddUser()">Add</button></div></div>' +
+      '<div class="panel"><table class="ttab"><thead><tr><th>Person</th><th>Access</th><th>Last in</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+  function showTemp(who, pw) {
+    var b = document.getElementById('tempbox'); if (!b) return;
+    b.innerHTML = '<div class="tempbox"><b>Temporary password for ' + e(who) + '</b><div style="margin:10px 0"><code>' + e(pw) + '</code></div><div style="color:#9db3d6;font-size:13px">Send it to them privately. It is shown once. They pick their own password the first time they log in.</div></div>';
+    window.scrollTo(0, 0);
+  }
+  window.hqAddUser = async function () {
+    var n = document.getElementById('nu_n').value, em = document.getElementById('nu_e').value, ro = document.getElementById('nu_r').value;
+    try { var r = await api('/api/admin/users', 'POST', { name: n, email: em, role: ro }); await show('hq:team'); showTemp(r.user.name, r.temp_password); } catch (er) { toast(er.message); }
+  };
+  window.hqReset = async function (id) {
+    if (!confirm('Reset this password? Their old password stops working.')) return;
+    try { var r = await api('/api/admin/users/' + id + '/reset', 'POST', {}); var u = (HQ.users || []).filter(function (x) { return x.id === id; })[0]; await show('hq:team'); showTemp(u ? u.name : 'them', r.temp_password); } catch (er) { toast(er.message); }
+  };
+  window.hqActive = async function (id, on) { try { await api('/api/admin/users/' + id + '/active', 'POST', { active: on }); show('hq:team'); } catch (er) { toast(er.message); } };
+
   // Phone bottom bar
   function mnav() {
     var el = document.getElementById('mnav'); if (!el) { el = document.createElement('nav'); el.id = 'mnav'; el.setAttribute('aria-label', 'Main'); document.body.appendChild(el); }
-    var items = [['hq:home', 'home', 'Home'], ['hq:clients', 'users', 'Clients'], ['hq:onboarding', 'clipboard', 'Onboarding'], ['board', 'kanban', 'Outreach']];
-    el.innerHTML = items.map(function (it) { return '<button class="' + (navKey === it[0] ? 'on' : '') + '" onclick="navTo(\'' + it[0] + '\')">' + ico(it[1]) + '<span>' + it[2] + '</span></button>'; }).join('');
+    var items = [['hq:home', 'home', 'Home'], ['hq:clients', 'users', 'Clients'], ['hq:onboarding', 'clipboard', 'Onboarding'], ['hq:outreach', 'kanban', 'Outreach']];
+    el.innerHTML = items.map(function (it) { return '<button class="' + ((navKey === it[0] || (it[0] === 'hq:outreach' && String(navKey).indexOf('hq:') !== 0)) ? 'on' : '') + '" onclick="navTo(\'' + it[0] + '\')">' + ico(it[1]) + '<span>' + it[2] + '</span></button>'; }).join('');
   }
 
   async function show(key) {
     document.body.classList.add('hqmode');
-    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding' };
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team' };
+    document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
     document.getElementById('viewTitle').textContent = titles[key] || 'Client';
     var el = root();
     if (!HQ.data) { el.innerHTML = skeleton(); await fetchHq(false); }
@@ -189,11 +247,13 @@
     if (key === 'hq:home') el.innerHTML = home();
     else if (key === 'hq:clients') el.innerHTML = clients();
     else if (key === 'hq:onboarding') el.innerHTML = onboarding();
+    else if (key === 'hq:outreach') el.innerHTML = outreach();
+    else if (key === 'hq:team') el.innerHTML = await team();
     else if (key.indexOf('hq:client:') === 0) el.innerHTML = clientPage(key.slice(10));
     window.scrollTo(0, 0); mnav();
   }
   window.hqNav = function (key) {
-    if (String(key).indexOf('hq:') !== 0) { document.body.classList.remove('hqmode'); navKey = key; mnav(); return false; }
+    if (String(key).indexOf('hq:') !== 0) { document.body.classList.remove('hqmode', 'hqout'); document.body.classList.add('outdetail'); navKey = key; mnav(); if (typeof renderNav === 'function') renderNav(); return false; }
     navKey = key; if (typeof renderNav === 'function') renderNav(); show(key); return true;
   };
   window.hqRefresh = async function () { HQ.data = null; root().innerHTML = skeleton(); await fetchHq(true); show(navKey); };
