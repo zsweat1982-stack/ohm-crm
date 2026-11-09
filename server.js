@@ -3927,7 +3927,7 @@ async function getContent(me, c) {
       if (!m) { unnamed.push({ name: f.name, url: f.webViewLink, folder: f.folder, uploaded: f.createdTime }); continue; }
       const due = addBizDays(f.createdTime, 10).toISOString().slice(0, 10), wk = mondayOf(f.createdTime);
       const w = weeksMap.get(wk) || { week: wk, items: [] };
-      w.items.push({ n: w.items.length + 1, name: f.name, type: m[2], subject: m[4], label: m[5], shot: m[3], uploaded: f.createdTime.slice(0, 10), due, url: f.webViewLink });
+      w.items.push({ id: f.id, n: w.items.length + 1, name: f.name, type: m[2], subject: m[4], label: m[5], shot: m[3], uploaded: f.createdTime.slice(0, 10), due, url: f.webViewLink });
       weeksMap.set(wk, w);
     }
     const weeks = [...weeksMap.values()].sort((a, b) => a.week < b.week ? 1 : -1).slice(0, 8);
@@ -3944,6 +3944,39 @@ app.get('/api/hq/content/:slug', async (req, res) => {
   const c = loadClients().find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
   res.json(await getContent(me, c));
 });
+
+// When Tristen uploads footage, the editing and design tasks are created from it. Files already there when this first runs are baselined, not tasked.
+const UPLOADS_STATE = path.join(DATA_DIR, 'uploads_state.json');
+async function autoUploads() {
+  if (!AUTO_ON() || !GOOGLE_CLIENT_ID) return;
+  const uid = Object.keys(gUsers())[0]; if (!uid) return;
+  const prev = readJson(UPLOADS_STATE, null), first = !prev, seen = new Set((prev && prev.seen) || []), tasks = loadTasks(); let changed = false;
+  for (const c of loadClients().filter(x => x.drive)) {
+    try {
+      contentCache.delete(uid + ':' + c.slug); const d = await getContent({ id: uid }, c); if (!d.weeks) continue;
+      const items = d.weeks.flatMap(w => w.items), fresh = items.filter(i => i.id && !seen.has(i.id));
+      if (!fresh.length) continue; fresh.forEach(i => seen.add(i.id)); changed = true; if (first) continue;
+      const byShot = new Map(); fresh.forEach(i => { (byShot.get(i.shot) || byShot.set(i.shot, []).get(i.shot)).push(i); });
+      for (const [shot, list] of byShot) {
+        const nice = shot.slice(4, 6) + '/' + shot.slice(6, 8), fd = fridayDue(), sl = (loadShotlists()[c.slug] || []).find(x => x.date === shot.slice(0, 4) + '-' + shot.slice(4, 6) + '-' + shot.slice(6, 8));
+        const make = (lane, title, rows) => {
+          if (!rows.length) return; const owner = ownerFor(c, lane); if (!owner) return;
+          const count = {}; rows.forEach(r => { const k = r.type + ' ' + r.label; count[k] = (count[k] || 0) + 1; });
+          const note = `Uploaded from the ${nice} shoot. ${Object.entries(count).map(([k, v]) => v + ' ' + k).join(', ')}.${sl ? ' Shot list: ' + sl.name + '.' : ''}\nFiles: https://drive.google.com/drive/folders/${c.drive}`;
+          const open = tasks.find(t => t.status === 'open' && t.source && t.source.type === 'upload' && t.source.slug === c.slug && t.source.shot === shot && t.lane === lane);
+          if (open) { open.note = note; open.title = title; return; }
+          tasks.push({ id: 't_' + crypto.randomBytes(5).toString('hex'), title, client: c.slug, lane, owner: owner.id, due: fd.due, due_time: fd.due_time, status: 'open', created_at: new Date().toISOString(), created_by: 'upload', note, source: { type: 'upload', slug: c.slug, shot } });
+        };
+        make('content', `Edit ${list.filter(r => r.type !== 'PHOTO').length} clips from the ${nice} shoot: ${c.name}`, list.filter(r => r.type !== 'PHOTO'));
+        make('graphics', `Retouch and design from ${list.filter(r => r.type === 'PHOTO').length} photos, ${nice} shoot: ${c.name}`, list.filter(r => r.type === 'PHOTO'));
+        console.log('[uploads] tasks for', c.slug, shot);
+      }
+    } catch (e) { console.error('[uploads] failed', c.slug, e.message); }
+  }
+  if (changed || first) { saveTasks(tasks); fs.writeFileSync(UPLOADS_STATE, JSON.stringify({ seen: [...seen].slice(-6000), at: new Date().toISOString() })); }
+}
+setTimeout(autoUploads, process.env.AUTO_FAST ? 12e3 : 150e3); setInterval(autoUploads, process.env.AUTO_FAST ? 10e3 : 15 * 60e3);
+
 // Every client at a glance: pieces uploaded this week and last, the next due date, files that need renaming.
 app.get('/api/hq/content-week', async (req, res) => {
   const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
@@ -3995,13 +4028,24 @@ app.put('/api/hq/facts/:slug', (req, res) => {
   fs.mkdirSync(FACTS_LIVE, { recursive: true }); fs.writeFileSync(path.join(FACTS_LIVE, slug + '.md'), md); res.json({ ok: true });
 });
 
+
+// Long AI work runs in the background; the page polls for the result so nothing times out.
+const jobs = new Map();
+function startJob(fn) { const id = 'j_' + crypto.randomBytes(4).toString('hex'), j = { id, status: 'running' }; jobs.set(id, j); fn().then(r => { j.status = 'done'; j.result = r; }).catch(e => { j.status = 'error'; j.error = String((e && e.message) || e).slice(0, 300); }); setTimeout(() => jobs.delete(id), 30 * 60e3); return id; }
+app.get('/api/hq/jobs/:id', (req, res) => { if (!authedUser(req)) return res.status(401).json({ error: 'auth required' }); const j = jobs.get(req.params.id); res.json(j ? { status: j.status, error: j.error || '' } : { status: 'error', error: 'That job expired. Try again.' }); });
+// Everything is due Friday at 5:00 PM Eastern, no exceptions.
+function etNow() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); }
+function ymdLocal(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function fridayDue() { const d = etNow(), dow = d.getDay(); let add = dow >= 1 && dow <= 5 ? 5 - dow : (5 - dow + 7) % 7; if (dow === 5 && d.getHours() >= 17) add = 7; d.setDate(d.getDate() + add); return { due: ymdLocal(d), due_time: '17:00' }; }
+function upcomingMonday() { const d = etNow(), dow = d.getDay(); d.setDate(d.getDate() + (dow === 1 ? 0 : (8 - dow) % 7)); return ymdLocal(d); }
+
 const SHOTLIST_RULES = `You are the Open Heart Media content planner. You write ONE shot list for ONE shoot for ONE client. The team will film exactly what you write.
 Rules:
 - CONFIRMED FACTS are verified by the team and override anything in the brain. If they conflict with the brain, follow the confirmed facts. Never narrow what the client does below what the confirmed facts say.
 - Use only facts in the client brain and the confirmed facts. Never invent stats, awards, testimonials, prices, specs, names or dates. If a hook depends on a fact the client has not confirmed, add it to "verify".
 - Obey the client's compliance and claims section in the brain. If it forbids something, do not write it.
 - Hooks are talking-head lines said in one breath (18 words or fewer), to ONE person in ONE moment, with something checkable. Each hook uses a different angle, not a reworded version of the same line.
-- Base hooks and b-roll on what is working: first the client's own top posts, then the formats and hook patterns listed in the brain. Say which pattern each one copies in "mimic".
+- Base hooks and b-roll on what is proven and working: first the client's own top posts and anything labeled TESTED or PROVEN, then the formats and hook patterns in the brain labeled PROXY or OBSERVED. Prefer proven over hypothesis. Say which pattern each one copies in "mimic" and its evidence label in "why".
 - B-roll and photo shots are specific and filmable in one visit (subject, angle, action). No vague items like "great footage".
 - Use the five awareness levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and tag each hook with one.
 - Anything the archive is missing (see ARCHIVE) should get priority in b-roll and photos.
@@ -4021,7 +4065,7 @@ function archiveSummary(slug) {
 }
 async function aiJson(system, user, maxTokens) {
   if (process.env.FAKE_AI === '1') return JSON.parse(process.env.FAKE_AI_JSON || '{}');
-  const r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: maxTokens || 4000, system, messages: [{ role: 'user', content: user }] });
+  let r; try { r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: maxTokens || 4000, system, messages: [{ role: 'user', content: user }] }); } catch (e) { const m = String((e && e.message) || e); throw new Error(/credit balance|billing/i.test(m) ? 'The Anthropic account is out of credits. Add credits and try again.' : /api[_ ]?key|authentication|401/i.test(m) ? 'The Anthropic key on the server is missing or wrong.' : 'The AI request failed: ' + m.slice(0, 140)); }
   let t = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < 0) throw new Error('The AI did not return a shot list. Try again.');
   return JSON.parse(t.slice(a, b + 1));
@@ -4044,45 +4088,51 @@ async function makeShotlist(slug, dateStr, who) {
   fs.writeFileSync(SHOTLISTS_FILE, JSON.stringify(all, null, 2));
   return item;
 }
-app.post('/api/hq/shotlists/:slug', async (req, res) => {
+app.post('/api/hq/shotlists/:slug', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
   const d = String((req.body && req.body.date) || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Pick the shoot date.' });
-  try { res.json({ list: await makeShotlist(String(req.params.slug), d, me.name) }); } catch (e) { res.status(500).json({ error: String(e.message).slice(0, 200) }); }
+  const slug = String(req.params.slug); res.json({ job: startJob(async () => { const l = await makeShotlist(slug, d, me.name); try { createShotTask(slug, l, me.name); } catch {} return l; }) });
 });
+function createShotTask(slug, list, who) {
+  const c = loadClients().find(x => x.slug === slug), owner = c && ownerFor(c, 'field'); if (!owner) throw new Error('Nobody is set for the Field team.');
+  const tasks = loadTasks(); if (tasks.some(t => t.source && t.source.type === 'shotlist' && t.source.id === list.id)) return owner.name;
+  const note = ['HOOKS TO FILM', ...list.hooks.map((h, i) => (i + 1) + '. ' + h.hook), 'B-ROLL TO GET', ...list.broll.map((b, i) => (i + 1) + '. ' + b.shot), 'PHOTOS TO GET', ...list.photos.map((p, i) => (i + 1) + '. ' + p.shot), 'MUST-GETS', ...list.mustgets.map((m, i) => (i + 1) + '. ' + m.shot + (m.for ? ' (for ' + m.for + ')' : ''))].join('\n').slice(0, 1000);
+  tasks.push({ id: 't_' + crypto.randomBytes(5).toString('hex'), title: `Film: ${list.name}`, client: c.slug, lane: 'field', owner: owner.id, due: list.date, status: 'open', created_at: new Date().toISOString(), created_by: who || 'auto', note, source: { type: 'shotlist', id: list.id } });
+  saveTasks(tasks); return owner.name;
+}
 app.post('/api/hq/shotlists/:slug/:id/task', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
   const list = (loadShotlists()[req.params.slug] || []).find(x => x.id === req.params.id); if (!list) return res.status(404).json({ error: 'Not found.' });
-  const c = loadClients().find(x => x.slug === req.params.slug), owner = ownerFor(c, 'field'); if (!owner) return res.status(400).json({ error: 'Nobody is set for the Field team.' });
-  const note = ['HOOKS TO FILM', ...list.hooks.map((h, i) => (i + 1) + '. ' + h.hook), 'B-ROLL TO GET', ...list.broll.map((b, i) => (i + 1) + '. ' + b.shot), 'PHOTOS TO GET', ...list.photos.map((p, i) => (i + 1) + '. ' + p.shot), 'MUST-GETS', ...list.mustgets.map((m, i) => (i + 1) + '. ' + m.shot + ' (for ' + m.for + ')')].join('\n').slice(0, 1000);
-  const tasks = loadTasks(); const t = { id: 't_' + crypto.randomBytes(5).toString('hex'), title: `Film: ${list.name}`, client: c.slug, lane: 'field', owner: owner.id, due: list.date, status: 'open', created_at: new Date().toISOString(), created_by: me.id, note, source: { type: 'shotlist', id: list.id } };
-  tasks.push(t); saveTasks(tasks); res.json({ ok: true, owner: owner.name });
+  try { res.json({ ok: true, owner: createShotTask(req.params.slug, list, me.name) }); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 
-// When a shoot lands on the film calendar, the shot list writes itself (needs AUTO_IDEAS=1 and a connected Google login).
+// Every shoot on the film calendar gets its shot list automatically, from Monday morning of its week, and the field team gets the task.
+// On by default. Set AUTO_IDEAS=0 in Render to turn the automatic jobs off.
+const AUTO_ON = () => process.env.AUTO_IDEAS !== '0';
 async function autoShotlists() {
-  if (process.env.AUTO_IDEAS !== '1' || !GOOGLE_CLIENT_ID) return;
+  if (!AUTO_ON() || !GOOGLE_CLIENT_ID) return;
+  const et = etNow(), dow = et.getDay(), mon = new Date(et); mon.setDate(et.getDate() - ((dow + 6) % 7)); const monStr = ymdLocal(mon), sunStr = addDaysStr(monStr, 6);
   for (const uid of Object.keys(gUsers()).slice(0, 2)) {
     try {
       const tok = await userGmailToken(uid); if (!tok) continue; const auth = { Authorization: 'Bearer ' + tok };
       const cl = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader', { headers: auth }); if (!cl.ok) continue;
-      const cals = ((await cl.json()).items || []).filter(c => /film|shoot/i.test(c.summary || '')).slice(0, 3);
-      const now = new Date(), end = new Date(now.getTime() + 10 * 864e5), clients = loadClients().filter(c => c.status !== 'internal');
+      const cals = ((await cl.json()).items || []).filter(c => /film|shoot/i.test(c.summary || '')).slice(0, 3), clients = loadClients().filter(c => c.status !== 'internal');
       for (const cal of cals) {
         const u = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events`);
-        u.searchParams.set('timeMin', now.toISOString()); u.searchParams.set('timeMax', end.toISOString()); u.searchParams.set('singleEvents', 'true'); u.searchParams.set('maxResults', '30');
+        u.searchParams.set('timeMin', new Date(monStr + 'T00:00:00-05:00').toISOString()); u.searchParams.set('timeMax', new Date(sunStr + 'T23:59:00-04:00').toISOString()); u.searchParams.set('singleEvents', 'true'); u.searchParams.set('maxResults', '40');
         const r = await fetch(u, { headers: auth }); if (!r.ok) continue;
         for (const ev of ((await r.json()).items || [])) {
-          const t = (ev.summary || '').toLowerCase(), date = (ev.start.dateTime || ev.start.date || '').slice(0, 10); if (!date) continue;
+          const t = (ev.summary || '').toLowerCase(), date = (ev.start.dateTime || ev.start.date || '').slice(0, 10); if (!date || date < monStr || date > sunStr) continue;
           const c = clients.find(x => (x.match || []).concat([(x.name || '').toLowerCase()]).some(k => k && t.includes(k.toLowerCase())));
-          if (!c) continue; const have = (loadShotlists()[c.slug] || []).some(x => x.date === date); if (have) continue;
-          try { await makeShotlist(c.slug, date, 'auto'); console.log('[shotlist] made', c.slug, date); } catch (e) { console.error('[shotlist] failed', c.slug, e.message); }
+          if (!c || (loadShotlists()[c.slug] || []).some(x => x.date === date)) continue;
+          try { const l = await makeShotlist(c.slug, date, 'auto'); createShotTask(c.slug, l, 'auto'); console.log('[shotlist] made', c.slug, date); } catch (e) { console.error('[shotlist] failed', c.slug, e.message); }
         }
       }
     } catch (e) { console.error('[shotlist] auto failed', e.message); }
   }
 }
-setTimeout(autoShotlists, 90e3); setInterval(autoShotlists, 60 * 60e3);
+setTimeout(autoShotlists, process.env.AUTO_FAST ? 14e3 : 90e3); setInterval(autoShotlists, process.env.AUTO_FAST ? 60e3 : 30 * 60e3);
 
 
 // ---------- Weekly content pack: the brain fills each client's content calendar, one week at a time ----------
@@ -4175,10 +4225,10 @@ app.get('/api/hq/packs/:slug', (req, res) => {
   const c = loadClients().find(x => x.slug === req.params.slug) || {}, p = loadPacks()[String(req.params.slug)] || {};
   res.json({ packs: Object.values(p).sort((a, b) => a.week < b.week ? 1 : -1).slice(0, 8).map(k => ({ ...k, stale: !k.released && !!(c.promos_updated && c.promos_updated !== ((k.inputs || {}).promoStamp || '')) && promosFor(c, k.week, addDaysStr(k.week, 13)).length > 0 })), promos: c.promos || [] });
 });
-app.post('/api/hq/packs/:slug', async (req, res) => {
+app.post('/api/hq/packs/:slug', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
   const w = String((req.body && req.body.week) || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(w) || new Date(w + 'T12:00:00').getDay() !== 1) return res.status(400).json({ error: 'Pick a week that starts on a Monday.' });
-  try { res.json({ pack: await makePack(String(req.params.slug), w, me.name) }); } catch (e) { res.status(500).json({ error: String(e.message).slice(0, 220) }); }
+  const slug = String(req.params.slug); res.json({ job: startJob(() => makePack(slug, w, me.name)) });
 });
 function releasePack(slug, week, whoName) {
   const all = loadPacks(), pack = (all[slug] || {})[week]; if (!pack) throw new Error('No pack for that week.'); if (pack.released) throw new Error('This pack was already released.');
@@ -4186,10 +4236,10 @@ function releasePack(slug, week, whoName) {
   const clip = (t, n) => String(t || '').slice(0, n);
   const mk = (lane, title, rows, leadDays) => {
     if (!rows.length) return; const owner = ownerFor(c, lane); if (!owner) return;
-    const first = rows.map(r => r.date).sort()[0], due0 = bizBefore(first, leadDays), due = due0 < today ? today : due0;
+    const fd = fridayDue();
     const note = rows.map(r => `${r.date} ${r.type}: ${clip(r.hook || r.idea, 110)}`).join('\n').slice(0, 1000);
-    const t = { id: 't_' + crypto.randomBytes(5).toString('hex'), title, client: slug, lane, owner: owner.id, due, status: 'open', created_at: new Date().toISOString(), created_by: 'pack', note, source: { type: 'pack', slug, week } };
-    tasks.push(t); made.push({ title: t.title, owner: owner.name, due });
+    const t = { id: 't_' + crypto.randomBytes(5).toString('hex'), title, client: slug, lane, owner: owner.id, due: fd.due, due_time: fd.due_time, status: 'open', created_at: new Date().toISOString(), created_by: 'pack', note, source: { type: 'pack', slug, week } };
+    tasks.push(t); made.push({ title: t.title, owner: owner.name, due: fd.due });
   };
   const wk = week.slice(5).replace('-', '/'), reels = pack.rows.filter(r => r.type === 'Reel'), gfx = pack.rows.filter(r => r.type !== 'Reel');
   mk('content', `Edit ${reels.length} reel${reels.length > 1 ? 's' : ''}: ${c.name}, week of ${wk}`, reels, 2);
@@ -4201,20 +4251,21 @@ app.post('/api/hq/packs/:slug/:week/release', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
   try { res.json({ ok: true, tasks: releasePack(String(req.params.slug), String(req.params.week), me.name) }); } catch (e) { res.status(400).json({ error: String(e.message) }); }
 });
-// Weekly rhythm (needs AUTO_IDEAS=1): Thursday afternoon the next week's pack is written for every client; Friday morning it is released as tasks.
-function nextMonday() { const d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); return d.toISOString().slice(0, 10); }
+// Weekly rhythm. Monday 6 AM Eastern: the pack for the following week is released and each person sees what they are making. Everything is due that Friday at 5:00 PM.
+// The pack is written from Thursday on, so it is ready by Monday. Set AUTO_IDEAS=0 in Render to turn this off.
 async function autoPacks() {
-  if (process.env.AUTO_IDEAS !== '1') return;
-  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })), dow = et.getDay(), hr = et.getHours(), wk = nextMonday();
-  for (const c of loadClients().filter(x => ['active', 'seasonal', 'onboarding'].includes(x.status) && (x.cadence || {}).days && x.cadence.days.length)) {
+  if (!AUTO_ON()) return;
+  const et = etNow(), dow = et.getDay(), hr = et.getHours(), M = upcomingMonday(), T = addDaysStr(M, 7);
+  const eligible = loadClients().filter(x => ['active', 'seasonal', 'onboarding'].includes(x.status) && ((x.cadence || {}).days && x.cadence.days.length || (loadPlans().clients[x.slug] || []).length));
+  for (const c of eligible) {
     try {
-      const have = (loadPacks()[c.slug] || {})[wk];
-      if (dow === 4 && hr >= 15 && !have) { await makePack(c.slug, wk, 'auto'); console.log('[pack] made', c.slug, wk); }
-      else if (dow === 5 && hr >= 8 && have && !have.released) { releasePack(c.slug, wk, 'auto'); console.log('[pack] released', c.slug, wk); }
+      let have = (loadPacks()[c.slug] || {})[T];
+      if (!have && (dow === 0 || dow >= 4 || dow === 1)) { have = await makePack(c.slug, T, 'auto'); console.log('[pack] made', c.slug, T); }
+      if (dow === 1 && hr >= 6 && have && !have.released) { releasePack(c.slug, T, 'auto'); console.log('[pack] released', c.slug, T); }
     } catch (e) { console.error('[pack] failed', c.slug, e.message); }
   }
 }
-setInterval(autoPacks, 30 * 60e3);
+setTimeout(autoPacks, process.env.AUTO_FAST ? 16e3 : 120e3); setInterval(autoPacks, process.env.AUTO_FAST ? 60e3 : 30 * 60e3);
 
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });

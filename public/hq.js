@@ -101,7 +101,7 @@
     var today = todayStr(), rows = [];
     (HQ.tasks || []).forEach(function (t) {
       var c = d.clients.filter(function (x) { return x.slug === t.client; })[0];
-      rows.push({ k: 'crm', id: t.id, title: t.title, client: c ? c.name : '', who: t.owner_name, ownerId: t.owner, due: t.due, overdue: !!(t.due && t.due < today && t.status !== 'done'), done: t.status === 'done', src: t.source || {}, auto: t.auto });
+      rows.push({ k: 'crm', id: t.id, title: t.title, client: c ? c.name : '', who: t.owner_name, ownerId: t.owner, due: t.due, dueTime: t.due_time, overdue: !!(t.due && t.due < today && t.status !== 'done'), done: t.status === 'done', src: t.source || {}, auto: t.auto });
     });
     d.clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { rows.push({ k: 'bc', title: t.title, client: c.name, who: t.who, due: t.due, overdue: t.overdue, url: t.url, done: false }); }); }); });
     return rows;
@@ -221,14 +221,14 @@
       '<button class="btn2 red" onclick="hqAddTask()">Add</button></div></details>' : '';
     var total = all.filter(function (x) { return !x.done; }).length;
     return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Work</h3><p>Your tasks, client emails that need a reply, and to-dos from Basecamp.</p></div>' + (real ? '<button class="btn2 line" onclick="hqSyncMail()">' + ico('refresh') + 'Check mail now</button>' : '') + '</div>' +
-      '<div class="tabs">' + (real ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + tab('done', 'Done') + '</div>' + form +
+      '<div class="note2" style="margin-bottom:12px"><b>Everything is due Friday at 5:00 PM.</b> No exceptions. Each Monday this page shows what you are making that week.</div><div class="tabs">' + (real ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + tab('done', 'Done') + '</div>' + form +
       (!d.connected ? '<div class="banner">' + ico('alert') + '<div>Basecamp is not connected, so only CRM tasks show. <a class="lnk" href="/api/basecamp/connect">Connect</a></div></div>' : '') +
       '<div class="panel">' + (rows.length ? rows.map(function (x) {
         var mine = me && (x.ownerId === me.id), canClose = x.k === 'crm' && (mine || (me && me.role === 'admin'));
         var link = x.k === 'bc' ? '<a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.title) + '</a>' : (x.src && x.src.type === 'email' && x.src.mailbox === (me && me.id) ? '<a href="https://mail.google.com/mail/u/' + encodeURIComponent(me.email) + '/#inbox/' + e(x.src.thread) + '" target="_blank" rel="noopener">' + e(x.title) + '</a>' : '<span>' + e(x.title) + '</span>');
         return '<div class="td' + (x.done ? ' dn' : '') + '">' + (x.k === 'crm' ? '<button class="ckb ' + (x.done ? 'on' : '') + '" ' + (canClose ? 'onclick="hqTaskDone(\'' + e(x.id) + '\',' + (x.done ? 'false' : 'true') + ')"' : 'disabled') + ' aria-label="' + (x.done ? 'Reopen' : 'Mark done') + '">' + (x.done ? ico('check') : '') + '</button>' : '<span class="ck"></span>') +
           '<div style="min-width:0">' + link + '<div class="who">' + (x.src && x.src.type === 'email' ? '<span class="chip need" style="margin-right:6px">Email</span>' : '') + e(x.client) + (x.client ? ' · ' : '') + e(x.who || 'Unassigned') + (x.auto ? ' · ' + e(x.auto) : '') + '</div></div>' +
-          '<span class="due ' + (x.overdue ? 'od' : '') + '">' + (x.due ? (x.overdue ? 'Late · ' : '') + e(dshort(x.due)) : '') + '</span></div>';
+          '<span class="due ' + (x.overdue ? 'od' : '') + '">' + (x.due ? (x.overdue ? 'Late · ' : '') + e(dshort(x.due)) + (x.dueTime === '17:00' ? ', 5 PM' : '') : '') + '</span></div>';
       }).join('') : '<div class="empty">' + ico('check') + (f === 'mine' ? 'Nothing assigned to you right now.' : 'Nothing here.') + '</div>') + '</div>' +
       '<p class="hint" style="margin-top:10px">' + total + ' open in total.</p>';
   }
@@ -524,7 +524,7 @@
     var lists = HQ.shots[c.slug], me = HQ.me, real = me && !me.legacy;
     var sel = HQ.shotSel[c.slug], l = lists && lists.length ? (lists.filter(function (x) { return x.id === sel; })[0] || lists[0]) : null;
     var def = nextShootDate(c);
-    var bar = real ? '<div class="shbar"><div><label for="sh_d">Shoot date</label><input id="sh_d" type="date" value="' + e(def || (l ? l.date : '')) + '"></div><button class="btn2 red" id="sh_b" onclick="hqGenShot(\'' + e(c.slug) + '\')">' + ico('refresh') + (l ? 'Rewrite from what is working' : 'Write the shot list') + '</button>' + (def ? '<span class="hint" style="margin:0">Next shoot on the calendar: ' + e(dshort(def)) + '</span>' : '') + '</div>' : '<div class="empty" style="padding:8px 0">Sign in with your own login to write shot lists.</div>';
+    var bar = real ? '<div class="shbar"><div><label for="sh_d">Shoot date</label><input id="sh_d" type="date" value="' + e(def || (l ? l.date : '')) + '"></div><button class="btn2 red" id="sh_b" onclick="hqGenShot(\'' + e(c.slug) + '\')">' + ico('refresh') + (l ? 'Rewrite now' : 'Write one now') + '</button>' + (def ? '<span class="hint" style="margin:0">Next shoot on the calendar: ' + e(dshort(def)) + '</span>' : '') + '</div>' : '<div class="empty" style="padding:8px 0">Sign in with your own login to write shot lists.</div>';
     var body = '';
     if (l) {
       var sec = function (title, items) { return '<div class="shsec"><h4>' + title + '</h4>' + items + '</div>'; };
@@ -536,7 +536,7 @@
         (l.notes ? '<p class="hint">' + e(l.notes) + '</p>' : '') +
         '<div class="shfoot"><button class="btn2 line" data-copy="' + e(shotText(l)) + '" onclick="navigator.clipboard.writeText(this.getAttribute(\'data-copy\'));toast(\'Shot list copied\')">Copy the shot list</button>' + (real ? '<button class="btn2 line" onclick="hqShotTask(\'' + e(c.slug) + '\',\'' + e(l.id) + '\')">' + ico('task') + 'Send to the field team</button>' : '') + '</div>';
     } else body = '<div class="empty" style="padding:14px 0">' + ico('clipboard') + 'No shot list yet. Pick the shoot date and write one. It uses this client\'s top posts, what is working in their industry and what is missing from the archive.</div>';
-    return '<div class="panel" style="margin-bottom:16px"><h3>Shot list</h3><p class="hint" style="margin-top:0">Named CLIENT_SHOTLIST_DATE, with the same date as the shoot and the footage. Click a hook to copy it.</p>' + bar + body + '</div>';
+    return '<div class="panel" style="margin-bottom:16px"><h3>Shot list</h3><p class="hint" style="margin-top:0">Written automatically on the Monday of any week a shoot is on the film calendar, and sent to the field team. Named CLIENT_SHOTLIST_DATE. Click a hook to copy it.</p>' + (HQ.genErr ? '<div class="banner">' + ico('alert') + '<div>' + e(HQ.genErr) + '</div></div>' : '') + '' + bar + body + '</div>';
   }
   function workingPanel(c) {
     var md = HQ.working[c.slug], admin = HQ.me && HQ.me.role === 'admin';
@@ -544,14 +544,25 @@
     if (HQ.workEdit === c.slug) return '<div class="panel" style="margin-bottom:16px">' + head + '<p class="hint">Paste the latest top posts or results. The next shot list will use this.</p><textarea id="wk_t" rows="10" style="width:100%;padding:12px;border:1px solid var(--hair2);border-radius:10px;font:13px/1.5 ui-monospace,Menlo,monospace">' + e(md || '') + '</textarea><div style="margin-top:10px;display:flex;gap:8px"><button class="btn2 red" onclick="hqWorkSave(\'' + e(c.slug) + '\')">Save</button><button class="btn2 line" onclick="hqWorkEdit(\'\')">Cancel</button></div></div>';
     return '<div class="panel md" style="margin-bottom:16px">' + head + (md ? mdHtml(md) : '<div class="empty" style="padding:10px 0">Nothing pulled yet. Paste this client\'s top posts and the shot list will build on them.</div>') + '</div>';
   }
+
+  async function pollJob(id, onWait) {
+    for (var i = 0; i < 100; i++) {
+      await new Promise(function (r) { setTimeout(r, 3000); });
+      var j; try { j = await api('/api/hq/jobs/' + id); } catch (x) { continue; }
+      if (j.status === 'done') return true;
+      if (j.status === 'error') throw new Error(j.error || 'It failed. Try again.');
+      if (onWait) onWait(i);
+    }
+    throw new Error('This is taking too long. Try again in a minute.');
+  }
   window.hqShotSel = function (slug, id) { HQ.shotSel[slug] = id; show(navKey); };
   window.hqWorkEdit = function (slug) { HQ.workEdit = slug; show(navKey); };
   window.hqWorkSave = async function (slug) { var v = (document.getElementById('wk_t') || {}).value || ''; try { await api('/api/hq/working/' + slug, 'PUT', { md: v }); HQ.working[slug] = v; HQ.workEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
   window.hqGenShot = async function (slug) {
     var d = (document.getElementById('sh_d') || {}).value || ''; var b = document.getElementById('sh_b');
     if (!d) { toast('Pick the shoot date first'); return; }
-    if (b) { b.disabled = true; b.textContent = 'Writing... about 30 seconds'; }
-    try { var r = await api('/api/hq/shotlists/' + slug, 'POST', { date: d }); HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; HQ.shotSel[slug] = r.list.id; toast('Shot list ready'); } catch (er) { toast(er.message); }
+    if (b) { b.disabled = true; b.textContent = 'Writing... about a minute'; }
+    try { var r = await api('/api/hq/shotlists/' + slug, 'POST', { date: d }); await pollJob(r.job, function (i) { if (b) b.textContent = 'Writing... ' + (i * 3 + 3) + 's'; }); HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; HQ.shotSel[slug] = (HQ.shots[slug][0] || {}).id; await refreshTasks(); toast('Shot list ready and sent to the field team'); } catch (er) { HQ.genErr = er.message; toast(er.message); }
     show(navKey);
   };
   window.hqShotTask = async function (slug, id) { try { var r = await api('/api/hq/shotlists/' + slug + '/' + id + '/task', 'POST', {}); await refreshTasks(); toast('Sent to ' + r.owner); } catch (er) { toast(er.message); } };
@@ -579,7 +590,8 @@
     var bar = '<div class="shbar"><div style="flex:1;min-width:240px"><label>Week</label><div class="chips" style="margin:0">' + chips + '</div></div>' +
       (real && cadDays.length ? '<button class="btn2 red" id="pk_b" onclick="hqPackGen(\'' + e(c.slug) + '\')">' + ico('refresh') + (pack ? 'Rewrite this week' : 'Write this week') + '</button>' : '') +
       (real && pack && !pack.released ? '<button class="btn2 line" onclick="hqPackRelease(\'' + e(c.slug) + '\')">' + ico('task') + 'Release to the team</button>' : '') + '</div>';
-    var warn = !cadDays.length ? '<div class="banner">' + ico('alert') + '<div><b>No posting days set for ' + e(c.name) + '.</b> Open the Overview tab, then Edit details, and tick the days they post.</div></div>' : '';
+    var gerr = HQ.genErr ? '<div class="banner">' + ico('alert') + '<div><b>Could not write it.</b> ' + e(HQ.genErr) + '</div></div>' : '';
+    var warn = gerr + (!cadDays.length ? '<div class="banner">' + ico('alert') + '<div><b>No posting days set for ' + e(c.name) + '.</b> Open the Overview tab, then Edit details, and tick the days they post.</div></div>' : '');
     var meta = '<div class="hint" style="margin:0 0 10px">Posting ' + e(cadDays.join(', ') || 'days not set') + (c.cadence && c.cadence.note ? ' · ' + e(c.cadence.note) : '') + '</div>' + (hl ? '<div class="chips" style="margin:0 0 12px"><span class="hint" style="margin:0">National holidays this week:</span> ' + hl + '</div>' : '');
     var stale = pack && pack.stale ? '<div class="banner">' + ico('alert') + '<div>A promo changed after this pack was written. Rewrite it so the posts match.</div></div>' : '';
     var rel = pack && pack.released ? '<div class="note2" style="margin:0 0 12px">Released to the team ' + e(new Date(pack.released.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + '. Editing, design and caption tasks are on their Work pages.</div>' : '';
@@ -603,7 +615,7 @@
   window.hqPackGen = async function (slug) {
     var w = HQ.packWeek[slug] || defaultWeek(), b = document.getElementById('pk_b');
     if (b) { b.disabled = true; b.textContent = 'Writing the week... about a minute'; }
-    try { await api('/api/hq/packs/' + slug, 'POST', { week: w }); HQ.packs[slug] = await api('/api/hq/packs/' + slug); toast('Pack ready'); } catch (er) { toast(er.message); }
+    try { var r = await api('/api/hq/packs/' + slug, 'POST', { week: w }); await pollJob(r.job, function (i) { if (b) b.textContent = 'Writing the week... ' + (i * 3 + 3) + 's'; }); HQ.packs[slug] = await api('/api/hq/packs/' + slug); HQ.genErr = ''; toast('Pack ready'); } catch (er) { HQ.genErr = er.message; toast(er.message); }
     show(navKey);
   };
   window.hqPackRelease = async function (slug) {
