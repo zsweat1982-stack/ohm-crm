@@ -38,7 +38,7 @@ Our own Sprout data (FB, Jul 1 to Sep 30, 2026, small reach, so direction only):
 6. "One wrapped vehicle = up to 70,000 impressions a day." PROVEN (own data): 379 views. Pattern: scale and speed proof beats holiday and generic posts (Labor Day and Patriot Day posts got 15 to 19 views).
 Competitor ads (OBSERVED live Nov 9, national; no local Atlanta advertiser found):
 7. "100% 5 Star Google Reviews. In Business Since 2008." LONG-RUNNER (Signature Graphics, AZ, since Sep 12, 2024, about 423 days).
-8. "In the competitive world of home services, visibility is everything." LONG-RUNNER? 324 days (The Wrap Shop, since Dec 20, 2024), so under 365: OBSERVED only.
+8. "In the competitive world of home services, visibility is everything." OBSERVED (The Wrap Shop, since Dec 20, 2024, about 324 days, under the 365-day LONG-RUNNER line).
 9. "We're looking for construction fleets ready to say GOODBYE to boring, standard machinery!" OBSERVED (Dirty Graphix, since Aug 20, 2026).
 10. "Vehicle Wraps designed to GROW your business!" OBSERVED (Wrap Haus AZ, since May 26, 2026, video 1:00).
 PROXY (Reddit and review language):
