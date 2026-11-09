@@ -4243,7 +4243,7 @@ Rules:
 - For a Carousel, "onscreen" holds the copy for each card, written as Card 1, Card 2 and so on. For a Graphic it is the text on the graphic. Only Reels and talking heads use true on-screen video text.
 - Series in CONFIRMED FACTS keep their cadence (for example one every two weeks) and are built from the footage named there. Every shoot under SHOOTS STILL BEING WORKED ON gets used across the coming weeks.
 - Never leave a slot empty. With no recent footage, build from graphics and static ads, text-on-screen Reels, and the best footage already in the Drive folder (name it in "uses"), using proven topics from the brain and what is working.
-- If NEW CONTENT JUST RECEIVED is given, replace the 1 or 2 weakest non-fixed slots with posts built from it (set "changed" true and "change_reason" to "New content received"). Do not change any other slot.
+- If NEW CONTENT JUST RECEIVED is given, replace the 1 or 2 weakest non-fixed slots (or as many as it takes if it describes a backlog of footage) with posts built from it (set "changed" true and "change_reason" to "New content received"). Do not change any other slot.
 - Follow the FORMAT AND TEXT-ON-SCREEN RULES for this client exactly.
 - Captions: work in one or two target keywords naturally, main keyword in the first line. Set "hashtags" to at most 5 tags per post (Instagram and Facebook), local and service tags first, then working tags from the list. Never invent a trending claim.
 - If the slots come from the team's plan, keep each slot's date and type. (Topic may change only as described above.) If a topic says "Chris picks the clip" or "Pull from footage", the client picks existing footage: do not invent a topic. Write a hook frame and a caption with fill-in blanks marked VERIFY, and say what to look for in the archive.
@@ -4262,7 +4262,8 @@ async function makePack(slug, monday, who, uid, opts) {
   const cad = c.cadence || {}, PL = loadPlans(), sundayD = addDaysStr(monday, 6);
   const planRows = (PL.clients[slug] || []).filter(r => r.date >= monday && r.date <= sundayD).sort((a, b) => (a.date < b.date ? -1 : 1));
   if (!planRows.length && !(cad.days || []).length) throw new Error('Set this client\'s posting days first (Edit details on the Overview tab).');
-  const dates = planRows.length ? planRows.map(r => r.date) : weekDates(monday, cad.days), ctx = clientContext(slug, c);
+  let dates = planRows.length ? planRows.map(r => r.date) : weekDates(monday, cad.days); const ctx = clientContext(slug, c);
+  if (opts.fromToday) { const t0 = ymdLocal(etNow()); dates = dates.filter(d => d >= t0); if (!dates.length) return null; }
   const planBy = new Map(planRows.map(r => [r.date, r])), gr = PL.guardrails[slug];
   const keyd = PL.keydates.filter(k => k.date && k.date >= monday && k.date <= sundayD).map(k => `${k.date} ${k.name}: ${k.what}`).join('\n');
   const sunday = addDaysStr(monday, 6), look = addDaysStr(monday, 13), hols = holidaysBetween(monday, look), pr = promosFor(c, monday, look);
@@ -4334,13 +4335,14 @@ async function autoPacks() {
 }
 
 // New content arrived: swap it into this week's or next week's calendar, replacing the weakest open slot. Already-released packs get a task for each swapped post.
-async function rebuildForNewContent(slug, uid, filesText) {
-  const todayS = ymdLocal(etNow()), cur = mondayOf(etNow()), c = loadClients().find(x => x.slug === slug); if (!c) return;
+async function rebuildForNewContent(slug, uid, filesText, o) {
+  o = o || {}; const todayS = ymdLocal(etNow()), cur = mondayOf(etNow()), c = loadClients().find(x => x.slug === slug); if (!c) return;
   invCache.delete(uid + ':' + slug);
-  for (const monday of [cur, addDaysStr(cur, 7)]) {
-    const prev = (loadPacks()[slug] || {})[monday]; if (!prev) continue;
+  for (const monday of (o.weeks || [cur, addDaysStr(cur, 7)])) {
+    const prev = (loadPacks()[slug] || {})[monday];
+    if (!prev) { if (!o.createMissing) continue; const np = await makePack(slug, monday, 'auto: backlog', uid, { newFiles: filesText, fromToday: monday === cur }); if (np) { if (monday <= addDaysStr(cur, 7)) { try { releasePack(slug, monday, 'auto'); } catch {} } console.log('[catchup] made', slug, monday); } continue; }
     const before = new Map(prev.rows.map(r => [r.date, JSON.stringify(r)]));
-    const pack = await makePack(slug, monday, 'auto: new content', uid, { newFiles: filesText, prev });
+    const pack = await makePack(slug, monday, 'auto: new content', uid, { newFiles: filesText, prev, fromToday: monday === cur }); if (!pack) continue;
     const swapped = pack.rows.filter(r => before.get(r.date) !== JSON.stringify(r) && r.changed);
     if (!swapped.length) continue;
     console.log('[pack] swapped', slug, monday, swapped.map(r => r.date).join(','));
@@ -4351,6 +4353,21 @@ async function rebuildForNewContent(slug, uid, filesText) {
     }
   }
 }
+
+// One-time catch-up for the footage that arrived before everything was labeled: work it into the rest of this month's calendars.
+const CATCHUP_FILE = path.join(DATA_DIR, 'catchup_nov2026.json');
+async function autoCatchup() {
+  if (!AUTO_ON() || !GOOGLE_CLIENT_ID) return; const uid = Object.keys(gUsers())[0]; if (!uid) return;
+  const done = readJson(CATCHUP_FILE, {}), cur = mondayOf(etNow()), weeks = [0, 7, 14, 21, 28, 35].map(n => addDaysStr(cur, n));
+  for (const slug of ['vnphc', 'bkvf', 'adnormous', 'ifab', 'urc', 'carver-plumbing']) {
+    if (done[slug]) continue;
+    try {
+      const txt = 'BACKLOG OF RECENT FOOTAGE that has not been used yet. Place all of it across these weeks, one piece per open slot, newest and strongest first. Read the CONFIRMED FACTS and the SHOOTS STILL BEING WORKED ON list.\n' + (readFacts(slug) || '').slice(0, 2500);
+      await rebuildForNewContent(slug, uid, txt, { weeks, createMissing: true }); done[slug] = new Date().toISOString(); fs.writeFileSync(CATCHUP_FILE, JSON.stringify(done)); console.log('[catchup] done', slug);
+    } catch (e) { console.error('[catchup] failed', slug, e.message); }
+  }
+}
+setTimeout(autoCatchup, process.env.AUTO_FAST ? 20e3 : 240e3);
 setTimeout(autoPacks, process.env.AUTO_FAST ? 16e3 : 120e3); setInterval(autoPacks, process.env.AUTO_FAST ? 60e3 : 30 * 60e3);
 
 app.post('/api/me/gmail/disconnect', (req, res) => {
