@@ -3639,18 +3639,18 @@ async function mailFor(uid) {
   const arr = [...ids.entries()], msgs = [];
   for (let i = 0; i < arr.length; i += 10) {
     await Promise.all(arr.slice(i, i + 10).map(async ([id, threadId]) => {
-      const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, { headers: auth });
+      const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID`, { headers: auth });
       if (!r.ok) return; const d = await r.json();
       const h = Object.fromEntries((d.payload && d.payload.headers || []).map(x => [x.name.toLowerCase(), x.value]));
       const m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(h.from || ''); const addr = String((m ? m[2] : h.from) || '').toLowerCase().trim(); const name = (m && m[1].trim()) || addr;
-      msgs.push({ id, threadId, addr, name, subject: h.subject || '(no subject)', snippet: d.snippet || '', date: Number(d.internalDate) || 0, unread: (d.labelIds || []).includes('UNREAD') });
+      msgs.push({ id, threadId, mid: (h['message-id'] || '').trim(), addr, name, subject: h.subject || '(no subject)', snippet: d.snippet || '', date: Number(d.internalDate) || 0, unread: (d.labelIds || []).includes('UNREAD') });
     }));
   }
   const own = /@openheartmediaco\.com$/i; const matched = [], unm = new Map();
   for (const x of msgs) {
     const dom = x.addr.split('@')[1] || ''; if (!dom) continue;
     let c = byAddr.get(x.addr) || byDom.get(dom); if (!c) for (const [k, v] of byDom) if (dom.endsWith('.' + k)) { c = v; break; }
-    if (c) { matched.push({ id: x.id, thread: x.threadId, name: x.name, addr: x.addr, subject: x.subject, snippet: x.snippet.slice(0, 160), date: x.date, unread: x.unread, client: { slug: c.slug, name: c.name } }); continue; }
+    if (c) { matched.push({ id: x.id, thread: x.threadId, mid: x.mid, name: x.name, addr: x.addr, subject: x.subject, snippet: x.snippet.slice(0, 160), date: x.date, unread: x.unread, client: { slug: c.slug, name: c.name } }); continue; }
     if (own.test(x.addr) || FREEMAIL.test(dom) || AUTOMATED.test(x.addr)) continue;
     const u = unm.get(dom) || { domain: dom, count: 0, example: x.subject, from: x.name }; u.count++; unm.set(dom, u);
   }
@@ -3699,6 +3699,149 @@ app.get('/api/me/calendar', async (req, res) => {
     const data = { connected: true, events: uniq.slice(0, 40) }; calCache.set(me.id, { at: Date.now(), data }); res.json(data);
   } catch (e) { res.json({ connected: true, error: e.message.slice(0, 140) }); }
 });
+
+// ---------- Roles, tasks, and email-to-task ----------
+// Lanes are the jobs people do. Each lane has a default person; a client can override web and ads.
+const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
+const LANES_FILE = path.join(DATA_DIR, 'lanes.json');
+const LANE_DEFS = [['web', 'Web'], ['ads', 'Ads'], ['logistics', 'Logistics'], ['creative', 'Creative overview'], ['copy', 'Copy and scheduling'], ['graphics', 'Graphics'], ['content', 'Content flow'], ['field', 'Field team']];
+const LANE_DEFAULT = { web: 'frank@openheartmediaco.com', ads: 'ariel@openheartmediaco.com', logistics: 'griffin@openheartmediaco.com', creative: 'zac@openheartmediaco.com',
+  copy: 'valeria@openheartmediaco.com', graphics: 'mafer@openheartmediaco.com', content: 'hiroshi@openheartmediaco.com', field: 'tristen@openheartmediaco.com' };
+function loadLanes() { return Object.assign({}, LANE_DEFAULT, readJson(LANES_FILE, {})); }
+const LANE_RE = [
+  ['ads', /\b(ads?|adwords|campaigns?|budget|ppc|google ads|meta ads|facebook ads|instagram ads|ad spend|cost per lead|cpl)\b/i],
+  ['field', /\b(shoot|filming|photographer|on[- ]?site|location scout|b-?roll)\b/i],
+  ['content', /\b(video|reels?|footage|edit(ing|s)?|rough cut|trailer)\b/i],
+  ['graphics', /\b(logo|graphic|flyer|banner|brochure|brand(ing)? (kit|colors?)|fonts?)\b/i],
+  ['copy', /\b(caption|copy|post|posting|content calendar|schedule[d]? (post|content)|blog|newsletter|approve|approval)\b/i],
+  ['web', /\b(website|web ?site|site|domain|hosting|wordpress|wix|plugin|contact form|landing page|seo|dns|login|password)\b/i],
+  ['logistics', /\b(invoice|billing|payment|contract|meeting|call|reschedule|renew|proposal|schedule)\b/i],
+];
+function classifyLane(text) { for (const [l, re] of LANE_RE) if (re.test(text || '')) return l; return null; }
+function userByEmail(em) { return loadUsers().find(u => u.email === String(em || '').toLowerCase() && u.active !== false) || null; }
+function userByName(n) { n = String(n || '').trim().toLowerCase(); return n ? loadUsers().find(u => u.active !== false && u.name.toLowerCase() === n) || null : null; }
+// Who gets a task for this client and lane.
+function ownerFor(client, lane) {
+  let u = null;
+  if (client) {
+    if (lane === 'web') u = userByName(client.website_owner);
+    if (lane === 'ads') u = userByName(client.ads_owner);
+    if (!u && !lane) u = userByName(client.account_owner);
+  }
+  if (!u && lane) u = userByEmail(loadLanes()[lane]);
+  if (!u && client) u = userByName(client.account_owner);
+  return u || userByEmail(loadLanes().logistics) || loadUsers().find(x => x.role === 'admin') || null;
+}
+function loadTasks() { return readJson(TASKS_FILE, []); }
+function saveTasks(t) { fs.writeFileSync(TASKS_FILE, JSON.stringify(t, null, 2)); }
+function nextBizDay(from) { const d = new Date(from || Date.now()); do d.setDate(d.getDate() + 1); while (d.getDay() === 0 || d.getDay() === 6); return d.toISOString().slice(0, 10); }
+const pubTask = (t, users) => ({ ...t, owner_name: (users.find(u => u.id === t.owner) || {}).name || '' });
+
+app.get('/api/lanes', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const L = loadLanes(), users = loadUsers();
+  res.json({ lanes: LANE_DEFS.map(([k, l]) => { const u = users.find(x => x.email === (L[k] || '').toLowerCase()); return { key: k, label: l, email: L[k] || '', name: u ? u.name : '' }; }) });
+});
+app.post('/api/admin/lanes', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { lane, email } = req.body || {}; if (!LANE_DEFS.some(x => x[0] === lane)) return res.status(400).json({ error: 'Unknown lane.' });
+  if (!userByEmail(email)) return res.status(400).json({ error: 'That person has no login yet.' });
+  const L = readJson(LANES_FILE, {}); L[lane] = String(email).toLowerCase(); fs.writeFileSync(LANES_FILE, JSON.stringify(L)); res.json({ ok: true });
+});
+app.get('/api/tasks', (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  const users = loadUsers(), cutoff = Date.now() - 7 * 864e5;
+  let list = loadTasks().filter(t => t.status !== 'done' || (t.closed_at && new Date(t.closed_at).getTime() > cutoff));
+  if (req.query.scope === 'mine') list = list.filter(t => t.owner === me.id);
+  res.json({ tasks: list.map(t => pubTask(t, users)), me: me.id });
+});
+app.post('/api/tasks', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login to add tasks.' });
+  const b = req.body || {}, title = String(b.title || '').trim().slice(0, 200); if (!title) return res.status(400).json({ error: 'Add a title.' });
+  const owner = loadUsers().find(u => u.id === b.owner && u.active !== false) || userByEmail(me.email);
+  const t = { id: 't_' + crypto.randomBytes(5).toString('hex'), title, client: String(b.client || '').slice(0, 60), lane: String(b.lane || '').slice(0, 20), owner: owner.id,
+    due: /^\d{4}-\d{2}-\d{2}$/.test(b.due || '') ? b.due : '', status: 'open', created_at: new Date().toISOString(), created_by: me.id, note: String(b.note || '').slice(0, 1000), source: { type: 'manual' } };
+  const all = loadTasks(); all.push(t); saveTasks(all); res.json({ task: t });
+});
+app.post('/api/tasks/:id/done', (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  const all = loadTasks(), t = all.find(x => x.id === req.params.id); if (!t) return res.status(404).json({ error: 'Not found.' });
+  if (t.owner !== me.id && me.role !== 'admin') return res.status(403).json({ error: 'Only the owner or an admin can close this.' });
+  const done = !(req.body && req.body.done === false);
+  t.status = done ? 'done' : 'open'; t.closed_at = done ? new Date().toISOString() : null; t.closed_by = done ? me.id : null; saveTasks(all); res.json({ ok: true });
+});
+app.post('/api/tasks/:id/assign', (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  const all = loadTasks(), t = all.find(x => x.id === req.params.id); if (!t) return res.status(404).json({ error: 'Not found.' });
+  if (t.owner !== me.id && me.role !== 'admin') return res.status(403).json({ error: 'Only the owner or an admin can reassign.' });
+  const u = loadUsers().find(x => x.id === (req.body && req.body.owner) && x.active !== false); if (!u) return res.status(400).json({ error: 'Pick a person.' });
+  t.owner = u.id; saveTasks(all); res.json({ ok: true });
+});
+
+// Email to task. For each connected mailbox: a client email nobody has answered becomes a task for the right person,
+// and the task closes itself once somebody on our domain replies in that thread.
+const OWN_ADDR = /@openheartmediaco\.com$/i;
+async function threadState(auth, threadId) {
+  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=metadata&metadataHeaders=From`, { headers: auth });
+  if (!r.ok) return null; const j = await r.json(); const ms = j.messages || []; if (!ms.length) return null;
+  const last = ms[ms.length - 1]; const h = Object.fromEntries((last.payload && last.payload.headers || []).map(x => [x.name.toLowerCase(), x.value]));
+  const m = /<([^>]+)>/.exec(h.from || ''); const addr = String(m ? m[1] : h.from || '').toLowerCase();
+  return { lastFromUs: OWN_ADDR.test(addr), lastDate: Number(last.internalDate) || 0 };
+}
+async function syncMailTasks(uid) {
+  const tok = await userGmailToken(uid); if (!tok) return { created: 0, closed: 0 };
+  const auth = { Authorization: 'Bearer ' + tok };
+  mailCache.delete(uid); const data = await mailFor(uid); if (!data.connected) return { created: 0, closed: 0 };
+  let tasks = loadTasks(), created = 0, closed = 0; const clients = loadClients(), cutoff = Date.now() - 7 * 864e5;
+  const seenThreads = new Set();
+  for (const m of (data.matched || [])) {
+    if (m.date < cutoff) continue; const key = m.mid || (uid + ':' + m.id);
+    if (tasks.some(t => t.source && (t.source.mid === key))) continue;
+    if (seenThreads.has(m.thread)) continue; seenThreads.add(m.thread);
+    const st = await threadState(auth, m.thread); if (!st || st.lastFromUs) continue;   // already answered
+    const c = clients.find(x => x.slug === m.client.slug); const lane = classifyLane(m.subject + ' ' + m.snippet);
+    const owner = ownerFor(c, lane); if (!owner) continue;
+    tasks.push({ id: 't_' + crypto.randomBytes(5).toString('hex'), title: `Reply to ${m.name}: ${m.subject}`.slice(0, 200), client: m.client.slug, lane: lane || '', owner: owner.id,
+      due: nextBizDay(m.date), status: 'open', created_at: new Date().toISOString(), created_by: 'email', note: m.snippet,
+      source: { type: 'email', mid: key, thread: m.thread, mailbox: uid, from: m.addr, name: m.name, subject: m.subject } });
+    created++;
+  }
+  for (const t of tasks) {
+    if (t.status !== 'open' || !t.source || t.source.type !== 'email' || t.source.mailbox !== uid) continue;
+    const st = await threadState(auth, t.source.thread);
+    if (st && st.lastFromUs) { t.status = 'done'; t.closed_at = new Date().toISOString(); t.closed_by = 'auto'; t.auto = 'Replied in the thread'; closed++; }
+  }
+  if (created || closed) saveTasks(tasks);
+  return { created, closed };
+}
+app.post('/api/tasks/sync', async (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  try { res.json(await syncMailTasks(me.id)); } catch (e) { res.status(500).json({ error: e.message.slice(0, 160) }); }
+});
+let syncBusy = false;
+async function syncAllMailTasks() {
+  if (syncBusy || !GOOGLE_CLIENT_ID) return; syncBusy = true;
+  try { for (const uid of Object.keys(gUsers())) { try { const r = await syncMailTasks(uid); if (r.created || r.closed) console.log('[tasks] sync', uid, r); } catch (e) { console.error('[tasks] sync failed', uid, e.message); } } } finally { syncBusy = false; }
+}
+setTimeout(syncAllMailTasks, 45e3); setInterval(syncAllMailTasks, 5 * 60e3);
+
+// Morning digest (off unless NOTIFY_TASKS=1): one short email per person with their open tasks, weekdays about 8am Eastern.
+const DIGEST_STAMP = path.join(DATA_DIR, 'task_digest_last.json');
+async function sendTaskDigests() {
+  if (process.env.NOTIFY_TASKS !== '1' || !process.env.SENDGRID_API_KEY) return;
+  const now = new Date(), et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (et.getDay() === 0 || et.getDay() === 6 || et.getHours() < 8 || et.getHours() > 10) return;
+  const day = et.toISOString().slice(0, 10); if (readJson(DIGEST_STAMP, {}).day === day) return;
+  fs.writeFileSync(DIGEST_STAMP, JSON.stringify({ day }));
+  const tasks = loadTasks().filter(t => t.status === 'open'), clients = loadClients();
+  for (const u of loadUsers().filter(x => x.active !== false)) {
+    const mine = tasks.filter(t => t.owner === u.id); if (!mine.length) continue;
+    const lines = mine.slice(0, 15).map(t => `- ${t.title}${t.client ? ' (' + ((clients.find(c => c.slug === t.client) || {}).name || t.client) + ')' : ''}${t.due ? ', due ' + t.due : ''}`);
+    try { await sgMail.send({ to: u.email, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME }, subject: `Your tasks today (${mine.length})`, text: `Good morning ${u.name.split(' ')[0]},\n\n${lines.join('\n')}\n\nOpen the CRM: ${CRM_URL}/\n` }); } catch (e) { console.error('[digest] failed', u.email, e.message); }
+  }
+}
+setInterval(sendTaskDigests, 15 * 60e3);
+
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
   const all = gUsers(); delete all[me.id]; saveGUsers(all); mailCache.delete(me.id); calCache.delete(me.id); res.json({ ok: true });

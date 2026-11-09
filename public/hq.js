@@ -1,6 +1,6 @@
 /* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
 (function () {
-  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false };
+  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], workTab: '' };
   var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
   // One icon family: 24px grid, 1.8 stroke, round caps.
   var P = {
@@ -76,7 +76,7 @@
 
   async function fetchHq(force) {
     if (HQ.loading) return; HQ.loading = true;
-    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} }
+    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
     catch (err) { HQ.err = err.message; }
     HQ.loading = false;
   }
@@ -85,11 +85,22 @@
   function skeleton() { return '<div class="sk" style="height:210px;margin-bottom:16px"></div><div class="bento"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>'; }
   function tile(l, v, s, icon, cls) { return '<div class="tile rise ' + cls + '"><div class="chipi">' + ico(icon) + '</div><div class="l">' + e(l) + '</div><div class="v">' + e(v) + '</div><div class="s">' + e(s) + '</div></div>'; }
 
-  function myTasks(d) {
-    var me = (firstName() || '').toLowerCase(), out = [];
-    d.clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { out.push({ t: t, c: c }); }); }); });
-    return { all: out, mine: me ? out.filter(function (x) { return String(x.t.who || '').toLowerCase().indexOf(me) > -1; }) : [] };
+  function todayStr() { return new Date().toISOString().slice(0, 10); }
+  function allWork(d) {
+    var today = todayStr(), rows = [];
+    (HQ.tasks || []).forEach(function (t) {
+      var c = d.clients.filter(function (x) { return x.slug === t.client; })[0];
+      rows.push({ k: 'crm', id: t.id, title: t.title, client: c ? c.name : '', who: t.owner_name, ownerId: t.owner, due: t.due, overdue: !!(t.due && t.due < today && t.status !== 'done'), done: t.status === 'done', src: t.source || {}, auto: t.auto });
+    });
+    d.clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { rows.push({ k: 'bc', title: t.title, client: c.name, who: t.who, due: t.due, overdue: t.overdue, url: t.url, done: false }); }); }); });
+    return rows;
   }
+  function isMine(x) {
+    var me = HQ.me, fn = (firstName() || '').toLowerCase();
+    if (x.k === 'crm') return !!(me && x.ownerId === me.id);
+    return !!(fn && String(x.who || '').toLowerCase().indexOf(fn) > -1);
+  }
+  function myTasks(d) { var all = allWork(d).filter(function (x) { return !x.done; }); return { all: all.map(function (x) { return { t: x, c: { name: x.client } }; }), mine: all.filter(isMine).map(function (x) { return { t: x, c: { name: x.client } }; }) }; }
   function sc(title, icon, big, sub, rows, go, tone) {
     return '<a class="sc ' + (tone || '') + '" tabindex="0" onclick="' + go + '" onkeydown="if(event.key===\'Enter\'){' + go + '}"><div class="sh"><span class="si">' + ico(icon) + '</span><span class="st">' + e(title) + '</span><span class="sa">' + ico('arrow') + '</span></div>' +
       '<div class="sbig">' + e(big) + '</div><div class="ssub">' + e(sub) + '</div>' +
@@ -101,6 +112,7 @@
     try { HQ.cal = await api('/api/me/calendar'); } catch (er) { HQ.cal = { connected: false, error: er.message }; }
     HQ.calLoading = false;
   }
+  function evDate(x) { return x.allDay ? new Date(String(x.start).slice(0, 10) + 'T12:00:00') : new Date(x.start); }
   function dayLabel(d) {
     var t = new Date(); t.setHours(0, 0, 0, 0); var x = new Date(d); x.setHours(0, 0, 0, 0); var diff = Math.round((x - t) / 864e5);
     if (diff === 0) return 'Today'; if (diff === 1) return 'Tomorrow';
@@ -116,9 +128,9 @@
     var ev = c.events || [];
     if (!ev.length) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('check') + 'Nothing on the calendar for the next two weeks.</div></div>';
     var groups = {}, order = [];
-    ev.forEach(function (x) { var k = new Date(x.start).toDateString(); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
+    ev.forEach(function (x) { var k = evDate(x).toDateString(); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
     return '<div class="panel agenda">' + head + order.slice(0, 5).map(function (k) {
-      return '<div class="day"><div class="dl">' + e(dayLabel(groups[k][0].start)) + '</div>' + groups[k].slice(0, 6).map(function (x) {
+      return '<div class="day"><div class="dl">' + e(dayLabel(evDate(groups[k][0]))) + '</div>' + groups[k].slice(0, 6).map(function (x) {
         var tm = x.allDay ? 'All day' : new Date(x.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.cal) + '</em></a>';
       }).join('') + '</div>';
@@ -135,7 +147,7 @@
     var replies = Pr.filter(function (p) { return typeof needsResponse === 'function' && needsResponse(p); });
     var mm = HQ.mail;
     var att = [];
-    late.slice(0, 5).forEach(function (x) { att.push('<div class="item"><div class="bub">' + ico('alert') + '</div><div><b>' + e(x.t.title) + '</b><div class="m">' + e(x.c.name) + ' · ' + e(x.t.who || 'Unassigned') + ' · due ' + e(dshort(x.t.due)) + ' · <a href="' + e(x.t.url) + '" target="_blank" rel="noopener">Open</a></div></div></div>'); });
+    late.slice(0, 5).forEach(function (x) { att.push('<div class="item"><div class="bub">' + ico('alert') + '</div><div><b>' + e(x.t.title) + '</b><div class="m">' + e(x.c.name) + ' · ' + e(x.t.who || 'Unassigned') + ' · due ' + e(dshort(x.t.due)) + ' · ' + (x.t.url ? '<a href="' + e(x.t.url) + '" target="_blank" rel="noopener">Open</a>' : '<a onclick="hqNav(\'hq:work\')">Open</a>') + '</div></div></div>'); });
     replies.slice(0, 3).forEach(function (p) { att.push('<div class="item"><div class="bub amber">' + ico('reply') + '</div><div><b>' + e(p.business) + ' replied</b><div class="m">Outreach · <a onclick="navTo(\'replied\')">Open</a></div></div></div>'); });
     if (mm && mm.connected && mm.unread) att.push('<div class="item"><div class="bub blue">' + ico('mail') + '</div><div><b>' + mm.unread + ' unread from clients</b><div class="m"><a onclick="hqNav(\'hq:mail\')">Open mail</a></div></div></div>');
     if (d.onboardingNoProject) att.push('<div class="item"><div class="bub blue">' + ico('clipboard') + '</div><div><b>' + d.onboardingNoProject + ' new onboarding form' + (d.onboardingNoProject > 1 ? 's' : '') + '</b><div class="m"><a onclick="hqNav(\'hq:onboarding\')">Review</a></div></div></div>');
@@ -159,21 +171,37 @@
   }
 
   function work() {
-    var d = HQ.data, fn = (firstName() || '').toLowerCase(), f = HQ.workTab || (fn ? 'mine' : 'all'), rows = [];
-    d.clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { rows.push({ t: t, c: c, l: l.name }); }); }); });
-    var total = rows.length;
-    if (f === 'mine') rows = rows.filter(function (x) { return fn && String(x.t.who || '').toLowerCase().indexOf(fn) > -1; });
-    if (f === 'late') rows = rows.filter(function (x) { return x.t.overdue; });
-    rows.sort(function (a, b) { return (a.t.due || '9999') < (b.t.due || '9999') ? -1 : 1; });
+    var d = HQ.data, me = HQ.me, f = HQ.workTab || (me && !me.legacy ? 'mine' : 'all'), all = allWork(d), rows;
+    if (f === 'done') rows = all.filter(function (x) { return x.done; });
+    else { rows = all.filter(function (x) { return !x.done; }); if (f === 'mine') rows = rows.filter(isMine); if (f === 'late') rows = rows.filter(function (x) { return x.overdue; }); }
+    rows.sort(function (a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
     var tab = function (k, l) { return '<button class="tb ' + (f === k ? 'on' : '') + '" onclick="HQ_work(\'' + k + '\')">' + l + '</button>'; };
-    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Work</h3><p>Every open to-do across clients, from Basecamp.</p></div></div>' +
-      '<div class="tabs">' + (fn ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + '</div>' +
-      (!d.connected ? '<div class="banner">' + ico('alert') + '<div>Connect Basecamp to see work. <a class="lnk" href="/api/basecamp/connect">Connect</a></div></div>' : '') +
+    var real = me && !me.legacy, isAdmin = me && me.role === 'admin';
+    var clientsOpt = d.clients.filter(function (c) { return c.status !== 'internal'; }).map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
+    var ownerSel = isAdmin && HQ.users ? '<select id="nt_o">' + HQ.users.filter(function (u) { return u.active; }).map(function (u) { return '<option value="' + e(u.id) + '"' + (u.id === me.id ? ' selected' : '') + '>' + e(u.name) + '</option>'; }).join('') + '</select>' : '';
+    var form = real ? '<details class="sm" style="margin-bottom:14px"><summary>Add a task</summary><div class="frm" style="margin-top:12px;grid-template-columns:2fr 1.2fr 1fr ' + (ownerSel ? '1fr ' : '') + 'auto"><div><label for="nt_t">What needs doing</label><input id="nt_t" placeholder="e.g. Send Crocker the shoot schedule"></div>' +
+      '<div><label for="nt_c">Client</label><select id="nt_c"><option value="">No client</option>' + clientsOpt + '</select></div><div><label for="nt_d">Due</label><input id="nt_d" type="date"></div>' + (ownerSel ? '<div><label for="nt_o">Assign to</label>' + ownerSel + '</div>' : '') +
+      '<button class="btn2 red" onclick="hqAddTask()">Add</button></div></details>' : '';
+    var total = all.filter(function (x) { return !x.done; }).length;
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Work</h3><p>Your tasks, client emails that need a reply, and to-dos from Basecamp.</p></div>' + (real ? '<button class="btn2 line" onclick="hqSyncMail()">' + ico('refresh') + 'Check mail now</button>' : '') + '</div>' +
+      '<div class="tabs">' + (real ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + tab('done', 'Done') + '</div>' + form +
+      (!d.connected ? '<div class="banner">' + ico('alert') + '<div>Basecamp is not connected, so only CRM tasks show. <a class="lnk" href="/api/basecamp/connect">Connect</a></div></div>' : '') +
       '<div class="panel">' + (rows.length ? rows.map(function (x) {
-        return '<div class="td"><span class="ck"></span><div style="min-width:0"><a href="' + e(x.t.url) + '" target="_blank" rel="noopener">' + e(x.t.title) + '</a><div class="who">' + e(x.c.name) + ' · ' + e(x.t.who || 'Unassigned') + '</div></div><span class="due ' + (x.t.overdue ? 'od' : '') + '">' + (x.t.due ? (x.t.overdue ? 'Late · ' : '') + e(dshort(x.t.due)) : '') + '</span></div>';
+        var mine = me && (x.ownerId === me.id), canClose = x.k === 'crm' && (mine || (me && me.role === 'admin'));
+        var link = x.k === 'bc' ? '<a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.title) + '</a>' : (x.src && x.src.type === 'email' && x.src.mailbox === (me && me.id) ? '<a href="https://mail.google.com/mail/u/' + encodeURIComponent(me.email) + '/#inbox/' + e(x.src.thread) + '" target="_blank" rel="noopener">' + e(x.title) + '</a>' : '<span>' + e(x.title) + '</span>');
+        return '<div class="td' + (x.done ? ' dn' : '') + '">' + (x.k === 'crm' ? '<button class="ckb ' + (x.done ? 'on' : '') + '" ' + (canClose ? 'onclick="hqTaskDone(\'' + e(x.id) + '\',' + (x.done ? 'false' : 'true') + ')"' : 'disabled') + ' aria-label="' + (x.done ? 'Reopen' : 'Mark done') + '">' + (x.done ? ico('check') : '') + '</button>' : '<span class="ck"></span>') +
+          '<div style="min-width:0">' + link + '<div class="who">' + (x.src && x.src.type === 'email' ? '<span class="chip need" style="margin-right:6px">Email</span>' : '') + e(x.client) + (x.client ? ' · ' : '') + e(x.who || 'Unassigned') + (x.auto ? ' · ' + e(x.auto) : '') + '</div></div>' +
+          '<span class="due ' + (x.overdue ? 'od' : '') + '">' + (x.due ? (x.overdue ? 'Late · ' : '') + e(dshort(x.due)) : '') + '</span></div>';
       }).join('') : '<div class="empty">' + ico('check') + (f === 'mine' ? 'Nothing assigned to you right now.' : 'Nothing here.') + '</div>') + '</div>' +
-      '<p class="hint" style="margin-top:10px">' + total + ' open to-dos in total.</p>';
+      '<p class="hint" style="margin-top:10px">' + total + ' open in total.</p>';
   }
+  window.hqTaskDone = async function (id, done) { try { await api('/api/tasks/' + id + '/done', 'POST', { done: done }); await refreshTasks(); show('hq:work'); } catch (er) { toast(er.message); } };
+  window.hqAddTask = async function () {
+    var g = function (i) { return (document.getElementById(i) || {}).value || ''; };
+    try { await api('/api/tasks', 'POST', { title: g('nt_t'), client: g('nt_c'), due: g('nt_d'), owner: g('nt_o') || undefined }); toast('Added'); await refreshTasks(); show('hq:work'); } catch (er) { toast(er.message); }
+  };
+  window.hqSyncMail = async function () { try { toast('Checking mail...'); var r = await api('/api/tasks/sync', 'POST', {}); await refreshTasks(); toast(r.created ? r.created + ' new task' + (r.created > 1 ? 's' : '') : 'No new client emails'); show('hq:work'); } catch (er) { toast(er.message); } };
+  async function refreshTasks() { try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (er) {} }
   window.HQ_work = function (k) { HQ.workTab = k; show('hq:work'); };
   window.HQ_ctab = function (k) { clientTab = k; show('hq:clients'); };
 
@@ -289,7 +317,9 @@
         '<button class="btn2 line mini" onclick="hqTitle(\'' + e(u.id) + '\')">Set job role</button> <button class="btn2 line mini" onclick="hqReset(\'' + e(u.id) + '\')">Reset password</button> ' +
         (me.id !== u.id ? '<button class="btn2 line mini" onclick="hqActive(\'' + e(u.id) + '\',' + (u.active ? 'false' : 'true') + ')">' + (u.active ? 'Turn off' : 'Turn on') + '</button>' : '') + '</td></tr>';
     }).join('');
-    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team</h3><p>Everyone who can log in. Each person sees their own name.</p></div></div><div id="tempbox"></div>' + rosterPanel(r.users) +
+    var ln = []; try { ln = (await api('/api/lanes')).lanes; } catch (x) {}
+    var lanePanel = '<div class="panel" style="margin-bottom:16px"><h3>Who handles what</h3><p class="hint">Client emails and new tasks go to the person for that kind of work.</p>' + ln.map(function (l) { return '<div class="kv"><span>' + e(l.label) + '</span><select onchange="hqLane(\'' + e(l.key) + '\',this.value)" style="padding:8px 10px;border:1px solid var(--hair2);border-radius:9px;min-height:36px;font:inherit"><option value="">' + (l.name ? '' : 'No login yet: ' + e(l.email)) + '</option>' + r.users.filter(function (u) { return u.active; }).map(function (u) { return '<option value="' + e(u.email) + '"' + (u.email === l.email ? ' selected' : '') + '>' + e(u.name) + '</option>'; }).join('') + '</select></div>'; }).join('') + '</div>';
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team</h3><p>Everyone who can log in. Each person sees their own name.</p></div></div><div id="tempbox"></div>' + rosterPanel(r.users) + lanePanel +
       '<div class="panel" style="margin-bottom:16px"><h3>Add a person</h3><div class="frm" style="margin-top:12px"><div><label for="nu_n">Name</label><input id="nu_n" placeholder="Full name"></div><div><label for="nu_e">Email</label><input id="nu_e" type="email" placeholder="name@openheartmediaco.com"></div><div><label for="nu_t">Job role</label><input id="nu_t" placeholder="e.g. Web Developer"></div><div><label for="nu_r">Access</label><select id="nu_r"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn2 red" onclick="hqAddUser()">Add</button></div></div>' +
       '<div class="panel"><table class="ttab"><thead><tr><th>Person</th><th>Access</th><th>Last in</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
@@ -351,6 +381,7 @@
     var u = (HQ.users || []).filter(function (x) { return x.id === id; })[0]; var t = prompt('Job role for ' + (u ? u.name : 'this person') + ' (for example Web Developer, Ads Strategist):', (u && u.title) || '');
     if (t === null) return; try { await api('/api/admin/users/' + id + '/title', 'POST', { title: t }); show('hq:team'); } catch (er) { toast(er.message); }
   };
+  window.hqLane = async function (lane, email) { if (!email) return; try { await api('/api/admin/lanes', 'POST', { lane: lane, email: email }); toast('Saved'); } catch (er) { toast(er.message); show('hq:team'); } };
   window.hqActive = async function (id, on) { try { await api('/api/admin/users/' + id + '/active', 'POST', { active: on }); show('hq:team'); } catch (er) { toast(er.message); } };
 
 
@@ -415,7 +446,7 @@
     else if (key === 'hq:clients') el.innerHTML = clients();
     else if (key === 'hq:onboarding') el.innerHTML = onboarding();
     else if (key === 'hq:mail') { el.innerHTML = mail(); if (!HQ.mail) { await loadMail(); if (navKey === 'hq:mail') el.innerHTML = mail(); } }
-    else if (key === 'hq:work') el.innerHTML = work();
+    else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
     else if (key === 'hq:outreach') el.innerHTML = outreach();
     else if (key === 'hq:team') el.innerHTML = await team();
     else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = clientPage(key.slice(10)); }
