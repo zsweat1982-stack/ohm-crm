@@ -6,7 +6,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<title>Open Heart Media — Outreach Dashboard</title>
+<title>Open Heart Media CRM</title>
+<link rel="stylesheet" href="/hq.css">
 <style>
   :root{
     --ink:#0b1220; --nav:#0f1b30; --nav2:#16243d; --navtxt:#8fa3c0;
@@ -184,7 +185,7 @@
 <aside class="sb">
   <div class="sb-top">
     <img src="/media/logo-white.png" alt="Open Heart Media"/>
-    <div class="tag">Outreach CRM</div>
+    <div class="tag">Open Heart Media CRM</div>
   </div>
   <nav class="sb-nav" id="sbnav"></nav>
   <div class="sb-foot"><button onclick="logout()"><span>Log out</span></button></div>
@@ -198,12 +199,13 @@
       <input id="q" placeholder="Search business, city, email, category" oninput="render()"/>
     </div>
     <span class="sp"></span>
-    <button id="autosendBtn" onclick="toggleAutosend()" title="Automatic daily sending">checking…</button>
-    <button onclick="rescanNext()" title="Re-run the audit scan for the next 40 leads the daily sender will email">Rescan next 40</button>
-    <button class="primary" onclick="generateAll()">Draft next 25</button>
-    <button class="green" onclick="sendApproved()">Send approved</button>
+    <button class="obtn" id="autosendBtn" onclick="toggleAutosend()" title="Automatic daily sending">checking…</button>
+    <button class="obtn" onclick="rescanNext()" title="Re-run the audit scan for the next 40 leads the daily sender will email">Rescan next 40</button>
+    <button class="primary obtn" onclick="generateAll()">Draft next 25</button>
+    <button class="green obtn" onclick="sendApproved()">Send approved</button>
   </div>
 
+  <div id="hq"></div>
   <div class="sub">
     <span class="viewtabs"><button id="tabBoard" class="on" onclick="setView('board')">Pipeline</button><button id="tabTable" onclick="setView('table')">Table</button></span>
     <label class="muted">Filter
@@ -279,7 +281,12 @@ function logout(){ fetch('/api/logout',{method:'POST'}).then(()=>location.href='
 // The nav doubles as the count of everything, so the shape of the business is readable
 // without opening a single view.
 const NAV = [
-  ['Pipeline', [
+  ['Workspace', [
+    ['hq:home',       '\u25A3', 'Home',        null],
+    ['hq:clients',    '\u2726', 'Clients',     null],
+    ['hq:onboarding', '\u2709', 'Onboarding',  null],
+  ]],
+  ['Outreach', [
     ['board',       '\u25A6', 'Pipeline',       null],
     ['giveaway',    '\u{1F381}', 'Giveaway',       p => p.source==='giveaway'],
     ['manual',      '\u271A', 'Manual',        p => p.source==='manual' && p.status==='manual'],
@@ -308,11 +315,10 @@ function renderNav(){
         <span class="ic">${ic}</span><span class="t">${label}</span>
         ${n!==null?`<span class="n">${n}</span>`:''}</button>`;
     }).join('')
-  ).join('') + `<div class="sb-sec">Clients</div>
-    <button class="nv" onclick="window.open('/admin/onboarding','_blank')"><span class="ic">\u2709</span><span class="t">Onboarding answers</span></button>
-    <button class="nv" onclick="window.open('/onboarding','_blank')"><span class="ic">\u2197</span><span class="t">Open client form</span></button>`;
+  ).join('');
 }
 function navTo(k){
+  if (window.hqNav && window.hqNav(k)) return;
   navKey = k;
   const titles = {board:'Pipeline', manual:'Manual', giveaway:'Giveaway', nosite:'No Website', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
                   booked:'Booked', won:'Won', all:'All leads', new:'Queue', drafted:'Drafted',
@@ -349,7 +355,7 @@ function fillOwnerFilter(){
 async function load() {
   state = await api('/api/prospects');
   fillOwnerFilter();
-  renderStats(); renderNav(); render(); loadMetrics(); loadAutosend();
+  renderStats(); renderNav(); render(); loadMetrics(); loadAutosend(); if(window.hqRerender) hqRerender();
   if (openId) { const p = state.prospects.find(x=>x.id===openId); if(p) renderDrawer(p); }
 }
 // Automatic sending had two switches and no display. AUTOSEND is an environment
@@ -811,5 +817,7 @@ async function sendOne(id) { try { await api('/api/prospects/'+id+'/send','POST'
 async function sendApproved() { if(!confirm('Send all approved emails now (up to your daily cap)?'))return; toast('Sending…'); try { const r=await api('/api/send-approved','POST'); await load(); toast('Sent '+r.sent+(r.errors&&r.errors.length?' ('+r.errors.length+' failed)':'')); } catch(e){toast(e.message);} }
 load();
 </script>
+<script src="/hq.js"></script>
+<script>window.hqNav('hq:home');</script>
 </body>
 </html>

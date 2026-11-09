@@ -2212,7 +2212,7 @@ app.use((req, res, next) => {
 
 function renderLogin(err) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Open Heart Media — Sign in</title><style>
+<title>Open Heart Media CRM</title><style>
 :root{--ink:#0f1a30;--navy:#1a2b4c;--red:#df3131;--blue:#5e97ff}
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#f5f7fb;color:var(--ink);display:flex;align-items:center;justify-content:center;min-height:100vh}
@@ -2230,13 +2230,13 @@ button:hover{background:#c92626}
 </style></head><body>
 <div class="card">
   <img class="logo" src="/media/logo-navy.png" alt="Open Heart Media"/>
-  <h1>Team sign in</h1><p class="sub">Enter the shared team password to access the CRM.</p>
+  <h1>Team sign in</h1><p class="sub">Enter the shared team password to open the Open Heart Media CRM.</p>
   <form method="POST" action="/api/login">
     <input type="password" name="password" placeholder="Team password" autofocus/>
     <button type="submit">Sign in</button>
   </form>
   <div class="err">${err ? 'Wrong password. Try again.' : ''}</div>
-  <div class="foot">OPEN HEART MEDIA · OUTREACH CRM</div>
+  <div class="foot">OPEN HEART MEDIA CRM</div>
 </div></body></html>`;
 }
 app.get('/login', (_, res) => res.send(renderLogin(false)));
@@ -4341,6 +4341,102 @@ async function provisionBasecamp(row) {
   done[row.client] = out; fs.writeFileSync(BC_PROJECTS_FILE, JSON.stringify(done, null, 2));
   return out;
 }
+
+
+// ---------- Open Heart Media CRM: client hub (Home, Clients, Onboarding) ----------
+const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
+const CLIENT_SEED = [
+  { slug: 'sun-and-shield', name: 'Sun and Shield', status: 'active', services: ['Website', 'Ads', 'Social', 'CRM'], match: ['sun and shield', 'sun & shield'] },
+  { slug: 'matchett-homes', name: 'Matchett Homes', status: 'active', services: ['Website', 'Ads', 'Social'], match: ['matchett'] },
+  { slug: 'ifab', name: 'iFab', status: 'active', services: ['Website', 'Social'], match: ['ifab'] },
+  { slug: 'vnphc', name: 'VNPHC', status: 'active', services: ['Website', 'Ads'], match: ['vnphc'] },
+  { slug: 'adnormous', name: 'Adnormous', status: 'active', services: ['Website', 'Ads'], match: ['adnormous'] },
+  { slug: 'cisga', name: 'CISGA', status: 'active', services: ['Website', 'Social'], match: ['cisga'] },
+  { slug: 'nitro', name: 'Nitro', status: 'active', services: ['Social', 'Ads'], match: ['nitro'] },
+  { slug: 'bkvf', name: 'BKVF', status: 'ads_off', services: ['Social'], match: ['bkvf'] },
+  { slug: 'urc', name: 'URC', status: 'active', services: ['Social'], match: ['urc'] },
+  { slug: 'open-heart-media', name: 'Open Heart Media', status: 'internal', services: ['Our own marketing'], match: ['open heart media'] },
+  { slug: 'abls', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: ['Ads'], match: ['best lighting', 'abls'] },
+  { slug: 'nabs', name: 'NABS', status: 'ending', note: 'Ending Nov 25.', services: ['Ads'], match: ['nabs'] },
+].map(c => ({ website_owner: 'Frank', ads_owner: 'Ariel', ...c }));
+function loadClients() {
+  let c = readJson(CLIENTS_FILE, null);
+  if (!c) { c = CLIENT_SEED; try { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c, null, 2)); } catch {} }
+  // clients that only exist because they submitted the onboarding form
+  const known = new Set(c.map(x => x.slug));
+  for (const r of loadOnboarding()) {
+    if (r.client && r.client !== 'unassigned' && !known.has(r.client)) {
+      known.add(r.client);
+      c.push({ slug: r.client, name: r.business || r.client, status: 'onboarding', services: [], match: [String(r.business || r.client).toLowerCase()], website_owner: 'Frank', ads_owner: 'Ariel' });
+    }
+  }
+  return c;
+}
+function saveClients(c) { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c.filter(x => x.status !== 'onboarding' || x.saved), null, 2)); }
+
+let bcProjCache = { at: 0, list: [] };
+async function bcProjects() {
+  if (Date.now() - bcProjCache.at < 600e3 && bcProjCache.list.length) return bcProjCache.list;
+  const out = [];
+  for (let pg = 1; pg <= 10; pg++) { const r = await bc('GET', '/projects.json?page=' + pg); if (!Array.isArray(r) || !r.length) break; out.push(...r); if (r.length < 15) break; }
+  bcProjCache = { at: Date.now(), list: out };
+  return out;
+}
+const workCache = new Map();
+async function clientWork(c) {
+  const hit = workCache.get(c.slug);
+  if (hit && Date.now() - hit.at < 300e3) return hit.data;
+  const projects = await bcProjects();
+  let proj = c.bc_project_id ? projects.find(p => String(p.id) === String(c.bc_project_id)) : null;
+  if (!proj) {
+    const keys = (c.match || []).map(m => m.toLowerCase());
+    proj = projects.find(p => keys.some(k => String(p.name || '').toLowerCase() === k)) || projects.find(p => keys.some(k => String(p.name || '').toLowerCase().includes(k)));
+  }
+  if (!proj) { const d = { linked: false }; workCache.set(c.slug, { at: Date.now(), data: d }); return d; }
+  const ts = (proj.dock || []).find(d => d.name === 'todoset');
+  const today = new Date().toISOString().slice(0, 10);
+  const lists = [];
+  if (ts) {
+    const tl = await bc('GET', `/buckets/${proj.id}/todosets/${ts.id}/todolists.json`);
+    for (const l of tl.slice(0, 12)) {
+      const todos = await bc('GET', `/buckets/${proj.id}/todolists/${l.id}/todos.json`);
+      lists.push({ id: l.id, name: l.name, ratio: l.completed_ratio || '', url: l.app_url,
+        open: todos.slice(0, 40).map(t => ({ id: t.id, title: t.title, due: t.due_on || '', url: t.app_url, who: (t.assignees || []).map(a => a.name.split(' ')[0]).join(', '), overdue: !!(t.due_on && t.due_on < today) })) });
+    }
+  }
+  const allOpen = lists.flatMap(l => l.open);
+  const d = { linked: true, project: { id: proj.id, name: proj.name, url: proj.app_url }, lists,
+    open: allOpen.length, overdue: allOpen.filter(t => t.overdue).length,
+    nextDue: allOpen.filter(t => t.due).map(t => t.due).sort()[0] || '' };
+  workCache.set(c.slug, { at: Date.now(), data: d });
+  return d;
+}
+app.get('/api/hq', async (req, res) => {
+  if (!teamOnly(req, res)) return;
+  const clients = loadClients();
+  const onb = loadOnboarding();
+  const connected = !!readJson(BC_TOKEN_FILE, null);
+  const out = [];
+  await Promise.all(clients.map(async c => {
+    const mine = onb.filter(r => r.client === c.slug);
+    let work = null, workError = '';
+    if (connected) { try { work = await clientWork(c); } catch (e) { workError = e.message.slice(0, 120); } }
+    out.push({ ...c, onboarding: { count: mine.length, last: mine.length ? mine[mine.length - 1].at : '' }, work, workError });
+  }));
+  const order = clients.map(c => c.slug);
+  out.sort((a, b) => order.indexOf(a.slug) - order.indexOf(b.slug));
+  res.json({ clients: out, connected, onboardingTotal: onb.length, onboardingNoProject: onb.filter(r => r.v === 2 && !r.basecamp).length });
+});
+app.post('/api/hq/client/:slug/link', (req, res) => {
+  if (!teamOnly(req, res)) return;
+  const id = String((req.body && req.body.project) || '').match(/buckets\/(\d+)|projects\/(\d+)|^(\d+)$/);
+  const pid = id && (id[1] || id[2] || id[3]);
+  if (!pid) return res.status(400).json({ error: 'Paste the Basecamp project link.' });
+  const all = loadClients(); const c = all.find(x => x.slug === req.params.slug);
+  if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  c.bc_project_id = pid; c.saved = true; saveClients(all); workCache.delete(c.slug); res.json({ ok: true });
+});
+app.get('/api/hq/refresh', (req, res) => { if (!teamOnly(req, res)) return; workCache.clear(); bcProjCache = { at: 0, list: [] }; res.json({ ok: true }); });
 
 app.post('/api/onboarding', async (req, res) => {
   const d = req.body || {};
