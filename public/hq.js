@@ -345,9 +345,9 @@
     var have = {}; (existing || []).forEach(function (u) { have[u.email] = 1; });
     var rows = ROSTER.filter(function (r) { return !have[r[1]]; });
     if (!rows.length) return '';
-    return '<div class="panel" style="margin-bottom:16px"><h3>Add the whole team</h3><p class="hint">Everyone from Basecamp, with their job role. Uncheck anyone you do not want, and tick Admin for people who should manage logins.</p>' +
+    return '<div class="panel" style="margin-bottom:16px"><h3>Add the whole team</h3><p class="hint">Everyone from Basecamp, with their job role. Only Brad, Griffin and Michelle are ticked for now. Tick others when you are ready, and tick Admin for people who should manage logins.</p>' +
       '<table class="ttab"><thead><tr><th></th><th>Person</th><th>Job role</th><th>Admin</th></tr></thead><tbody>' + rows.map(function (r, i) {
-        return '<tr><td><input type="checkbox" id="rt_on' + i + '" checked></td><td><div class="nm">' + e(r[0]) + '</div><div class="em">' + e(r[1]) + '</div></td><td class="em" style="display:table-cell">' + e(r[2]) + '</td><td><input type="checkbox" id="rt_ad' + i + '"' + (r[3] ? ' checked' : '') + '></td></tr>';
+        return '<tr><td><input type="checkbox" id="rt_on' + i + '"' + (/^(brad|griffin|michelle)@/.test(r[1]) ? ' checked' : '') + '></td><td><div class="nm">' + e(r[0]) + '</div><div class="em">' + e(r[1]) + '</div></td><td class="em" style="display:table-cell">' + e(r[2]) + '</td><td><input type="checkbox" id="rt_ad' + i + '"' + (r[3] ? ' checked' : '') + '></td></tr>';
       }).join('') + '</tbody></table><div style="margin-top:14px"><button class="btn2 red" onclick="hqAddTeam()">Add selected</button></div></div>';
   }
   window.hqAddTeam = async function () {
