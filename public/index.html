@@ -277,7 +277,12 @@
 <div class="toast" id="toast"></div>
 
 <script>
-function logout(){ fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login'); }
+async function logout(){
+  try { await fetch('/api/logout',{method:'POST'}); } catch(e){}
+  // The host can answer 502 for a moment while it is busy. Wait until the sign-in page answers, then go.
+  for (let i=0;i<8;i++){ try { const r = await fetch('/login',{cache:'no-store'}); if (r.ok) break; } catch(e){} await new Promise(r=>setTimeout(r,700)); }
+  location.href='/login';
+}
 
 /* ---------- sidebar ---------- */
 // The nav doubles as the count of everything, so the shape of the business is readable
