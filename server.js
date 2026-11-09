@@ -4039,6 +4039,53 @@ function ymdLocal(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).p
 function fridayDue() { const d = etNow(), dow = d.getDay(); let add = dow >= 1 && dow <= 5 ? 5 - dow : (5 - dow + 7) % 7; if (dow === 5 && d.getHours() >= 17) add = 7; d.setDate(d.getDate() + add); return { due: ymdLocal(d), due_time: '17:00' }; }
 function upcomingMonday() { const d = etNow(), dow = d.getDay(); d.setDate(d.getDate() + (dow === 1 ? 0 : (8 - dow) % 7)); return ymdLocal(d); }
 
+
+// Everything in a client's Drive folder, filed or not: visit folders, raw camera files, talking-head folders. This is what the brain plans around.
+const invCache = new Map();
+async function getInventory(uid, c) {
+  if (!c.drive) return null;
+  const ck = uid + ':' + c.slug, hit = invCache.get(ck); if (hit && Date.now() - hit.at < 600e3) return hit.data;
+  const tok = await userGmailToken(uid); if (!tok) return null; const auth = { Authorization: 'Bearer ' + tok };
+  const list = async (q) => { const u = new URL('https://www.googleapis.com/drive/v3/files'); u.searchParams.set('q', q); u.searchParams.set('pageSize', '200'); u.searchParams.set('fields', 'files(id,name,mimeType,createdTime,modifiedTime,webViewLink)'); u.searchParams.set('orderBy', 'createdTime desc'); u.searchParams.set('supportsAllDrives', 'true'); u.searchParams.set('includeItemsFromAllDrives', 'true'); const r = await fetch(u, { headers: auth }); if (!r.ok) throw new Error('drive ' + r.status); return (await r.json()).files || []; };
+  const isFolder = f => f.mimeType === 'application/vnd.google-apps.folder', out = [];
+  try {
+    const top = await list(`'${c.drive}' in parents and trashed = false`);
+    const walk = async (folder, pathStr, depth) => {
+      const kids = await list(`'${folder.id}' in parents and trashed = false`);
+      const vids = kids.filter(f => /^video\//.test(f.mimeType) || /\.(mp4|mov|mxf|avi|m4v)$/i.test(f.name)), imgs = kids.filter(f => /^image\//.test(f.mimeType) || /\.(jpe?g|png|heic|raw|arw|cr2|dng)$/i.test(f.name));
+      const subs = kids.filter(isFolder);
+      if (vids.length || imgs.length) out.push({ path: pathStr, url: folder.webViewLink || 'https://drive.google.com/drive/folders/' + folder.id, created: (folder.createdTime || '').slice(0, 10), videos: vids.length, images: imgs.length, newest: (kids[0] && kids[0].createdTime || '').slice(0, 10), sample: vids.concat(imgs).slice(0, 4).map(f => f.name), named: vids.concat(imgs).filter(f => FILE_RE.test(f.name)).length });
+      if (depth < 2) for (const sf of subs.filter(f => !/^archive$/i.test(f.name)).slice(0, 12)) await walk(sf, pathStr + ' / ' + sf.name, depth + 1);
+    };
+    for (const f of top.filter(isFolder).filter(f => !/^archive$/i.test(f.name))) await walk(f, f.name, 1);
+    const data = { folders: out.slice(0, 25) }; invCache.set(ck, { at: Date.now(), data }); return data;
+  } catch (e) { return hit ? hit.data : null; }
+}
+function inventoryText(inv) {
+  if (!inv) return 'Drive inventory not available. Do not guess what footage exists.';
+  if (!inv.folders.length) return 'The client Drive folder has no footage outside the Archive.';
+  return inv.folders.map(f => `- ${f.path}: ${f.videos} video and ${f.images} image files, newest ${f.newest || f.created}, ${f.named} named to standard. Examples: ${f.sample.join(', ')}`).join('\n');
+}
+app.get('/api/hq/inventory/:slug', async (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.json({ connected: false });
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c || !c.drive) return res.json({ connected: true, noFolder: true });
+  try { res.json({ connected: true, ...(await getInventory(me.id, c) || { folders: [] }) }); } catch (e) { res.json({ connected: true, folders: [], error: String(e.message).slice(0, 120) }); }
+});
+// Format rules for a client, assembled from its brain and the team's plan: reels, text on screen, captions, graphics.
+app.get('/api/hq/formats/:slug', (req, res) => {
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''); res.json({ md: formatRules(slug) });
+});
+function formatRules(slug) {
+  let brain = ''; try { brain = fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8'); } catch {}
+  const PL = loadPlans(), gr = PL.guardrails[slug], parts = [];
+  parts.push('## Reels\n- 1080x1920. Frame one carries the payoff; average watch time is about 8 seconds, so do not build for completion.\n- Hook: a talking-head line if the footage has one. If there is no talking hook, the hook is text on screen in the first second.\n- Text on screen: short, one idea per card, no em dashes, keep type away from the app UI at the top and bottom.\n- Caption: a hook, a body and one CTA. No hashtags on Instagram. US spelling.');
+  parts.push('## Graphics and static ads\n- Single designed frame, 1080x1350, real photos only. Use one of: editorial, color_poster, notes_app, reminders_app, imessage, annotated, polaroid_wall, grid_card, big_number, review_card, ticket_offer, and vary the design week to week.\n- Carousels: 5 cards or fewer, 1080x1350, one idea per card. Reserved for the highest-save teaching posts.\n- Holidays: thank you only. Offers only when the client confirms them in writing.');
+  if (gr) parts.push('## This client\'s look and tone\n' + gr.look + '\n\n## This client\'s guardrails\n' + gr.rules);
+  const lines = brain.split('\n').filter(l => /^\s*[-*]/.test(l) && /(on[- ]screen|text on screen|caption|CTA|hashtag|emoji|tone|voice|never say|do not say|words to use|avoid)/i.test(l)).map(l => l.trim()).slice(0, 14);
+  if (lines.length) parts.push('## From the client brain\n' + lines.join('\n'));
+  return parts.join('\n\n');
+}
+
 const SHOTLIST_RULES = `You are the Open Heart Media content planner. You write ONE shot list for ONE shoot for ONE client. The team will film exactly what you write.
 Rules:
 - CONFIRMED FACTS are verified by the team and override anything in the brain. If they conflict with the brain, follow the confirmed facts. Never narrow what the client does below what the confirmed facts say.
@@ -4076,7 +4123,8 @@ async function makeShotlist(slug, dateStr, who) {
   if (!brain) throw new Error('This client has no brain file yet.');
   const sec = (re) => { const m = new RegExp('^## ' + re + '[^\\n]*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))', 'mi').exec(brain); return m ? m[0].slice(0, 9000) : ''; };
   const context = [sec('1\\.'), sec('3\\.'), sec('4\\.'), sec('5\\.'), brainCopy(brain).slice(0, 14000), sec('9\\.'), sec('12\\.')].filter(Boolean).join('\n\n');
-  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
+  let invTextShot = 'Drive inventory not available.'; try { const u2 = Object.keys(gUsers())[0]; if (u2) invTextShot = inventoryText(await getInventory(u2, c)); } catch {}
+  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nFOOTAGE IN THE CLIENT'S DRIVE FOLDER NOW:\n${invTextShot}\n\nFORMAT AND TEXT-ON-SCREEN RULES:\n${formatRules(slug)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
   const out = await aiJson(SHOTLIST_RULES, user, 4500);
   const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
   const arr = (v, f) => (Array.isArray(v) ? v : []).slice(0, 12).map(f);
@@ -4185,7 +4233,11 @@ Rules:
 - Obey the client's compliance and claims section. If it forbids something, do not write it. List the gates that apply to each post in "gates".
 - Research-backed: every post uses a customer fear, desire or objection from the brain's customer-language section, a pattern from what is working, or a top post of the client. Say which in "basis" with its evidence label (OBSERVED, PROXY, HYPOTHESIS, TESTED, PROVEN). Nothing is PROVEN unless the brain says so.
 - Vary the angle. Across the week cover different buyer levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and different formats. Organic goes first for levels 1 to 3.
-- If the slots come from the team's plan, they are final: keep each slot's date, type and topic exactly. If a topic says "Chris picks the clip" or "Pull from footage", the client picks existing footage: do not invent a topic. Write a hook frame and a caption with fill-in blanks marked VERIFY, and say what to look for in the archive.
+- The plan's topics are the starting point, not a cage. NEW FOOTAGE comes first: if footage in the Drive folder (see FOOTAGE) fits a slot better than the planned topic, change that slot's topic to use it and say so in "change_reason" (set "changed" to true). Never move or drop a holiday, key-date or promo slot, and never break a client guardrail. In "uses" name the footage a Reel or graphic is built from (folder, subject or label). If a visit folder holds footage that is not named to standard, still plan around it and add to "verify" that it needs renaming and a look.
+- When a Reel has no talking-head hook, the hook is text on screen in the first second: write it in "onscreen".
+- For a Carousel, "onscreen" holds the copy for each card, written as Card 1, Card 2 and so on. For a Graphic it is the text on the graphic. Only Reels and talking heads use true on-screen video text.
+- Follow the FORMAT AND TEXT-ON-SCREEN RULES for this client exactly.
+- If the slots come from the team's plan, keep each slot's date and type. (Topic may change only as described above.) If a topic says "Chris picks the clip" or "Pull from footage", the client picks existing footage: do not invent a topic. Write a hook frame and a caption with fill-in blanks marked VERIFY, and say what to look for in the archive.
 - Production reality: Reels are edits of footage (archive pull or the shoot) with the hook as on-screen text. Graphics are one designed frame. Carousels are 5 cards or fewer and at most 1 per week unless the client's schedule says otherwise. If the client does not film, every Reel needs an archive pull list and a stills fallback. Use the schedule note below for the client's real mix.
 - Each post has: a one-breath hook (18 words or fewer, one person, one moment, one checkable detail), a shot list or archive pull list, on-screen text, and a caption with a hook, a body and a CTA. The CTA is one clear action.
 - For Graphic and Carousel posts choose a design from this list: ${DESIGNS.join(', ')}. Vary the designs across the week.
@@ -4194,8 +4246,8 @@ Rules:
 - PROMOS (listed in the request) are triggers. Post about a promo only if it is marked CLIENT CONFIRMED, using the exact name, dates and terms given, with its real deadline. Start teasing 7 days before it begins. A promo marked NOT CONFIRMED must not be posted: put it in "notes" as waiting on the client. Never invent a discount, price or deadline.
 - Copy rules: no em dashes or en dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer, "it's not just X, it's Y"), numbers beat adjectives, front-load the point, sound unmistakably like this brand.
 Return ONLY JSON in this shape, one row per slot, in date order:
-{"theme":"","rows":[{"date":"YYYY-MM-DD","type":"Reel|Graphic|Carousel|Talking head|Testimonial","platforms":"","time":"","level":1,"idea":"","hook":"","shots":[""],"onscreen":"","design":"","caption":{"hook":"","body":"","cta":""},"basis":"","gates":[""],"verify":[""],"editing":"","trigger":"holiday name or promo name, or empty"}],"notes":""}`;
-async function makePack(slug, monday, who) {
+{"theme":"","rows":[{"date":"YYYY-MM-DD","type":"Reel|Graphic|Carousel|Talking head|Testimonial","platforms":"","time":"","level":1,"idea":"","hook":"","shots":[""],"onscreen":"","design":"","caption":{"hook":"","body":"","cta":""},"basis":"","gates":[""],"verify":[""],"editing":"","trigger":"holiday name or promo name, or empty","uses":"footage used","changed":false,"change_reason":""}],"notes":""}`;
+async function makePack(slug, monday, who, uid) {
   const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
   const cad = c.cadence || {}, PL = loadPlans(), sundayD = addDaysStr(monday, 6);
   const planRows = (PL.clients[slug] || []).filter(r => r.date >= monday && r.date <= sundayD).sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -4206,7 +4258,9 @@ async function makePack(slug, monday, who) {
   const sunday = addDaysStr(monday, 6), look = addDaysStr(monday, 13), hols = holidaysBetween(monday, look), pr = promosFor(c, monday, look);
   const hText = hols.length ? hols.map(h => h.date + ' ' + h.name + (h.date <= sunday ? ' (THIS WEEK)' : ' (next week, tease only if it fits)')).join('; ') : 'none';
   const pText = pr.length ? pr.map(p => `${p.name}: ${p.start} to ${p.end}. ${p.details || ''} [${p.confirmed ? 'CLIENT CONFIRMED' : 'NOT CONFIRMED, do not post'}]`).join('\n') : 'none';
-  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nWEEK STARTING (Monday): ${monday}\nNATIONAL HOLIDAYS: ${hText}\nPROMOS: ${pText}\nSLOTS TO FILL (one post each)${planRows.length ? ' (FIXED BY THE TEAM\'S PLAN: keep each slot\'s date, type and topic and build it out)' : ''}:\n${dates.map(d => { const p = planBy.get(d); return d + ' ' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T12:00:00').getDay()] + (p ? ' | ' + p.type + ' | ' + p.topic + (p.flag ? ' | HOLIDAY, KEY DATE OR PROMO' : '') : ''); }).join('\n')}\nSCHEDULE NOTE FROM THE TEAM: ${cad.note || '(none)'}\nKEY DATES THIS WEEK (team plan):\n${keyd || 'none'}\n${gr ? 'LOOK AND TONE: ' + gr.look + '\nTEAM GUARDRAILS: ' + gr.rules + '\n' : ''}\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 5000) || '(none provided)'}\n\nFRAMEWORKS TO APPLY:\n${ctx.frameworks}\n\nCLIENT BRAIN (the source of truth):\n${ctx.brain}`;
+  let invText = 'Drive inventory not available. Do not guess what footage exists.'; try { const u2 = uid || Object.keys(gUsers())[0]; if (u2) invText = inventoryText(await getInventory(u2, c)); } catch {}
+  const fmt = formatRules(slug);
+  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nWEEK STARTING (Monday): ${monday}\nNATIONAL HOLIDAYS: ${hText}\nPROMOS: ${pText}\nSLOTS TO FILL (one post each)${planRows.length ? ' (FIXED BY THE TEAM\'S PLAN: keep each slot\'s date, type and topic and build it out)' : ''}:\n${dates.map(d => { const p = planBy.get(d); return d + ' ' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T12:00:00').getDay()] + (p ? ' | ' + p.type + ' | ' + p.topic + (p.flag ? ' | HOLIDAY, KEY DATE OR PROMO' : '') : ''); }).join('\n')}\nSCHEDULE NOTE FROM THE TEAM: ${cad.note || '(none)'}\nKEY DATES THIS WEEK (team plan):\n${keyd || 'none'}\n${gr ? 'LOOK AND TONE: ' + gr.look + '\nTEAM GUARDRAILS: ' + gr.rules + '\n' : ''}\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nFOOTAGE IN THE CLIENT'S DRIVE FOLDER RIGHT NOW (use the newest first):\n${invText}\n\nFORMAT AND TEXT-ON-SCREEN RULES FOR THIS CLIENT:\n${fmt}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 5000) || '(none provided)'}\n\nFRAMEWORKS TO APPLY:\n${ctx.frameworks}\n\nCLIENT BRAIN (the source of truth):\n${ctx.brain}`;
   const out = await aiJson(PACK_RULES, user, 8000);
   const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
   const strs = (v) => (Array.isArray(v) ? v : []).map(clean).filter(Boolean).slice(0, 10);
@@ -4215,7 +4269,7 @@ async function makePack(slug, monday, who) {
     const r = byDate.get(d) || {}, pr = planBy.get(d); const t = pr ? pr.type : (/carousel/i.test(r.type) ? 'Carousel' : /graphic/i.test(r.type) ? 'Graphic' : 'Reel');
     return { date: d, type: t, platforms: clean(r.platforms), time: clean(r.time), level: Number(r.level) || 0, idea: clean(r.idea), hook: clean(r.hook), shots: strs(r.shots), onscreen: clean(r.onscreen),
       design: (t === 'Graphic' || t === 'Carousel') ? clean(r.design) : '', topic: pr ? pr.topic : '', planned: !!pr, caption: { hook: clean(r.caption && r.caption.hook), body: clean(r.caption && r.caption.body), cta: clean(r.caption && r.caption.cta) },
-      basis: clean(r.basis), gates: strs(r.gates), verify: strs(r.verify), editing: clean(r.editing), trigger: clean(r.trigger), missing: !byDate.has(d) };
+      basis: clean(r.basis), gates: strs(r.gates), verify: strs(r.verify), editing: clean(r.editing), trigger: clean(r.trigger), uses: clean(r.uses), changed: !!r.changed && !(pr && pr.flag), change_reason: clean(r.change_reason), missing: !byDate.has(d) };
   });
   const pack = { week: monday, at: new Date().toISOString(), by: who || 'auto', theme: clean(out.theme), notes: clean(out.notes), rows, basis: { working: !!readWorking(slug), facts: !!readFacts(slug) }, inputs: { holidays: hols.filter(h => h.date <= sunday).map(h => h.name), promoStamp: c.promos_updated || '' }, released: null };
   const all = loadPacks(); all[slug] = Object.assign({}, all[slug] || {}); const prev = all[slug][monday]; if (prev && prev.released) pack.released = prev.released; all[slug][monday] = pack;
@@ -4228,7 +4282,7 @@ app.get('/api/hq/packs/:slug', (req, res) => {
 app.post('/api/hq/packs/:slug', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
   const w = String((req.body && req.body.week) || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(w) || new Date(w + 'T12:00:00').getDay() !== 1) return res.status(400).json({ error: 'Pick a week that starts on a Monday.' });
-  const slug = String(req.params.slug); res.json({ job: startJob(() => makePack(slug, w, me.name)) });
+  const slug = String(req.params.slug); res.json({ job: startJob(() => makePack(slug, w, me.name, me.id)) });
 });
 function releasePack(slug, week, whoName) {
   const all = loadPacks(), pack = (all[slug] || {})[week]; if (!pack) throw new Error('No pack for that week.'); if (pack.released) throw new Error('This pack was already released.');
