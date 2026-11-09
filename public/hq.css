@@ -455,3 +455,5 @@ body.hqout .top .sp{display:block}
 .pks{color:var(--ink2);font-size:13.5px;margin:2px 0 8px}.pkl{font-size:13px;color:var(--ink2);margin-top:6px;line-height:1.5}.pkl b{color:var(--navy)}.pkl ul{margin:2px 0 0;padding-left:18px}
 .pkc{margin-top:10px;background:#f6f8fb;border-radius:11px;padding:11px 14px;font-size:13.5px;line-height:1.55;color:var(--ink2);cursor:copy}.pkc:hover{background:#fff8e6}.pkc b{color:var(--navy)}
 @media(max-width:700px){.pk{grid-template-columns:1fr}.pkd{display:flex;gap:8px;align-items:baseline;justify-content:flex-start;padding:8px 12px}}
+
+.cb{white-space:nowrap}.cb input[type=checkbox],input[type=checkbox],input[type=radio]{width:16px !important;height:16px;min-width:16px;flex:none;padding:0 !important;margin:0}
