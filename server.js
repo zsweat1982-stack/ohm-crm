@@ -4055,10 +4055,11 @@ async function getInventory(uid, c) {
       const vids = kids.filter(f => /^video\//.test(f.mimeType) || /\.(mp4|mov|mxf|avi|m4v)$/i.test(f.name)), imgs = kids.filter(f => /^image\//.test(f.mimeType) || /\.(jpe?g|png|heic|raw|arw|cr2|dng)$/i.test(f.name));
       const subs = kids.filter(isFolder);
       if (vids.length || imgs.length) out.push({ path: pathStr, url: folder.webViewLink || 'https://drive.google.com/drive/folders/' + folder.id, created: (folder.createdTime || '').slice(0, 10), videos: vids.length, images: imgs.length, newest: (kids[0] && kids[0].createdTime || '').slice(0, 10), sample: vids.concat(imgs).slice(0, 4).map(f => f.name), named: vids.concat(imgs).filter(f => FILE_RE.test(f.name)).length });
-      if (depth < 2) for (const sf of subs.filter(f => !/^archive$/i.test(f.name)).slice(0, 12)) await walk(sf, pathStr + ' / ' + sf.name, depth + 1);
+      const recent = f => Date.now() - Date.parse(f.modifiedTime || f.createdTime || 0) < 60 * 864e5 || Date.now() - Date.parse(f.createdTime || 0) < 60 * 864e5;
+      if (depth < 4) for (const sf of subs.filter(f => !/^archive$/i.test(f.name) || recent(f)).filter(f => !/archive/i.test(pathStr) || recent(f)).slice(0, 15)) await walk(sf, pathStr + ' / ' + sf.name, depth + 1);
     };
-    for (const f of top.filter(isFolder).filter(f => !/^archive$/i.test(f.name))) await walk(f, f.name, 1);
-    const data = { folders: out.slice(0, 25) }; invCache.set(ck, { at: Date.now(), data }); return data;
+    for (const f of top.filter(isFolder)) await walk(f, f.name, 1);
+    const data = { folders: out.sort((a, b) => String(b.newest || b.created).localeCompare(String(a.newest || a.created))).slice(0, 30) }; invCache.set(ck, { at: Date.now(), data }); return data;
   } catch (e) { return hit ? hit.data : null; }
 }
 function inventoryText(inv) {
