@@ -1,0 +1,72 @@
+{
+  "source": "Main color is the client color saved in the CRM; the rest were sampled from the TS Wiring logo file on Nov 9, 2026. No brand guideline was read for this client, so VERIFY the palette and fonts with the owner or the brand guide before final designs.",
+  "palette": [
+    {
+      "name": "Brand color 1",
+      "hex": "#063661",
+      "use": "Main color from the CRM client record."
+    },
+    {
+      "name": "Brand color 2",
+      "hex": "#6484a1",
+      "use": "Sampled from the logo file."
+    },
+    {
+      "name": "Brand color 3",
+      "hex": "#bbc9d6",
+      "use": "Sampled from the logo file."
+    },
+    {
+      "name": "Ink",
+      "hex": "#14141a",
+      "use": "Dark background and text on light."
+    },
+    {
+      "name": "White",
+      "hex": "#ffffff",
+      "use": "Text on dark, clean cards."
+    }
+  ],
+  "fonts": [
+    "Font: VERIFY (not recorded). Until confirmed, use one bold sans-serif for headlines and one regular weight for body."
+  ],
+  "rules": [
+    "Keep high contrast between any text and its background (4.5 to 1 or better).",
+    "Real photos and footage of the real work only.",
+    "One idea per graphic and per text card.",
+    "Weekly color: text, highlight and the reel cover follow that week's accent so the grid reads as one feed."
+  ],
+  "weekly": [
+    {
+      "week": "Week 1",
+      "accent": "#063661",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 2",
+      "accent": "#6484a1",
+      "name": "Brand color 2",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 3",
+      "accent": "#bbc9d6",
+      "name": "Brand color 3",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 4",
+      "accent": "#063661",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    }
+  ],
+  "grid": [],
+  "refs": [],
+  "reel": {
+    "bg": "#063661",
+    "hook": "#ffffff",
+    "hl": "#6484a1"
+  }
+}

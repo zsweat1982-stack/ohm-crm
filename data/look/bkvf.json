@@ -1,0 +1,72 @@
+{
+  "source": "Main color is the client color saved in the CRM; the rest were sampled from the Brothers Keeper logo file on Nov 9, 2026. No brand guideline was read for this client, so VERIFY the palette and fonts with the owner or the brand guide before final designs.",
+  "palette": [
+    {
+      "name": "Brand color 1",
+      "hex": "#1a1a1a",
+      "use": "Main color from the CRM client record."
+    },
+    {
+      "name": "Brand color 2",
+      "hex": "#bfbfbf",
+      "use": "Sampled from the logo file."
+    },
+    {
+      "name": "Brand color 3",
+      "hex": "#626262",
+      "use": "Sampled from the logo file."
+    },
+    {
+      "name": "Ink",
+      "hex": "#14141a",
+      "use": "Dark background and text on light."
+    },
+    {
+      "name": "White",
+      "hex": "#ffffff",
+      "use": "Text on dark, clean cards."
+    }
+  ],
+  "fonts": [
+    "Font: VERIFY (not recorded). Until confirmed, use one bold sans-serif for headlines and one regular weight for body."
+  ],
+  "rules": [
+    "Keep high contrast between any text and its background (4.5 to 1 or better).",
+    "Real photos and footage of the real work only.",
+    "One idea per graphic and per text card.",
+    "Weekly color: text, highlight and the reel cover follow that week's accent so the grid reads as one feed."
+  ],
+  "weekly": [
+    {
+      "week": "Week 1",
+      "accent": "#1a1a1a",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 2",
+      "accent": "#bfbfbf",
+      "name": "Brand color 2",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 3",
+      "accent": "#626262",
+      "name": "Brand color 3",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 4",
+      "accent": "#1a1a1a",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    }
+  ],
+  "grid": [],
+  "refs": [],
+  "reel": {
+    "bg": "#1a1a1a",
+    "hook": "#bfbfbf",
+    "hl": "#bfbfbf"
+  }
+}

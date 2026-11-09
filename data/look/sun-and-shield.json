@@ -134,5 +134,10 @@
       "url": "https://www.facebook.com/ads/library/?id=1120789870905159",
       "note": "Frame from the video. Clean white studio, italic white text with outline, price in a white pill ('Full Front Package Starting at Only $1549'). Text sits in the middle of the frame. Started Oct 1, 2026."
     }
-  ]
+  ],
+  "reel": {
+    "bg": "#1f2c78",
+    "hook": "#f8ba16",
+    "hl": "#ffffff"
+  }
 }

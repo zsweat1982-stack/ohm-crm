@@ -1,0 +1,62 @@
+{
+  "source": "Main color is the client color saved in the CRM; the rest were sampled from the Visiting Nurse logo file on Nov 9, 2026. No brand guideline was read for this client, so VERIFY the palette and fonts with the owner or the brand guide before final designs.",
+  "palette": [
+    {
+      "name": "Brand color 1",
+      "hex": "#bad230",
+      "use": "Main color from the CRM client record."
+    },
+    {
+      "name": "Ink",
+      "hex": "#14141a",
+      "use": "Dark background and text on light."
+    },
+    {
+      "name": "White",
+      "hex": "#ffffff",
+      "use": "Text on dark, clean cards."
+    }
+  ],
+  "fonts": [
+    "Font: VERIFY (not recorded). Until confirmed, use one bold sans-serif for headlines and one regular weight for body."
+  ],
+  "rules": [
+    "Keep high contrast between any text and its background (4.5 to 1 or better).",
+    "Real photos and footage of the real work only.",
+    "One idea per graphic and per text card.",
+    "Weekly color: text, highlight and the reel cover follow that week's accent so the grid reads as one feed."
+  ],
+  "weekly": [
+    {
+      "week": "Week 1",
+      "accent": "#bad230",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 2",
+      "accent": "#bad230",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 3",
+      "accent": "#bad230",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    },
+    {
+      "week": "Week 4",
+      "accent": "#bad230",
+      "name": "Brand color 1",
+      "note": "Highlight and cover accent."
+    }
+  ],
+  "grid": [],
+  "refs": [],
+  "reel": {
+    "bg": "#14141a",
+    "hook": "#bad230",
+    "hl": "#bad230"
+  }
+}
