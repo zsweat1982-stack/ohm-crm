@@ -5046,11 +5046,16 @@ async function bcToken() {
   fs.writeFileSync(BC_TOKEN_FILE, JSON.stringify(nt));
   return nt.access_token;
 }
-async function bc(method, urlPath, body) {
+// Basecamp allows about 50 requests per 10 seconds. Requests go through one slow queue and wait out a 429.
+let bcChain = Promise.resolve(), bcLast = 0;
+function bcSlot() { const run = bcChain.then(async () => { const wait = Math.max(0, bcLast + 260 - Date.now()); if (wait) await new Promise(r => setTimeout(r, wait)); bcLast = Date.now(); }); bcChain = run.catch(() => {}); return run; }
+async function bc(method, urlPath, body, tries = 0) {
   const tok = await bcToken();
+  await bcSlot();
   const r = await fetch(`https://3.basecampapi.com/${BC_ACCOUNT}${urlPath}`, {
     method, headers: { Authorization: 'Bearer ' + tok, 'User-Agent': BC_UA, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 429 && tries < 4) { const ra = Number(r.headers.get('retry-after')) || 8; await new Promise(x => setTimeout(x, Math.min(ra, 15) * 1000 + 300)); return bc(method, urlPath, body, tries + 1); }
   const txt = await r.text();
   if (!r.ok) throw new Error(`Basecamp ${method} ${urlPath} -> ${r.status} ${txt.slice(0, 200)}`);
   return txt ? JSON.parse(txt) : {};
@@ -5163,10 +5168,10 @@ async function bcProjects() {
   return out;
 }
 const workCache = new Map();
-async function clientWork(c) {
+async function clientWorkRaw(c) {
   const hit = workCache.get(c.slug);
-  if (hit && Date.now() - hit.at < 300e3) return hit.data;
-  const projects = await bcProjects();
+  if (hit && Date.now() - hit.at < 600e3) return hit.data;
+  let projects; try { projects = await bcProjects(); } catch (e) { if (hit) return hit.data; throw e; }
   let proj = c.bc_project_id ? projects.find(p => String(p.id) === String(c.bc_project_id)) : null;
   if (!proj) {
     const keys = (c.match || []).map(m => m.toLowerCase());
@@ -5191,6 +5196,7 @@ async function clientWork(c) {
   workCache.set(c.slug, { at: Date.now(), data: d });
   return d;
 }
+async function clientWork(c) { try { return await clientWorkRaw(c); } catch (e) { const hit = workCache.get(c.slug); if (hit) return hit.data; throw e; } }
 app.get('/api/hq', async (req, res) => {
   if (!teamOnly(req, res)) return;
   const clients = loadClients();
@@ -5200,8 +5206,9 @@ app.get('/api/hq', async (req, res) => {
   await Promise.all(clients.map(async c => {
     const mine = onb.filter(r => r.client === c.slug);
     let work = null, workError = '';
-    if (connected) { try { work = await clientWork(c); } catch (e) { workError = e.message.slice(0, 120); } }
-    out.push({ ...c, onboarding: { count: mine.length, last: mine.length ? mine[mine.length - 1].at : '' }, work, workError });
+    let syncing = false;
+    if (connected) { try { const w = await Promise.race([clientWork(c), new Promise(r => setTimeout(() => r('__slow'), 5500))]); if (w === '__slow') syncing = true; else work = w; } catch (e) { workError = e.message.slice(0, 120); } }
+    out.push({ ...c, onboarding: { count: mine.length, last: mine.length ? mine[mine.length - 1].at : '' }, work, workError, syncing });
   }));
   const order = clients.map(c => c.slug);
   out.sort((a, b) => order.indexOf(a.slug) - order.indexOf(b.slug));

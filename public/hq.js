@@ -87,7 +87,7 @@
 
   async function fetchHq(force) {
     if (HQ.loading) return; HQ.loading = true;
-    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
+    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); if (HQ.data.clients.some(function (c) { return c.syncing; }) && (HQ.syncTries = (HQ.syncTries || 0) + 1) <= 8) setTimeout(function () { HQ.data = null; fetchHq(false).then(function () { if (document.body.classList.contains('hqmode')) show(navKey); }); }, 7000); else HQ.syncTries = 0; HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
     catch (err) { HQ.err = err.message; }
     HQ.loading = false;
   }
@@ -267,6 +267,7 @@
     } else if (!HQ.data.connected) {
       lists = '<div class="empty">' + ico('link') + 'Connect Basecamp to see this client\'s to-dos.<br><br><a class="btn2 red" href="/api/basecamp/connect">Connect Basecamp</a></div>';
     } else {
+      if (c.syncing || /429|rate limit/i.test(c.workError || '')) lists = '<div class="empty">' + ico('refresh') + 'Syncing with Basecamp. This takes a few seconds the first time, and the page will fill in on its own.</div>'; else
       lists = '<div class="empty">' + ico('link') + 'No Basecamp project found for ' + e(c.name) + '. Paste its link:</div><div class="linkrow"><input id="bcl" placeholder="https://app.basecamp.com/.../projects/12345"><button class="btn2 red" onclick="hqLink(\'' + e(slug) + '\')">Link</button></div>' + (c.workError ? '<div style="color:var(--bad);margin-top:8px;font-size:12.5px">' + e(c.workError) + '</div>' : '');
     }
     var onb = mine.length ? mine.slice().reverse().map(function (r) { return '<details class="sm"><summary>' + e(r.contact_name || r.email) + ' · ' + e(new Date(r.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + '</summary><pre>' + e(r.summary || JSON.stringify(r.answers, null, 2)) + '</pre></details>'; }).join('')
