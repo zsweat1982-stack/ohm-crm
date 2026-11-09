@@ -11,7 +11,7 @@ OBSERVED, mostly r/Roofing, r/homeowners, r/NoStupidQuestions, r/Georgia.
 4. "...they take your 50% down and disappear." https://www.reddit.com/r/NoStupidQuestions/comments/1x2hixo/comment/pf25t41/
 5. "23 month old roof just leaked. Was told I have a 5 year warranty by the agent. Company now claims that the agent was lying..." https://www.reddit.com/r/Roofing/comments/1vh5kjo/
 6. "Every company should have AT LEAST a 2 year workmanship warranty. Problem is, most of these warranties are non-transferrable to new owners." (23 upvotes) https://www.reddit.com/r/Roofing/comments/1vh5kjo/comment/p22dy7i/
-7. "The 50 year number is usually the material warranty. The workmanship warranty is the one that covers a leak from bad install..." https://www.reddit.com/r/Roofing/comments/1xmih6b/comment/19s2tbq1x2
+7. "The 50 year number is usually the material warranty. The workmanship warranty is the one that covers a leak from bad install..." https://www.reddit.com/r/Roofing/comments/1xmih6b
 8. "I'm tired of the pushy sales tactics and want to find a trustworthy contractor but it's all overwhelming. It would be nice if companies were transparent about their pricing upfront." (33 upvotes) https://www.reddit.com/r/homeowners/comments/1x6gs9w/
 9. "I had one roofer but he quoted me 4k for replacing 4 vents, and when I pointed out that I only had three, he claimed he miscounted." (the homeowner tests roofers on small counts) https://www.reddit.com/r/Roofing/comments/1w5gymm/
 10. "Is this roofer trying to scam me" (331 upvotes) https://www.reddit.com/r/Roofing/comments/1vevj28/is_this_roofer_trying_to_scam_me/
