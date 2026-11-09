@@ -23,11 +23,11 @@ https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK
 - It is **triggered when a shoot date is added, or when a bi-weekly block is set**. It is created and delivered before Tristen goes out, so there is no guessing.
 - Shot list name: `CLIENT_SHOTLIST_DATE` (same date as the shoot, same date as the files).
 - Every shot list has four parts:
-  1. **Hooks to film.** Talking head hooks.
+  1. **Talking head scripts to film.** Each one has the hook (said in one breath), the body (the 3 to 4 points to say, in order) and the CTA (the last line, with the website and phone). The audio hook is spoken, and the text on screen is a different, visual hook.
   2. **B-roll to get.** Specific shots.
   3. **Photos to get.** Team, job, product, location.
   4. **Must-gets.** Anything a specific calendar item needs, with the post it is for.
-- Hooks, b-roll and directives are taken from **what is working for the top performers in that client's industry**, plus what is already performing for the client and what is missing from the archive.
+- Scripts, b-roll and directives are taken from **what the research pulled that week shows is working for the top performers in that client's industry**, plus what is already performing for the client and what is missing from the archive. Each script names the finding it came from.
 - Griffin keeps every client on the calendar at least every two weeks, for anyone we can film for. That sets the dates that trigger shot lists.
 
 ## 5. How it connects

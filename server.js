@@ -4123,7 +4123,8 @@ Rules:
 - CONFIRMED FACTS are verified by the team and override anything in the brain. If they conflict with the brain, follow the confirmed facts. Never narrow what the client does below what the confirmed facts say.
 - Use only facts in the client brain and the confirmed facts. Never invent stats, awards, testimonials, prices, specs, names or dates. If a hook depends on a fact the client has not confirmed, add it to "verify".
 - Obey the client's compliance and claims section in the brain. If it forbids something, do not write it.
-- Hooks are talking-head lines said in one breath (18 words or fewer), to ONE person in ONE moment, with something checkable. Each hook uses a different angle, not a reworded version of the same line.
+- Each talking-head item is a full script, not just a hook. "hook" is the spoken line in one breath (18 words or fewer), to ONE person in ONE moment, with something checkable. "body" is 3 or 4 short spoken points in order (about 60 words total), each with a checkable detail. "cta" is the last spoken line and names the next step (call, quote or website plus phone from the facts). "onscreen" is the visual hook text for the first second, worded differently from the spoken hook. Each script uses a different angle.
+- Every script must come from the RESEARCH PULLED THIS WEEK section: name the specific finding, top post or pattern it copies in "mimic" and "why". If that section is empty or old, say so in "notes" and do not pad.
 - Base hooks and b-roll on what is proven and working: first the client's own top posts and anything labeled TESTED or PROVEN, then the formats and hook patterns in the brain labeled PROXY or OBSERVED. Prefer proven over hypothesis. Say which pattern each one copies in "mimic" and its evidence label in "why".
 - B-roll and photo shots are specific and filmable in one visit (subject, angle, action). No vague items like "great footage".
 - Use the five awareness levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and tag each hook with one.
@@ -4131,7 +4132,7 @@ Rules:
 - "mustgets" are shots a specific calendar post or open item needs, with the post or item it is for. If none are known, use the brain's open items to verify.
 - Copy rules: no em dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer), numbers beat adjectives, front-load the point.
 Return ONLY JSON, no prose, in this shape:
-{"hooks":[{"hook":"","mimic":"","level":1,"why":"","verify":[""]}],"broll":[{"shot":"","why":""}],"photos":[{"shot":"","label":"TEAM|HEADSHOT|JOBSITE|PRODUCT|EVENT|LOCATION"}],"mustgets":[{"shot":"","for":""}],"notes":""}
+{"hooks":[{"hook":"","body":["",""],"cta":"","onscreen":"","mimic":"","level":1,"why":"","verify":[""]}],"broll":[{"shot":"","why":""}],"photos":[{"shot":"","label":"TEAM|HEADSHOT|JOBSITE|PRODUCT|EVENT|LOCATION"}],"mustgets":[{"shot":"","for":""}],"notes":""}
 Counts: 6 hooks, 8 b-roll, 5 photos, 3 mustgets.`;
 
 function archiveSummary(slug) {
@@ -4156,12 +4157,12 @@ async function makeShotlist(slug, dateStr, who) {
   const sec = (re) => { const m = new RegExp('^## ' + re + '[^\\n]*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))', 'mi').exec(brain); return m ? m[0].slice(0, 9000) : ''; };
   const context = [sec('1\\.'), sec('3\\.'), sec('4\\.'), sec('5\\.'), brainCopy(brain).slice(0, 14000), sec('9\\.'), sec('12\\.')].filter(Boolean).join('\n\n');
   let invTextShot = 'Drive inventory not available.'; try { const u2 = Object.keys(gUsers())[0]; if (u2) invTextShot = inventoryText(await getInventory(u2, c)); } catch {}
-  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nFOOTAGE IN THE CLIENT'S DRIVE FOLDER NOW:\n${invTextShot}\n\nFORMAT AND TEXT-ON-SCREEN RULES:\n${formatRules(slug)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
+  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nSHOOT DATE: ${dateStr}\n\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 6000) || '(none provided)'}\n\nARCHIVE: ${archiveSummary(slug)}\n\nFOOTAGE IN THE CLIENT'S DRIVE FOLDER NOW:\n${invTextShot}\n\nFORMAT AND TEXT-ON-SCREEN RULES:\n${formatRules(slug)}\n\nRESEARCH PULLED THIS WEEK (top posts and what is working, keywords, hashtags; last updated per the file):\n${(readWorking(slug) || '(none saved yet)').slice(0, 5000)}\n${readHashtags(slug).slice(0, 1500)}\n\nCLIENT BRAIN (the source of truth):\n${context}`;
   const out = await aiJson(SHOTLIST_RULES, user, 4500);
   const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
   const arr = (v, f) => (Array.isArray(v) ? v : []).slice(0, 12).map(f);
   const item = { id: 'sl_' + crypto.randomBytes(4).toString('hex'), name: `${c.code || c.slug.toUpperCase()}_SHOTLIST_${dateStr.replace(/-/g, '')}`, date: dateStr, at: new Date().toISOString(), by: who || 'auto',
-    hooks: arr(out.hooks, h => ({ hook: clean(h.hook), mimic: clean(h.mimic), level: Number(h.level) || 0, why: clean(h.why), verify: (Array.isArray(h.verify) ? h.verify : []).map(clean).filter(Boolean) })),
+    hooks: arr(out.hooks, h => ({ hook: clean(h.hook), body: (Array.isArray(h.body) ? h.body : []).map(clean).filter(Boolean).slice(0, 5), cta: clean(h.cta), onscreen: clean(h.onscreen), mimic: clean(h.mimic), level: Number(h.level) || 0, why: clean(h.why), verify: (Array.isArray(h.verify) ? h.verify : []).map(clean).filter(Boolean) })),
     broll: arr(out.broll, b => ({ shot: clean(b.shot), why: clean(b.why) })), photos: arr(out.photos, p => ({ shot: clean(p.shot), label: clean(p.label) })),
     mustgets: arr(out.mustgets, m => ({ shot: clean(m.shot), for: clean(m.for) })), notes: clean(out.notes), basis: { working: !!readWorking(slug), archive: archiveSummary(slug).startsWith('Recent') } };
   const all = loadShotlists(); all[slug] = [item].concat((all[slug] || []).filter(x => x.date !== dateStr)).slice(0, 8);
