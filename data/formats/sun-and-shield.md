@@ -40,3 +40,22 @@ Do not copy: race-to-the-bottom prices ($99 to $249 full-car tint appears in lon
 
 - Whether the videos behind long-running ads use a talking head: not verified, I did not watch them.
 - Sample was national and thin for North Fulton. Treat the competitor patterns as patterns, not laws.
+
+## Competitor ads to look at (open each link to see the visual)
+
+From Sun and Shield's Q4 research (Oct 11, 2026, Meta Ad Library, window tint, PPF, ceramic coating, XPEL). "Days" is how long the ad had been running then. Long-running is a proxy for working, not proof. I did not watch the videos, so what each one does on screen is for you to check.
+
+| Ad | Days | Format | Lead line | Link |
+|---|---|---|---|---|
+| Attention 2 Detail | 1411 | video | asks for Page Likes (not leads) | https://www.facebook.com/ads/library/?id=657445666015306 |
+| Extreme Auto Spa of Greenville | 914 | 55s video | problem hook, free tint with ceramic coating | https://www.facebook.com/ads/library/?id=1333052370723275 |
+| Matrix Auto Detailing | 892 | video | "Fish bowl or window tint? Comment below!" | https://www.facebook.com/ads/library/?id=275083142348023 |
+| Perfect Touch Window Tint | 808 | image | "$100 Off Ceramic IR Tint" | https://www.facebook.com/ads/library/?id=1155764725651247 |
+| Infinite Auto Works | 759 | video | "CONCORD LUXURY CAR OWNERS" plus glare problem | https://www.facebook.com/ads/library/?id=8391695387588019 |
+| Detailers of Naples | 613 | 29s video | sun and UV authority | https://www.facebook.com/ads/library/?id=1637262400208246 |
+| Solguard Window Tint | 496 | 4 variants | "Tint Your Ride For $179" (price; not our lane) | https://www.facebook.com/ads/library/?id=731166322698816 |
+| Full Tints | 470 | 13s video | "Queens Car Owners!" plus "Save $200" | https://www.facebook.com/ads/library/?id=765374336061216 |
+| Exclusive Vinyl | 73 | 9 variants | owner intro: "Hi, my name is Roman, and I'm the owner" | https://www.facebook.com/ads/library/?id=1611277837083195 |
+| Fly My Ride North Fulton | 216 | mobile ceramic coating, local | local to us | https://www.facebook.com/ads/library/?id=1962500561143921 |
+
+Use these to see: where the text sits in the first second, how the local callout is shown, how the offer is set on the graphic, and whether the owner is on camera.
