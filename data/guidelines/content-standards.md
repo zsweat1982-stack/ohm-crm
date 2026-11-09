@@ -8,7 +8,7 @@ Everything lives in **OHM CLIENTS** (Google Drive, inside OHM SOCIAL FILES). One
 https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK
 
 ## 2. Client folder rules
-- Each client folder holds the **last 2 weeks of filming** (iFAB: last 3 weeks) plus an **Archive** folder.
+- Each client folder holds the **last 2 weeks of filming** (the client's Brain lists any exception) plus an **Archive** folder.
 - Anything older than that goes into that client's Archive. Nothing gets deleted.
 - Check on the 1st and 15th of each month and move anything that aged out.
 - No Unsorted folder. Every file goes where it belongs the day it is uploaded.

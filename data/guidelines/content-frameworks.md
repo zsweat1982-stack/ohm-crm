@@ -11,7 +11,7 @@ Four traps in a first line, a question to ask, and the fix:
 | Labels | "Premium cookware" | Is it about them? | Talk to them, not about the product |
 | Sorting line | "The cure for summer boredom" | One parent, one moment, about them | Keep it |
 
-**Where it fits:** it is the same rule as our copy rules 4, 10 and 11, and the ABLS ads that work ("He said this weekend. Three weekends ago."). Use it as the final check on every hook before an editor, designer or ad goes out: one named person, one moment, one checkable detail. Reject "premium," "game-changing," "luxury," "dream home," "stress-free" with no proof.
+**Where it fits:** it is the same rule as our copy rules 4, 10 and 11, and the ads that work ("He said this weekend. Three weekends ago."). Use it as the final check on every hook before an editor, designer or ad goes out: one named person, one moment, one checkable detail. Reject "premium," "game-changing," "luxury," "dream home," "stress-free" with no proof.
 
 ## 2. Five awareness levels (fusedmedia, 147 likes)
 One audience, five levels. Match the content to the level, never mix levels in one asset:
@@ -26,8 +26,8 @@ This maps to the four stages already in the conversion-copywriter agent (never h
 Hidden, secret, costly, overlooked, unspoken, unknown, unexpected, surprising, shocking, controversial, unpopular, forbidden, banned, rare, weird, strange, brutal, painful, dangerous, risky, critical, crucial, essential, biggest, worst, deadliest, powerful, proven, simple, effortless, instant, immediately, quickly, finally, actually, suddenly, never, always, avoid, stop, warning, mistake, truth, lie, myth, trap, shortcut, insider, untold.
 **Rules for using them (ours, not the post's):**
 - A power word only goes in if the sentence under it is true and checkable. "The costly mistake in your quote" needs a real mistake and a real number.
-- Do not use shock, forbidden, banned, secret or deadly words for regulated or sensitive clients (VNPHC, BKVF, CISGA, URC, Sun and Shield durability claims). Brand brains override this list.
-- Strongest fits for our clients: costly, mistake, myth, truth, hidden (hidden costs), never, stop, avoid, what nobody tells you. Matchett already has "Myth vs fact" and "Cost truth" assets.
+- Do not use shock, forbidden, banned, secret or deadly words for regulated or sensitive clients (health care, nonprofits, schools, and any durability or performance claim). The client's Brain overrides this list.
+- Strongest fits: costly, mistake, myth, truth, hidden (hidden costs), never, stop, avoid, what nobody tells you.
 - A hook that stacks three power words reads as bait. One word, one fact.
 
 ## 4. Static ads, not posters (Zac's standard from Nov 8)

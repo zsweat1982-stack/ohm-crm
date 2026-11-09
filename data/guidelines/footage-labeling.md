@@ -6,7 +6,7 @@ Three folders per client: Reels, Drone, Photos. Name every file the same way. Th
 
 ```
 Footage/
-  URC/
+  CLIENT/
     Reels/      <- all video that is not drone (sound stays with the video)
     Drone/
     Photos/
@@ -39,7 +39,7 @@ Example: `URC_REEL_20261105_BraxtonBuild_BROLL_004.mp4`
 
 ## Client codes
 
-URC (Universal Roofing), SS (Sun & Shield), IFAB (iFab), ADN (Adnormous), BKVF (Brothers Keeper), ABLS (America's Best Lighting), MTCH (Matchett Homes), NITRO (Nitro Pro Racing), CISGA (Communities In Schools of Georgia), VNPHC (Visiting Nurse Private Home Care), OHM (Open Heart Media).
+Every client has a short code of 2 to 6 capital letters. Use that code at the start of every file name. The code is on the client's page and in the OHM CLIENTS folder.
 
 ## Rules
 

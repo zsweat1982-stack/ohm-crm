@@ -1,6 +1,6 @@
 # Static ad system (every client, every month)
 
-Zac's standard (Nov 8, 2026): static ads, not posters. Real photos. Different formats and different angles. Every buyer stage covered every month. Nothing goes out without passing the gate at the bottom. Design library: `~/Downloads/Creative-System/static_designs.py` (10 genuinely different designs: editorial, color_poster, notes_app, reminders_app, imessage, annotated, polaroid_wall, grid_card, big_number, review_card, ticket_offer). Demo sheet: `~/Downloads/Creative-System/static-ads/designs/` (iFab, layout test only, claims marked VERIFY). The older `static_ad_builder.py` (photo on top) is just one of the looks.
+Zac's standard (Nov 8, 2026): static ads, not posters. Real photos. Different formats and different angles. Every buyer stage covered every month. Nothing goes out without passing the gate at the bottom. Design library: `~/Downloads/Creative-System/static_designs.py` (10 genuinely different designs: editorial, color_poster, notes_app, reminders_app, imessage, annotated, polaroid_wall, grid_card, big_number, review_card, ticket_offer). Demo sheet: `~/Downloads/Creative-System/static-ads/designs/` (layout test only, claims marked VERIFY). The older `static_ad_builder.py` (photo on top) is just one of the looks.
 
 **Copy comes from `Voice-of-Customer-to-Copy.md`: Reddit threads, competitors' reviews and what people search, read between the lines.**
 
