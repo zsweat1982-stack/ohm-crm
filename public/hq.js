@@ -111,7 +111,7 @@
     if (!me || me.legacy) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Sign in with your own email to see your calendar.</div></div>';
     if (!c) return '<div class="panel agenda">' + head + '<div class="sk" style="height:200px"></div></div>';
     if (!c.connected) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Connect your Google account to see meetings and shoots here.<br><br><a class="btn2 red" href="/api/me/gmail/connect">Connect Google</a></div></div>';
-    if (c.needsCalendar) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + 'Calendar access was not granted. Disconnect and reconnect Google on the Mail page to add it.</div></div>';
+    if (c.needsCalendar) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + (c.apiOff ? 'Google Calendar is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Calendar API and click Enable. Then refresh this page.' : 'Calendar access was not granted. On the Mail page click Disconnect, then connect Google again and allow the calendar permission.') + '</div></div>';
     if (c.error) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + e(c.error) + '</div></div>';
     var ev = c.events || [];
     if (!ev.length) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('check') + 'Nothing on the calendar for the next two weeks.</div></div>';

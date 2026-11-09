@@ -3673,7 +3673,11 @@ app.get('/api/me/calendar', async (req, res) => {
     if (!tok) return res.json({ connected: false, configured: !!GOOGLE_CLIENT_ID });
     const auth = { Authorization: 'Bearer ' + tok };
     const cl = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader', { headers: auth });
-    if (cl.status === 403 || cl.status === 401) return res.json({ connected: true, needsCalendar: true });
+    if (cl.status === 403 || cl.status === 401) {
+      const body = await cl.text().catch(() => '');
+      const apiOff = /accessNotConfigured|has not been used|is disabled|SERVICE_DISABLED/i.test(body);
+      return res.json({ connected: true, needsCalendar: true, apiOff, detail: body.slice(0, 200) });
+    }
     if (!cl.ok) throw new Error('Calendar list failed ' + cl.status);
     const cals = ((await cl.json()).items || []).filter(c => c.primary || /ohm|open heart/i.test(c.summary || '') || c.selected && /meeting|film|schedule/i.test(c.summary || ''));
     const now = new Date(), end = new Date(now.getTime() + 14 * 864e5);
