@@ -1,6 +1,6 @@
 /* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
 (function () {
-  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], cw: null, workTab: '', ctab: 'overview', ctabSlug: '', brain: {}, facts: {}, copy: {}, shots: {}, working: {}, shotSel: {}, content: {}, guides: null, guideDoc: {} };
+  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], cw: null, workTab: '', ctab: 'overview', ctabSlug: '', brain: {}, facts: {}, packs: {}, packWeek: {}, hols: {}, copy: {}, shots: {}, working: {}, shotSel: {}, content: {}, guides: null, guideDoc: {} };
   var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
   // One icon family: 24px grid, 1.8 stroke, round caps.
   // Icons: Lucide (ISC license), 24px grid, round caps and joins.
@@ -299,6 +299,7 @@
       '<label>Status</label><select id="ed_status">' + opt([['active', 'Active'], ['ending', 'Ending'], ['seasonal', 'Seasonal'], ['ads_off', 'Ads off'], ['onboarding', 'Onboarding'], ['returning', 'Returning'], ['proposal', 'Proposal']], c.status) + '</select>' +
       '<label>What we do for them</label><div class="chk">' + SERV.map(function (sv, i) { return '<label class="cb"><input type="checkbox" id="ed_s' + i + '"' + ((c.services || []).indexOf(sv) > -1 ? ' checked' : '') + '> ' + e(sv) + '</label>'; }).join('') + '</div>' +
       '<label>Website lead</label>' + sel('ed_web', c.website_owner) + '<label>Ads lead</label>' + sel('ed_ads', c.ads_owner) + '<label>Account manager</label>' + sel('ed_acc', c.account_owner) +
+      '<label>Posting days</label><div class="chk">' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (d) { return '<label class="cb"><input type="checkbox" id="ed_d' + d + '"' + ((c.cadence && c.cadence.days || []).indexOf(d) > -1 ? ' checked' : '') + '> ' + d + '</label>'; }).join('') + '</div><label>Schedule note (mix, filming, extras)</label><input id="ed_cn" value="' + e((c.cadence && c.cadence.note) || '') + '">' +
       '<label>Their email addresses or domains (comma separated)</label><input id="ed_dom" value="' + e((c.domains || []).join(', ')) + '" placeholder="theirbusiness.com, owner@gmail.com">' +
       '<label>Note</label><input id="ed_note" value="' + e(c.note || '') + '" placeholder="Anything the team should know">' +
       '<button class="btn2 red" style="margin-top:12px" onclick="hqSaveClient(\'' + e(c.slug) + '\')">Save</button></div></details>';
@@ -306,7 +307,7 @@
   window.hqSaveClient = async function (slug) {
     var g = function (id) { return (document.getElementById(id) || {}).value || ''; };
     var svcs = SERV.filter(function (sv, i) { var b = document.getElementById('ed_s' + i); return b && b.checked; });
-    try { await api('/api/hq/client/' + slug, 'PUT', { kind: g('ed_kind'), status: g('ed_status'), services: svcs, website_owner: g('ed_web'), ads_owner: g('ed_ads'), account_owner: g('ed_acc'), note: g('ed_note'), domains: g('ed_dom').split(',').map(function (x) { return x.trim(); }).filter(Boolean) }); toast('Saved'); window.hqRefresh(); } catch (er) { toast(er.message); }
+    try { await api('/api/hq/client/' + slug, 'PUT', { kind: g('ed_kind'), status: g('ed_status'), services: svcs, website_owner: g('ed_web'), ads_owner: g('ed_ads'), account_owner: g('ed_acc'), note: g('ed_note'), cadence: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(function (d) { var b = document.getElementById('ed_d' + d); return b && b.checked; }), note: g('ed_cn') }, domains: g('ed_dom').split(',').map(function (x) { return x.trim(); }).filter(Boolean) }); toast('Saved'); window.hqRefresh(); } catch (er) { toast(er.message); }
   };
 
   function onboarding() {
@@ -469,10 +470,10 @@
   var DRIVE_ROOT = 'https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK';
   function tabsBar(c) {
     var t = function (k, l) { return '<button class="tb ' + ((HQ.ctab || 'overview') === k ? 'on' : '') + '" onclick="hqCTab(\'' + k + '\')">' + l + '</button>'; };
-    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('copy', 'Copy') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
+    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('pack', 'Weekly pack') + t('copy', 'Copy') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
   }
   window.hqCTab = function (k) { HQ.ctab = k; show(navKey); };
-  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
+  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'pack' ? packTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
   function linksPanel(c) {
     var rows = [];
     if (c.drive) rows.push(['Drive: ' + c.name, 'https://drive.google.com/drive/folders/' + c.drive]);
@@ -500,12 +501,14 @@
     else if (d.error) body = '<div class="empty">' + ico('alert') + e(d.error) + '</div>';
     else if (!d.weeks.length && !(d.unnamed || []).length) body = '<div class="empty">' + ico('check') + 'No files in the Reels, Drone or Photos folders.</div>';
     else body = d.weeks.map(function (w) {
-      return '<div style="margin-bottom:20px"><div class="list-h"><b>Week of ' + e(dshort(w.week)) + '</b><span>' + w.items.length + ' piece' + (w.items.length > 1 ? 's' : '') + '</span></div>' + w.items.map(function (x) {
-        return '<div class="td"><span class="pn">' + x.n + '</span><div style="min-width:0"><a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.subject) + ' · ' + e(x.label) + '</a><div class="who"><span class="chip">' + e(x.type) + '</span> uploaded ' + e(dshort(x.uploaded)) + '</div></div><span class="due">Due ' + e(dshort(x.due)) + '</span></div>';
-      }).join('') + '</div>';
+      var g = {}, order = []; w.items.forEach(function (x) { var k = [x.type, x.label, x.subject, x.shot, x.uploaded].join('|'); if (!g[k]) { g[k] = { x: x, n: 0 }; order.push(k); } g[k].n++; });
+      var byLabel = {}; w.items.forEach(function (x) { var k = x.type + ' ' + x.label; byLabel[k] = (byLabel[k] || 0) + 1; });
+      var sum = Object.keys(byLabel).map(function (k) { return '<span class="chip">' + byLabel[k] + ' ' + e(k) + '</span>'; }).join(' ');
+      var rows = order.slice(0, 6).map(function (k) { var x = g[k].x, n = g[k].n; return '<div class="td"><div style="min-width:0"><a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.subject) + ' · ' + e(x.label) + '</a><div class="who">' + e(x.type) + ' · shot ' + e(dshort(x.shot.slice(0, 4) + '-' + x.shot.slice(4, 6) + '-' + x.shot.slice(6, 8))) + ' · uploaded ' + e(dshort(x.uploaded)) + '</div></div><span class="due">' + (n > 1 ? '<b>' + n + ' files</b> · ' : '') + 'Due ' + e(dshort(x.due)) + '</span></div>'; }).join('');
+      return '<div style="margin-bottom:20px"><div class="list-h"><b>Week of ' + e(dshort(w.week)) + '</b><span>' + w.items.length + ' file' + (w.items.length > 1 ? 's' : '') + '</span></div><div class="chips" style="margin:0 0 6px">' + sum + '</div>' + rows + (order.length > 6 ? '<div class="hint" style="margin:8px 0 0">+ ' + (order.length - 6) + ' more groups. Open the Drive folder for the rest.</div>' : '') + '</div>';
     }).join('') + ((d.unnamed || []).length ? '<div class="note2" style="margin-top:6px"><b>' + d.unnamed.length + ' file' + (d.unnamed.length > 1 ? 's' : '') + ' need renaming</b> to the standard (CLIENT_TYPE_DATE_Subject_LABEL_001) before they can be filed: ' + d.unnamed.slice(0, 5).map(function (u) { return '<a class="lnk" href="' + e(u.url) + '" target="_blank" rel="noopener">' + e(u.name) + '</a>'; }).join(', ') + '</div>' : '');
     var folders = (d && d.folders && d.folders.length ? d.folders.map(function (f) { return '<a class="chip" style="text-decoration:none" href="' + e(f.url) + '" target="_blank" rel="noopener">' + e(f.name) + '</a>'; }).join(' ') : '');
-    return '<div class="two"><div class="panel"><h3>Content by week</h3><p class="hint">Uploaded footage, numbered by the week it landed. Due is 10 business days after upload.</p>' + body + '</div><div style="display:grid;gap:16px">' +
+    return '<div class="two"><div class="panel"><h3>Content by week</h3><p class="hint">Uploaded footage grouped by shoot day, subject and label. Due is 10 business days after upload.</p>' + body + '</div><div style="display:grid;gap:16px">' +
       '<div class="panel"><h3>Next on the calendar</h3>' + calHtml + '</div>' + linksPanel(c) + (folders ? '<div class="panel"><h3>Drive folders</h3><div class="chips" style="margin-top:6px">' + folders + '</div></div>' : '') + '</div></div>';
   }
   function nextShootDate(c) {
@@ -551,6 +554,70 @@
     show(navKey);
   };
   window.hqShotTask = async function (slug, id) { try { var r = await api('/api/hq/shotlists/' + slug + '/' + id + '/task', 'POST', {}); await refreshTasks(); toast('Sent to ' + r.owner); } catch (er) { toast(er.message); } };
+
+  // ---- Weekly pack ----
+  function mondayStr(off) { var d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 7 * off); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function defaultWeek() { var dow = new Date().getDay(); return mondayStr(dow === 0 || dow >= 4 ? 1 : 0); }
+  function packText(c, p) {
+    return c.name + ', week of ' + p.week + (p.theme ? '\nTheme: ' + p.theme : '') + '\n\n' + p.rows.map(function (r, i) {
+      return (i + 1) + '. ' + r.date + ' ' + r.type + (r.time ? ' (' + r.time + ')' : '') + (r.trigger ? ' [' + r.trigger + ']' : '') + '\nIdea: ' + r.idea + '\nHook: ' + r.hook + '\nShots: ' + r.shots.join('; ') + '\nOn-screen: ' + r.onscreen + (r.design ? '\nDesign: ' + r.design : '') + '\nCaption: ' + r.caption.hook + '\n' + r.caption.body + '\n' + r.caption.cta + (r.verify.length ? '\nVERIFY: ' + r.verify.join('; ') : '');
+    }).join('\n\n');
+  }
+  function promoPanel(c, promos) {
+    var admin = HQ.me && HQ.me.role === 'admin';
+    var rows = (promos || []).map(function (p, i) { return '<div class="kv"><span><b>' + e(p.name) + '</b> ' + e(dshort(p.start)) + (p.end && p.end !== p.start ? ' to ' + e(dshort(p.end)) : '') + (p.details ? '<br><small style="color:var(--mut)">' + e(p.details) + '</small>' : '') + '</span><span style="white-space:nowrap">' + (p.confirmed ? '<span class="chip st-active">Client confirmed</span>' : '<span class="chip need">Not confirmed</span>') + (admin ? ' <a class="lnk" onclick="hqPromoDel(\'' + e(c.slug) + '\',' + i + ')">Remove</a>' : '') + '</span></div>'; }).join('');
+    var form = admin ? '<details class="sm" style="margin-top:10px"><summary>Add a promo</summary><div class="ed"><label>Name</label><input id="pm_n" placeholder="e.g. Black Friday free install"><label>Starts</label><input id="pm_s" type="date"><label>Ends</label><input id="pm_e" type="date"><label>Exact offer and terms</label><input id="pm_d" placeholder="Offer, price, deadline, fine print, as the client wrote it"><label class="cb"><input type="checkbox" id="pm_c"> The client confirmed this in writing</label><button class="btn2 red" style="margin-top:8px" onclick="hqPromoAdd(\'' + e(c.slug) + '\')">Add</button></div></details>' : '';
+    return '<div class="panel" style="margin-bottom:16px"><h3>Promos</h3><p class="hint" style="margin-top:0">A promo only gets posts once the client confirms the offer, dates and terms in writing. The pack starts teasing it 7 days before.</p>' + (rows || '<div class="empty" style="padding:8px 0;text-align:left">No promos on the books.</div>') + form + '</div>';
+  }
+  function packTab(c) {
+    var me = HQ.me, real = me && !me.legacy, data = HQ.packs[c.slug], wk = HQ.packWeek[c.slug] || defaultWeek();
+    if (!data) return '<div class="sk" style="height:220px"></div>';
+    var cadDays = (c.cadence && c.cadence.days) || [], pack = (data.packs || []).filter(function (x) { return x.week === wk; })[0];
+    var chips = [0, 1, 2, 3].map(function (k) { var m = mondayStr(k), has = (data.packs || []).some(function (x) { return x.week === m; }); return '<a class="chip' + (m === wk ? ' st-internal' : '') + '" style="cursor:pointer;text-decoration:none" onclick="hqPackWeek(\'' + e(c.slug) + '\',\'' + m + '\')">' + (k === 0 ? 'This week' : k === 1 ? 'Next week' : 'Week of ' + e(dshort(m))) + (has ? ' ✓' : '') + '</a>'; }).join(' ');
+    var hl = (HQ.hols[wk] || []).map(function (h) { return '<span class="chip st-seasonal">' + e(h.name) + ' ' + e(dshort(h.date)) + '</span>'; }).join(' ');
+    var bar = '<div class="shbar"><div style="flex:1;min-width:240px"><label>Week</label><div class="chips" style="margin:0">' + chips + '</div></div>' +
+      (real && cadDays.length ? '<button class="btn2 red" id="pk_b" onclick="hqPackGen(\'' + e(c.slug) + '\')">' + ico('refresh') + (pack ? 'Rewrite this week' : 'Write this week') + '</button>' : '') +
+      (real && pack && !pack.released ? '<button class="btn2 line" onclick="hqPackRelease(\'' + e(c.slug) + '\')">' + ico('task') + 'Release to the team</button>' : '') + '</div>';
+    var warn = !cadDays.length ? '<div class="banner">' + ico('alert') + '<div><b>No posting days set for ' + e(c.name) + '.</b> Open the Overview tab, then Edit details, and tick the days they post.</div></div>' : '';
+    var meta = '<div class="hint" style="margin:0 0 10px">Posting ' + e(cadDays.join(', ') || 'days not set') + (c.cadence && c.cadence.note ? ' · ' + e(c.cadence.note) : '') + '</div>' + (hl ? '<div class="chips" style="margin:0 0 12px"><span class="hint" style="margin:0">National holidays this week:</span> ' + hl + '</div>' : '');
+    var stale = pack && pack.stale ? '<div class="banner">' + ico('alert') + '<div>A promo changed after this pack was written. Rewrite it so the posts match.</div></div>' : '';
+    var rel = pack && pack.released ? '<div class="note2" style="margin:0 0 12px">Released to the team ' + e(new Date(pack.released.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + '. Editing, design and caption tasks are on their Work pages.</div>' : '';
+    var body;
+    if (!pack) body = '<div class="empty" style="padding:14px 0">' + ico('clipboard') + 'No pack for this week yet. It writes one post for every posting day, from the brain, the confirmed facts, what is working, the holidays and the promos.</div>';
+    else body = (pack.theme ? '<p class="hint" style="margin:0 0 10px"><b>Theme:</b> ' + e(pack.theme) + '</p>' : '') + pack.rows.map(function (r) {
+      var d = new Date(r.date + 'T12:00:00');
+      return '<div class="pk"><div class="pkd"><b>' + e(d.toLocaleDateString('en-US', { weekday: 'short' })) + '</b><span>' + e(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + '</span><em>' + e(r.type) + '</em></div><div class="pkb">' +
+        '<div class="chips" style="margin:0 0 6px">' + (r.planned && r.topic ? '<span class="chip st-active">Plan: ' + e(r.topic) + '</span>' : '') + (r.trigger ? '<span class="chip st-seasonal">' + e(r.trigger) + '</span>' : '') + (r.level ? '<span class="chip">Level ' + r.level + '</span>' : '') + (r.design ? '<span class="chip st-internal">' + e(r.design) + '</span>' : '') + (r.platforms ? '<span class="chip">' + e(r.platforms) + '</span>' : '') + (r.time ? '<span class="chip">' + e(r.time) + '</span>' : '') + '</div>' +
+        '<div class="pkh cpy" title="Click to copy" data-copy="' + e(r.hook) + '">' + e(r.hook || '(no hook)') + '</div>' + (r.idea ? '<div class="pks">' + e(r.idea) + '</div>' : '') +
+        (r.shots.length ? '<div class="pkl"><b>' + (r.type === 'Reel' ? 'Shots / archive pull' : 'Visuals') + '</b><ul>' + r.shots.map(function (x) { return '<li>' + e(x) + '</li>'; }).join('') + '</ul></div>' : '') +
+        (r.onscreen ? '<div class="pkl"><b>On-screen text</b> ' + e(r.onscreen) + '</div>' : '') +
+        '<div class="pkc cpy" title="Click to copy the caption" data-copy="' + e(r.caption.hook + '\n\n' + r.caption.body + '\n\n' + r.caption.cta) + '"><b>Caption</b><br>' + e(r.caption.hook) + '<br>' + e(r.caption.body) + '<br><u>' + e(r.caption.cta) + '</u></div>' +
+        (r.basis ? '<div class="pkl"><b>Why:</b> ' + e(r.basis) + '</div>' : '') + (r.gates.length ? '<div class="pkl"><b>Gates:</b> ' + e(r.gates.join('; ')) + '</div>' : '') + (r.verify.length ? '<div class="vf">VERIFY: ' + e(r.verify.join('; ')) + '</div>' : '') +
+        (r.missing ? '<div class="vf">The AI skipped this slot. Rewrite the week.</div>' : '') + '</div></div>';
+    }).join('') + (pack.notes ? '<p class="hint">' + e(pack.notes) + '</p>' : '') + '<div class="shfoot"><button class="btn2 line" data-copy="' + e(packText(c, pack)) + '" onclick="navigator.clipboard.writeText(this.getAttribute(\'data-copy\'));toast(\'Pack copied\')">Copy the whole week</button></div>';
+    return '<div class="two"><div class="panel"><h3>Weekly pack</h3><p class="hint" style="margin-top:0">Written from this client\'s brain, delivered one week at a time. Click a hook or a caption to copy it.</p>' + warn + bar + meta + stale + rel + body + '</div><div>' + promoPanel(c, data.promos) + '</div></div>';
+  }
+  window.hqPackWeek = async function (slug, w) { HQ.packWeek[slug] = w; await loadHols(w); show(navKey); };
+  async function loadHols(w) { if (HQ.hols[w]) return; try { var to = new Date(w + 'T12:00:00'); to.setDate(to.getDate() + 6); var t = to.getFullYear() + '-' + ('0' + (to.getMonth() + 1)).slice(-2) + '-' + ('0' + to.getDate()).slice(-2); HQ.hols[w] = (await api('/api/hq/holidays?from=' + w + '&to=' + t)).holidays; } catch (x) { HQ.hols[w] = []; } }
+  window.hqPackGen = async function (slug) {
+    var w = HQ.packWeek[slug] || defaultWeek(), b = document.getElementById('pk_b');
+    if (b) { b.disabled = true; b.textContent = 'Writing the week... about a minute'; }
+    try { await api('/api/hq/packs/' + slug, 'POST', { week: w }); HQ.packs[slug] = await api('/api/hq/packs/' + slug); toast('Pack ready'); } catch (er) { toast(er.message); }
+    show(navKey);
+  };
+  window.hqPackRelease = async function (slug) {
+    var w = HQ.packWeek[slug] || defaultWeek(); if (!confirm('Create the editing, design and caption tasks for this week now?')) return;
+    try { var r = await api('/api/hq/packs/' + slug + '/' + w + '/release', 'POST', {}); HQ.packs[slug] = await api('/api/hq/packs/' + slug); await refreshTasks(); toast(r.tasks.length + ' tasks created'); } catch (er) { toast(er.message); }
+    show(navKey);
+  };
+  async function savePromos(slug, list) { await api('/api/hq/client/' + slug + '/promos', 'PUT', { promos: list }); HQ.packs[slug] = await api('/api/hq/packs/' + slug); }
+  window.hqPromoAdd = async function (slug) {
+    var g = function (i) { return (document.getElementById(i) || {}).value || ''; }, cur = (HQ.packs[slug] && HQ.packs[slug].promos) || [];
+    if (!g('pm_n') || !g('pm_s')) { toast('Add a name and a start date'); return; }
+    try { await savePromos(slug, cur.concat([{ name: g('pm_n'), start: g('pm_s'), end: g('pm_e') || g('pm_s'), details: g('pm_d'), confirmed: !!(document.getElementById('pm_c') || {}).checked }])); toast('Promo saved'); show(navKey); } catch (er) { toast(er.message); }
+  };
+  window.hqPromoDel = async function (slug, i) { var cur = ((HQ.packs[slug] && HQ.packs[slug].promos) || []).slice(); cur.splice(i, 1); try { await savePromos(slug, cur); show(navKey); } catch (er) { toast(er.message); } };
+
   function copyTab(c) {
     var md = HQ.copy[c.slug];
     var ideas = factsPanel(c) + shotPanel(c) + workingPanel(c);
@@ -610,6 +677,10 @@
   async function loadClientData(slug) {
     var tab = HQ.ctab;
     if (HQ.ctabSlug !== slug) { HQ.ctabSlug = slug; }
+    if (tab === 'pack') {
+      var w = HQ.packWeek[slug] || defaultWeek(); await loadHols(w);
+      if (HQ.packs[slug] == null) { try { HQ.packs[slug] = await api('/api/hq/packs/' + slug); } catch (x) { HQ.packs[slug] = { packs: [], promos: [] }; } }
+    }
     if (tab === 'copy') {
       if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
       if (HQ.shots[slug] == null) { try { HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; } catch (x) { HQ.shots[slug] = []; } }

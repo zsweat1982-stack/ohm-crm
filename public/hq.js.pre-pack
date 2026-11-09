@@ -1,0 +1,685 @@
+/* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
+(function () {
+  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false, tasks: [], cw: null, workTab: '', ctab: 'overview', ctabSlug: '', brain: {}, facts: {}, copy: {}, shots: {}, working: {}, shotSel: {}, content: {}, guides: null, guideDoc: {} };
+  var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
+  // One icon family: 24px grid, 1.8 stroke, round caps.
+  // Icons: Lucide (ISC license), 24px grid, round caps and joins.
+  var P = {
+    home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    building: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+    task: '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+    clipboard: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+    kanban: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>',
+    plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    reply: '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
+    list: '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>',
+    circle: '<circle cx="12" cy="12" r="10"/>',
+    edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+    ban: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+    arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+    inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+    team: '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
+    chevron: '<path d="m9 18 6-6-6-6"/>',
+    sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+    film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+    external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
+  };
+  var ALIAS = { '\u25A3': 'home', '\u2726': 'building', '\u2709': 'clipboard', '\u25A6': 'kanban', '\u{1F381}': 'gift', '\u271A': 'plus', '\u260E': 'phone', '\u2605': 'star', '\u21A9': 'reply', '\u2713': 'task', '\u2691': 'flag', '\u2261': 'list', '\u25CB': 'circle', '\u270E': 'edit', '\u2298': 'ban', '\u2715': 'x' };
+  function ico(n, cls) { return '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (P[n] || '') + '</svg>'; }
+  window.hqIcon = function (n) { n = ALIAS[n] || n; return P[n] ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + P[n] + '</svg>' : null; };
+
+  function brand(c) { return (c && c.color) || hue((c && c.name) || ''); }
+  function hue(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return COLORS[h % COLORS.length]; }
+  function ini(n) { var w = String(n).replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + ((w[1] || '')[0] || (w[0] || '')[1] || '')).toUpperCase(); }
+  function e(s) { return esc(s == null ? '' : String(s)); }
+  function dshort(d) { if (!d) return ''; return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+  var STATUS = { active: 'Active', ending: 'Ending', seasonal: 'Seasonal', ads_off: 'Ads off', onboarding: 'Onboarding', internal: 'Ours', returning: 'Returning', proposal: 'Proposal' };
+  var KIND = { retainer: 'Retainer', website: 'Website', returning: 'Returning', proposal: 'Pending' };
+  var clientTab = 'all';
+  function root() { return document.getElementById('hq'); }
+
+  function health(c) {
+    if (!c.work) return { k: '', t: 'Not synced', col: '#bcc5d3' };
+    if (!c.work.linked) return { k: '', t: 'Not linked', col: '#bcc5d3' };
+    if (c.work.overdue > 0) return { k: 'red', t: c.work.overdue + ' late', col: '#d6342d' };
+    return { k: 'green', t: c.work.open ? 'On track' : 'All clear', col: '#17935f' };
+  }
+  function progress(c) {
+    if (!c.work || !c.work.lists) return 0; var done = 0, tot = 0;
+    c.work.lists.forEach(function (l) { var m = /(\d+)\/(\d+)/.exec(l.ratio || ''); if (m) { done += +m[1]; tot += +m[2]; } });
+    return tot ? Math.round(done / tot * 100) : 0;
+  }
+  function avatar(c, size) {
+    var h = health(c), p = progress(c), circ = 2 * Math.PI * 24, off = circ * (1 - p / 100);
+    return '<div class="avr"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '><svg viewBox="0 0 56 56"><circle class="tr" cx="28" cy="28" r="24"/><circle class="pg" cx="28" cy="28" r="24" stroke="' + h.col + '" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + (c.work && c.work.linked ? off.toFixed(1) : circ.toFixed(1)) + '"/></svg>' +
+      (c.logo ? '<div class="av lg" style="background-image:url(' + e(c.logo) + ')"></div>' : '<div class="av" style="background:' + hue(c.name) + '">' + e(ini(c.name)) + '</div>') + '</div>';
+  }
+  function card(c, i) {
+    var h = health(c), w = c.work;
+    return '<a class="cl" tabindex="0" style="--bc:' + e(brand(c)) + ';animation-delay:' + Math.min(i || 0, 12) * 35 + 'ms" onclick="hqNav(\'hq:client:' + e(c.slug) + '\')" onkeydown="if(event.key===\'Enter\')hqNav(\'hq:client:' + e(c.slug) + '\')">' +
+      '<div class="cl-top">' + avatar(c) +
+      '<div style="min-width:0"><div class="cl-name">' + e(c.name) + '</div><div class="cl-sub">' + e(c.note || (c.services || []).join(' · ') || (KIND[c.kind] || 'Client')) + '</div></div>' +
+      '<div style="margin-left:auto" class="hl ' + h.k + '"><i></i>' + e(h.t) + '</div></div>' +
+      '<div class="chips"><span class="chip st-' + e(c.status) + '">' + e(STATUS[c.status] || c.status) + '</span>' +
+      (KIND[c.kind] && c.kind !== 'retainer' ? '<span class="chip">' + e(KIND[c.kind]) + '</span>' : '') + (c.status === 'onboarding' && !(c.onboarding && c.onboarding.count) ? '<span class="chip need">Waiting on onboarding form</span>' : '') + '</div>' +
+      (w && w.linked ? '<div class="cl-foot"><span><b>' + w.open + '</b>open</span><span class="od"><b>' + w.overdue + '</b>late</span>' + (w.nextDue ? '<span style="margin-left:auto">Next <b style="font-size:13px">' + e(dshort(w.nextDue)) + '</b></span>' : '') + '</div>' : '') +
+      '</a>';
+  }
+  function gauge(pct, label, color) {
+    var circ = 2 * Math.PI * 44, off = circ * (1 - Math.max(0, Math.min(100, pct || 0)) / 100);
+    return '<div class="gauge"><div class="ring"><svg viewBox="0 0 104 104"><circle class="tr" cx="52" cy="52" r="44"/><circle class="pg" cx="52" cy="52" r="44" stroke="' + color + '" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"/></svg><div class="num">' + (pct == null ? '-' : Math.round(pct) + '%') + '</div></div><span>' + e(label) + '</span></div>';
+  }
+
+  async function fetchHq(force) {
+    if (HQ.loading) return; HQ.loading = true;
+    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
+    catch (err) { HQ.err = err.message; }
+    HQ.loading = false;
+  }
+  function firstName() { return HQ.me && !HQ.me.legacy && HQ.me.name ? String(HQ.me.name).split(' ')[0] : ''; }
+  function greeting() { var h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
+  function skeleton() { return '<div class="sk" style="height:210px;margin-bottom:16px"></div><div class="bento"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>'; }
+  function tile(l, v, s, icon, cls) { return '<div class="tile rise ' + cls + '"><div class="chipi">' + ico(icon) + '</div><div class="l">' + e(l) + '</div><div class="v">' + e(v) + '</div><div class="s">' + e(s) + '</div></div>'; }
+
+  function todayStr() { return new Date().toISOString().slice(0, 10); }
+  function allWork(d) {
+    var today = todayStr(), rows = [];
+    (HQ.tasks || []).forEach(function (t) {
+      var c = d.clients.filter(function (x) { return x.slug === t.client; })[0];
+      rows.push({ k: 'crm', id: t.id, title: t.title, client: c ? c.name : '', who: t.owner_name, ownerId: t.owner, due: t.due, overdue: !!(t.due && t.due < today && t.status !== 'done'), done: t.status === 'done', src: t.source || {}, auto: t.auto });
+    });
+    d.clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { rows.push({ k: 'bc', title: t.title, client: c.name, who: t.who, due: t.due, overdue: t.overdue, url: t.url, done: false }); }); }); });
+    return rows;
+  }
+  function isMine(x) {
+    var me = HQ.me, fn = (firstName() || '').toLowerCase();
+    if (x.k === 'crm') return !!(me && x.ownerId === me.id);
+    return !!(fn && String(x.who || '').toLowerCase().indexOf(fn) > -1);
+  }
+  function myTasks(d) { var all = allWork(d).filter(function (x) { return !x.done; }); return { all: all.map(function (x) { return { t: x, c: { name: x.client } }; }), mine: all.filter(isMine).map(function (x) { return { t: x, c: { name: x.client } }; }) }; }
+  function sc(title, icon, big, sub, rows, go, tone) {
+    return '<a class="sc ' + (tone || '') + '" tabindex="0" onclick="' + go + '" onkeydown="if(event.key===\'Enter\'){' + go + '}"><div class="sh"><span class="si">' + ico(icon) + '</span><span class="st">' + e(title) + '</span><span class="sa">' + ico('arrow') + '</span></div>' +
+      '<div class="sbig">' + e(big) + '</div><div class="ssub">' + e(sub) + '</div>' +
+      (rows && rows.length ? '<div class="srows">' + rows.slice(0, 3).map(function (r) { return '<div class="sr"><i class="' + (r[1] || '') + '"></i><span>' + e(r[0]) + '</span></div>'; }).join('') + '</div>' : '') + '</a>';
+  }
+  async function loadCal() {
+    if (!HQ.me || HQ.me.legacy || HQ.calLoading || HQ.cal) return;
+    HQ.calLoading = true;
+    try { HQ.cal = await api('/api/me/calendar'); } catch (er) { HQ.cal = { connected: false, error: er.message }; }
+    HQ.calLoading = false;
+  }
+  function evDate(x) { return x.allDay ? new Date(String(x.start).slice(0, 10) + 'T12:00:00') : new Date(x.start); }
+  function dayLabel(d) {
+    var t = new Date(); t.setHours(0, 0, 0, 0); var x = new Date(d); x.setHours(0, 0, 0, 0); var diff = Math.round((x - t) / 864e5);
+    if (diff === 0) return 'Today'; if (diff === 1) return 'Tomorrow';
+    return x.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+  function agenda() {
+    var c = HQ.cal, me = HQ.me, view = HQ.calView || 'two';
+    var seg = '<div class="seg"><button class="' + (view === 'two' ? 'on' : '') + '" onclick="hqCalView(\'two\')">Next 2 days</button><button class="' + (view === 'week' ? 'on' : '') + '" onclick="hqCalView(\'week\')">This week</button></div>';
+    var head = '<div class="ph2"><h3>' + ico('calendar') + 'Schedule</h3>' + seg + '<span class="acts2"><a class="ib" title="Choose calendars" onclick="hqCalPick()">' + ico('sliders') + '</a><a class="ib" title="Open Google Calendar" href="https://calendar.google.com" target="_blank" rel="noopener">' + ico('external') + '</a></span></div>' +
+      (HQ.calPick && c && c.calendars ? '<div class="calpick">' + c.calendars.map(function (k) { return '<label class="cb"><input type="checkbox" ' + (k.hidden ? '' : 'checked') + ' onchange="hqCalToggle()" data-cid="' + e(k.id) + '"> <i style="background:' + e(k.color || '#999') + '"></i> ' + e(k.name) + '</label>'; }).join('') + '</div>' : '');
+    var wrap = function (b) { return '<div class="panel agenda">' + head + b + '</div>'; };
+    if (!me || me.legacy) return wrap('<div class="empty">' + ico('calendar') + 'Sign in with your own email to see your calendar.</div>');
+    if (!c) return wrap('<div class="sk" style="height:150px"></div>');
+    if (!c.connected) return wrap('<div class="empty">' + ico('calendar') + 'Connect your Google account to see meetings and shoots here.<br><br><a class="btn2 red" href="/api/me/gmail/connect">Connect Google</a></div>');
+    if (c.needsCalendar) return wrap('<div class="empty">' + ico('alert') + (c.apiOff ? 'Google Calendar is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Calendar API and click Enable.' : 'Calendar access was not granted. On the Mail page click Disconnect, then connect Google again and allow the calendar permission.') + '</div>');
+    if (c.error) return wrap('<div class="empty">' + ico('alert') + e(c.error) + '</div>');
+    var ev = c.events || [], today = new Date(); today.setHours(0, 0, 0, 0);
+    var sameDay = function (x, d) { var a = evDate(x); return a.getFullYear() === d.getFullYear() && a.getMonth() === d.getMonth() && a.getDate() === d.getDate(); };
+    var row = function (x) {
+      var tm = x.allDay ? 'All day' : evDate(x).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', ' ');
+      return '<a class="ag" href="' + e(x.link) + '" target="_blank" rel="noopener"><span class="at' + (x.allDay ? ' ad' : '') + '">' + e(tm) + '</span><i style="background:' + e(x.color || '#13233f') + '"></i><span class="an">' + e(x.title) + '</span><span class="ap">' + e(x.project || '') + '</span></a>';
+    };
+    if (view === 'week') {
+      var mon = new Date(today); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); if (today.getDay() === 0 || today.getDay() === 6) mon.setDate(mon.getDate() + 7);
+      var cols = '';
+      for (var k = 0; k < 7; k++) {
+        var d = new Date(mon); d.setDate(mon.getDate() + k);
+        var list = ev.filter(function (x) { return sameDay(x, d); });
+        if (k >= 5 && !list.length) continue;
+        var isT = d.getTime() === today.getTime();
+        cols += '<div class="wk' + (isT ? ' today' : '') + '"><div class="wh2"><b>' + d.toLocaleDateString('en-US', { weekday: 'short' }) + '</b><span>' + d.getDate() + '</span>' + (list.length ? '<em>' + list.length + '</em>' : '') + '</div>' +
+          (list.length ? list.slice(0, 4).map(function (x) { return '<a class="wv" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span>' + e(x.allDay ? 'All day' : evDate(x).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', ' ')) + '</span>' + e(x.title) + '</a>'; }).join('') + (list.length > 4 ? '<div class="wm">+' + (list.length - 4) + ' more</div>' : '') : '<div class="wn">Clear</div>') + '</div>';
+      }
+      return wrap('<div class="wkgrid">' + cols + '</div>');
+    }
+    var tom = new Date(today), out = ''; tom.setDate(tom.getDate() + 1);
+    [[today, 'Today'], [tom, 'Tomorrow']].forEach(function (p) {
+      var list = ev.filter(function (x) { return sameDay(x, p[0]); }).sort(function (a, b) { return (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0); });
+      out += '<div class="dsec"><div class="dh"><b>' + p[1] + '</b><span>' + p[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</span></div>' +
+        (list.length ? list.slice(0, 5).map(row).join('') + (list.length > 5 ? '<a class="ag more" onclick="hqCalView(\'week\')">+' + (list.length - 5) + ' more, see the week</a>' : '') : '<div class="dn2">Nothing scheduled</div>') + '</div>';
+    });
+    return wrap('<div class="dgrid">' + out + '</div>');
+  }
+  window.hqCalView = function (v) { HQ.calView = v; var el = root(); if (el && navKey === 'hq:home') el.innerHTML = home(); };
+  window.hqCalPick = function () { HQ.calPick = !HQ.calPick; var el = root(); if (el && document.body.classList.contains('hqmode')) el.innerHTML = home(); };
+  window.hqCalToggle = async function () {
+    var hidden = []; document.querySelectorAll('.calpick input').forEach(function (i) { if (!i.checked) hidden.push(i.getAttribute('data-cid')); });
+    try { await api('/api/me/calendar/prefs', 'POST', { hidden: hidden }); HQ.cal = null; await loadCal(); var el = root(); if (navKey === 'hq:home') el.innerHTML = home(); } catch (er) { toast(er.message); }
+  };
+  function stat(title, icon, big, sub, go, tone) {
+    return '<a class="st ' + (tone || '') + '" tabindex="0" onclick="' + go + '" onkeydown="if(event.key===\'Enter\'){' + go + '}"><span class="si">' + ico(icon) + '</span><div><div class="sv">' + e(big) + '</div><div class="sl">' + e(title) + '</div><div class="ss">' + e(sub) + '</div></div><span class="sa">' + ico('arrow') + '</span></a>';
+  }
+  function home() {
+    var d = HQ.data, Pr = state.prospects || [], me = HQ.me, fn = firstName();
+    var clients = d.clients.filter(function (c) { return c.status !== 'internal'; });
+    var activeC = clients.filter(function (c) { return ['active', 'onboarding', 'ads_off', 'seasonal', 'ending'].indexOf(c.status) > -1; });
+    var tasks = myTasks(d), late = tasks.all.filter(function (x) { return x.t.overdue; }), mine = tasks.mine, mineLate = mine.filter(function (x) { return x.t.overdue; });
+    var replies = Pr.filter(function (p) { return typeof needsResponse === 'function' && needsResponse(p); });
+    var mm = HQ.mail;
+    var att = [];
+    late.slice(0, 5).forEach(function (x) { att.push('<div class="item"><div class="bub">' + ico('alert') + '</div><div><b>' + e(x.t.title) + '</b><div class="m">' + e(x.c.name) + ' · ' + e(x.t.who || 'Unassigned') + ' · due ' + e(dshort(x.t.due)) + ' · ' + (x.t.url ? '<a href="' + e(x.t.url) + '" target="_blank" rel="noopener">Open</a>' : '<a onclick="hqNav(\'hq:work\')">Open</a>') + '</div></div></div>'); });
+    replies.slice(0, 3).forEach(function (p) { att.push('<div class="item"><div class="bub amber">' + ico('reply') + '</div><div><b>' + e(p.business) + ' replied</b><div class="m">Outreach · <a onclick="navTo(\'replied\')">Open</a></div></div></div>'); });
+    if (mm && mm.connected && mm.unread) att.push('<div class="item"><div class="bub blue">' + ico('mail') + '</div><div><b>' + mm.unread + ' unread from clients</b><div class="m"><a onclick="hqNav(\'hq:mail\')">Open mail</a></div></div></div>');
+    if (d.onboardingNoProject) att.push('<div class="item"><div class="bub blue">' + ico('clipboard') + '</div><div><b>' + d.onboardingNoProject + ' new onboarding form' + (d.onboardingNoProject > 1 ? 's' : '') + '</b><div class="m"><a onclick="hqNav(\'hq:onboarding\')">Review</a></div></div></div>');
+    var sub = !d.connected ? 'Connect Basecamp to see everyone\'s work.' : (fn && mine.length ? mine.length + ' to-do' + (mine.length > 1 ? 's' : '') + ' assigned to you' + (mineLate.length ? ', ' + mineLate.length + ' late' : '') : late.length ? late.length + ' late across clients' : 'You are all caught up.');
+    var strip = clients.map(function (c) {
+      return '<a class="lg-t" tabindex="0" style="--bc:' + e(brand(c)) + '" onclick="hqNav(\'hq:client:' + e(c.slug) + '\')" title="' + e(c.name) + '">' + avatar(c, 54) + '<span>' + e(c.name) + '</span></a>';
+    }).join('');
+    return '<div class="hero3 rise"><div class="hmain"><div class="eyebrow3">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</div>' +
+      '<h2>' + greeting() + (fn ? ', ' + e(fn) : '') + '</h2><p>' + e(sub) + '</p></div><div class="hbtn">' +
+      (d.connected ? '' : '<a class="btn2 red" href="/api/basecamp/connect">' + ico('link') + 'Connect Basecamp</a>') +
+      '<button class="btn2 glass" onclick="hqRefresh()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button></div></div>' +
+      '<div class="stats">' +
+      stat(fn ? 'My work' : 'Open work', 'task', fn ? mine.length : tasks.all.length, mineLate.length ? mineLate.length + ' late' : 'open to-dos', "hqNav('hq:work')", mineLate.length ? 'bad' : '') +
+      stat('Late', 'alert', d.connected ? late.length : '-', 'across all clients', "hqNav('hq:work')", late.length ? 'bad' : 'ok') +
+      stat('Client mail', 'mail', mm && mm.connected ? (mm.unread || 0) : '-', mm && mm.connected ? 'unread' : 'not connected', "hqNav('hq:mail')", mm && mm.connected && mm.unread ? 'warn' : '') +
+      stat('Clients', 'users', activeC.length, 'active now', "hqNav('hq:clients')") +
+      stat('Outreach', 'kanban', replies.length, replies.length === 1 ? 'reply waiting' : 'replies waiting', "hqNav('hq:outreach')", replies.length ? 'warn' : '') + '</div>' +
+      '<div class="hcols">' + agenda() + '<div class="panel"><h3>Needs attention' + (att.length ? '<span class="ct">' + att.length + '</span>' : '') + '</h3>' +
+      (att.length ? att.join('') : '<div class="empty">' + ico('check') + 'All clear. Nothing needs you.</div>') + '</div></div>' +
+      '<div class="sec" style="margin-top:26px"><div><h3>Your clients</h3></div><a class="lnk" onclick="hqNav(\'hq:clients\')">See all</a></div><div class="lgrid">' + strip + '</div>';
+  }
+
+  function work() {
+    var d = HQ.data, me = HQ.me, f = HQ.workTab || (me && !me.legacy ? 'mine' : 'all'), all = allWork(d), rows;
+    if (f === 'done') rows = all.filter(function (x) { return x.done; });
+    else { rows = all.filter(function (x) { return !x.done; }); if (f === 'mine') rows = rows.filter(isMine); if (f === 'late') rows = rows.filter(function (x) { return x.overdue; }); }
+    rows.sort(function (a, b) { return (a.due || '9999') < (b.due || '9999') ? -1 : 1; });
+    var tab = function (k, l) { return '<button class="tb ' + (f === k ? 'on' : '') + '" onclick="HQ_work(\'' + k + '\')">' + l + '</button>'; };
+    var real = me && !me.legacy, isAdmin = me && me.role === 'admin';
+    var clientsOpt = d.clients.filter(function (c) { return c.status !== 'internal'; }).map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
+    var ownerSel = isAdmin && HQ.users ? '<select id="nt_o">' + HQ.users.filter(function (u) { return u.active; }).map(function (u) { return '<option value="' + e(u.id) + '"' + (u.id === me.id ? ' selected' : '') + '>' + e(u.name) + '</option>'; }).join('') + '</select>' : '';
+    var form = real ? '<details class="sm" style="margin-bottom:14px"><summary>Add a task</summary><div class="frm" style="margin-top:12px;grid-template-columns:2fr 1.2fr 1fr ' + (ownerSel ? '1fr ' : '') + 'auto"><div><label for="nt_t">What needs doing</label><input id="nt_t" placeholder="e.g. Send Crocker the shoot schedule"></div>' +
+      '<div><label for="nt_c">Client</label><select id="nt_c"><option value="">No client</option>' + clientsOpt + '</select></div><div><label for="nt_d">Due</label><input id="nt_d" type="date"></div>' + (ownerSel ? '<div><label for="nt_o">Assign to</label>' + ownerSel + '</div>' : '') +
+      '<button class="btn2 red" onclick="hqAddTask()">Add</button></div></details>' : '';
+    var total = all.filter(function (x) { return !x.done; }).length;
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Work</h3><p>Your tasks, client emails that need a reply, and to-dos from Basecamp.</p></div>' + (real ? '<button class="btn2 line" onclick="hqSyncMail()">' + ico('refresh') + 'Check mail now</button>' : '') + '</div>' +
+      '<div class="tabs">' + (real ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + tab('done', 'Done') + '</div>' + form +
+      (!d.connected ? '<div class="banner">' + ico('alert') + '<div>Basecamp is not connected, so only CRM tasks show. <a class="lnk" href="/api/basecamp/connect">Connect</a></div></div>' : '') +
+      '<div class="panel">' + (rows.length ? rows.map(function (x) {
+        var mine = me && (x.ownerId === me.id), canClose = x.k === 'crm' && (mine || (me && me.role === 'admin'));
+        var link = x.k === 'bc' ? '<a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.title) + '</a>' : (x.src && x.src.type === 'email' && x.src.mailbox === (me && me.id) ? '<a href="https://mail.google.com/mail/u/' + encodeURIComponent(me.email) + '/#inbox/' + e(x.src.thread) + '" target="_blank" rel="noopener">' + e(x.title) + '</a>' : '<span>' + e(x.title) + '</span>');
+        return '<div class="td' + (x.done ? ' dn' : '') + '">' + (x.k === 'crm' ? '<button class="ckb ' + (x.done ? 'on' : '') + '" ' + (canClose ? 'onclick="hqTaskDone(\'' + e(x.id) + '\',' + (x.done ? 'false' : 'true') + ')"' : 'disabled') + ' aria-label="' + (x.done ? 'Reopen' : 'Mark done') + '">' + (x.done ? ico('check') : '') + '</button>' : '<span class="ck"></span>') +
+          '<div style="min-width:0">' + link + '<div class="who">' + (x.src && x.src.type === 'email' ? '<span class="chip need" style="margin-right:6px">Email</span>' : '') + e(x.client) + (x.client ? ' · ' : '') + e(x.who || 'Unassigned') + (x.auto ? ' · ' + e(x.auto) : '') + '</div></div>' +
+          '<span class="due ' + (x.overdue ? 'od' : '') + '">' + (x.due ? (x.overdue ? 'Late · ' : '') + e(dshort(x.due)) : '') + '</span></div>';
+      }).join('') : '<div class="empty">' + ico('check') + (f === 'mine' ? 'Nothing assigned to you right now.' : 'Nothing here.') + '</div>') + '</div>' +
+      '<p class="hint" style="margin-top:10px">' + total + ' open in total.</p>';
+  }
+  window.hqTaskDone = async function (id, done) { try { await api('/api/tasks/' + id + '/done', 'POST', { done: done }); await refreshTasks(); show('hq:work'); } catch (er) { toast(er.message); } };
+  window.hqAddTask = async function () {
+    var g = function (i) { return (document.getElementById(i) || {}).value || ''; };
+    try { await api('/api/tasks', 'POST', { title: g('nt_t'), client: g('nt_c'), due: g('nt_d'), owner: g('nt_o') || undefined }); toast('Added'); await refreshTasks(); show('hq:work'); } catch (er) { toast(er.message); }
+  };
+  window.hqSyncMail = async function () { try { toast('Checking mail...'); var r = await api('/api/tasks/sync', 'POST', {}); await refreshTasks(); toast(r.created ? r.created + ' new task' + (r.created > 1 ? 's' : '') : 'No new client emails'); show('hq:work'); } catch (er) { toast(er.message); } };
+  async function refreshTasks() { try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (er) {} }
+  window.HQ_work = function (k) { HQ.workTab = k; show('hq:work'); };
+  window.HQ_ctab = function (k) { clientTab = k; show('hq:clients'); };
+
+  function clients() {
+    var d = HQ.data, all = d.clients.filter(function (c) { return c.status !== 'internal'; });
+    var list = clientTab === 'all' ? all : all.filter(function (c) { return (c.kind || 'retainer') === clientTab; });
+    var n = function (k) { return all.filter(function (c) { return (c.kind || 'retainer') === k; }).length; };
+    var tab = function (k, l, c) { return '<button class="tb ' + (clientTab === k ? 'on' : '') + '" onclick="HQ_ctab(\'' + k + '\')">' + l + ' <span>' + c + '</span></button>'; };
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Clients</h3><p>Open one for everything about them.</p></div></div>' +
+      '<div class="tabs">' + tab('all', 'All', all.length) + tab('retainer', 'Retainer', n('retainer')) + tab('website', 'Website', n('website')) + tab('returning', 'Returning', n('returning')) + tab('proposal', 'Pending', n('proposal')) + '</div>' +
+      (d.connected ? '' : '<div class="banner">' + ico('alert') + '<div><b>Basecamp is not connected,</b> so to-dos are hidden. <a class="lnk" href="/api/basecamp/connect">Connect Basecamp</a></div></div>') +
+      '<div class="cl-grid">' + (list.map(card).join('') || '<div class="empty">Nobody here yet.</div>') + '</div>';
+  }
+
+  function clientPage(slug) {
+    var c = HQ.data.clients.filter(function (x) { return x.slug === slug; })[0];
+    if (!c) return '<div class="empty">Client not found.</div>';
+    var h = health(c), w = c.work, mine = (HQ.onb || []).filter(function (r) { return r.client === slug; });
+    var formUrl = location.origin + '/onboarding?client=' + encodeURIComponent(slug), lists = '';
+    if (w && w.linked) {
+      lists = w.lists.map(function (l) {
+        var m = /(\d+)\/(\d+)/.exec(l.ratio || ''), pct = m && +m[2] ? Math.round(+m[1] / +m[2] * 100) : 0;
+        return '<div style="margin-bottom:22px"><div class="list-h"><b>' + e(l.name) + '</b><span>' + e(l.ratio ? l.ratio + ' done' : '') + ' · <a class="lnk" href="' + e(l.url) + '" target="_blank" rel="noopener">Basecamp</a></span></div><div class="pbar"><i style="width:' + pct + '%"></i></div>' +
+          (l.open.length ? l.open.map(function (t) { return '<div class="td"><span class="ck"></span><div><a href="' + e(t.url) + '" target="_blank" rel="noopener">' + e(t.title) + '</a><div class="who">' + e(t.who || 'Unassigned') + '</div></div><span class="due ' + (t.overdue ? 'od' : '') + '">' + (t.due ? (t.overdue ? 'Late · ' : '') + e(dshort(t.due)) : '') + '</span></div>'; }).join('') : '<div class="empty" style="padding:12px 0">Everything here is done.</div>') + '</div>';
+      }).join('') || '<div class="empty">No to-do lists in this project yet.</div>';
+    } else if (!HQ.data.connected) {
+      lists = '<div class="empty">' + ico('link') + 'Connect Basecamp to see this client\'s to-dos.<br><br><a class="btn2 red" href="/api/basecamp/connect">Connect Basecamp</a></div>';
+    } else {
+      lists = '<div class="empty">' + ico('link') + 'No Basecamp project found for ' + e(c.name) + '. Paste its link:</div><div class="linkrow"><input id="bcl" placeholder="https://app.basecamp.com/.../projects/12345"><button class="btn2 red" onclick="hqLink(\'' + e(slug) + '\')">Link</button></div>' + (c.workError ? '<div style="color:var(--bad);margin-top:8px;font-size:12.5px">' + e(c.workError) + '</div>' : '');
+    }
+    var onb = mine.length ? mine.slice().reverse().map(function (r) { return '<details class="sm"><summary>' + e(r.contact_name || r.email) + ' · ' + e(new Date(r.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + '</summary><pre>' + e(r.summary || JSON.stringify(r.answers, null, 2)) + '</pre></details>'; }).join('')
+      : '<p class="hint" style="margin:0">No answers yet. Send them this link:</p><div class="linkrow"><input readonly value="' + e(formUrl) + '" onclick="this.select()" aria-label="Onboarding link"><button class="btn2 line" onclick="navigator.clipboard.writeText(\'' + e(formUrl) + '\');toast(\'Link copied\')">Copy</button></div>';
+    var tl = '';
+    mine.slice().reverse().forEach(function (r) { tl += '<div class="ev"><b>Onboarding form submitted</b><div class="m">' + e(new Date(r.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + ' · ' + e(r.contact_name || r.email) + '</div></div>'; });
+    if (w && w.linked) tl += '<div class="ev"><b>Basecamp project linked</b><div class="m">' + e(w.project.name) + '</div></div>';
+    if (!tl) tl = '<div class="empty" style="padding:8px 0">Nothing logged yet.</div>';
+    return '<button class="back" onclick="hqNav(\'hq:clients\')">' + ico('back') + 'All clients</button>' +
+      '<div class="banner-h rise" style="--cc:' + brand(c) + '"><div class="row">' + avatar(c, 76) + '<div class="grow"><h2>' + e(c.name) + '</h2>' +
+      '<div class="chips" style="margin-top:10px"><span class="chip">' + e(STATUS[c.status] || c.status) + '</span>' + (c.services || []).map(function (s) { return '<span class="chip">' + e(s) + '</span>'; }).join('') + '</div></div>' +
+      '<div class="hl ' + h.k + '" style="font-size:14px"><i style="width:10px;height:10px"></i>' + e(h.t) + '</div></div></div>' +
+      (c.note ? '<div class="banner">' + ico('alert') + '<div>' + e(c.note) + '</div></div>' : '') +
+      tabsBar(c) + (HQ.ctab && HQ.ctab !== 'overview' ? tabBody(c) : '<div class="two"><div class="panel"><h3>Work</h3>' + lists + '</div><div style="display:grid;gap:16px">' +
+      '<div class="panel"><h3>Who handles it</h3>' + ownerRow('Website', c.website_owner) + ownerRow('Ads', c.ads_owner) + ownerRow('Account manager', c.account_owner) +
+      (w && w.linked ? '<div class="kv"><span>Basecamp</span><a class="lnk" href="' + e(w.project.url) + '" target="_blank" rel="noopener">Open project</a></div>' : '') + '</div>' +
+      ((mine.length || c.status === 'onboarding') ? '<div class="panel"><h3>Onboarding answers</h3>' + onb + '</div>' : '') +
+      linksPanel(c) + editPanel(c) +
+      '<div class="panel"><h3>Activity</h3><div class="tl" style="margin-top:12px">' + tl + '</div></div></div></div>');
+  }
+  function ownerRow(l, v) { return '<div class="kv"><span>' + e(l) + '</span><b>' + (v ? e(v) : '<span style="font-weight:500;color:var(--mut)">Not assigned</span>') + '</b></div>'; }
+  var SERV = ['Website', 'Local SEO and Google profile', 'Paid ads', 'Social content', 'Video and photo', 'Email and SMS', 'CRM'];
+  function editPanel(c) {
+    if (!(HQ.me && HQ.me.role === 'admin')) return '';
+    var users = (HQ.users || []).filter(function (u) { return u.active; });
+    var sel = function (id, cur) { return '<select id="' + id + '"><option value="">Not assigned</option>' + users.map(function (u) { return '<option' + (u.name === cur ? ' selected' : '') + '>' + e(u.name) + '</option>'; }).join('') + '</select>'; };
+    var opt = function (arr, cur) { return arr.map(function (a) { return '<option value="' + a[0] + '"' + (a[0] === cur ? ' selected' : '') + '>' + a[1] + '</option>'; }).join(''); };
+    return '<details class="sm" style="background:#fff"><summary>Edit details</summary><div class="ed">' +
+      '<label>Type</label><select id="ed_kind">' + opt([['retainer', 'Retainer'], ['website', 'Website client'], ['returning', 'Returning'], ['proposal', 'Proposal pending']], c.kind || 'retainer') + '</select>' +
+      '<label>Status</label><select id="ed_status">' + opt([['active', 'Active'], ['ending', 'Ending'], ['seasonal', 'Seasonal'], ['ads_off', 'Ads off'], ['onboarding', 'Onboarding'], ['returning', 'Returning'], ['proposal', 'Proposal']], c.status) + '</select>' +
+      '<label>What we do for them</label><div class="chk">' + SERV.map(function (sv, i) { return '<label class="cb"><input type="checkbox" id="ed_s' + i + '"' + ((c.services || []).indexOf(sv) > -1 ? ' checked' : '') + '> ' + e(sv) + '</label>'; }).join('') + '</div>' +
+      '<label>Website lead</label>' + sel('ed_web', c.website_owner) + '<label>Ads lead</label>' + sel('ed_ads', c.ads_owner) + '<label>Account manager</label>' + sel('ed_acc', c.account_owner) +
+      '<label>Their email addresses or domains (comma separated)</label><input id="ed_dom" value="' + e((c.domains || []).join(', ')) + '" placeholder="theirbusiness.com, owner@gmail.com">' +
+      '<label>Note</label><input id="ed_note" value="' + e(c.note || '') + '" placeholder="Anything the team should know">' +
+      '<button class="btn2 red" style="margin-top:12px" onclick="hqSaveClient(\'' + e(c.slug) + '\')">Save</button></div></details>';
+  }
+  window.hqSaveClient = async function (slug) {
+    var g = function (id) { return (document.getElementById(id) || {}).value || ''; };
+    var svcs = SERV.filter(function (sv, i) { var b = document.getElementById('ed_s' + i); return b && b.checked; });
+    try { await api('/api/hq/client/' + slug, 'PUT', { kind: g('ed_kind'), status: g('ed_status'), services: svcs, website_owner: g('ed_web'), ads_owner: g('ed_ads'), account_owner: g('ed_acc'), note: g('ed_note'), domains: g('ed_dom').split(',').map(function (x) { return x.trim(); }).filter(Boolean) }); toast('Saved'); window.hqRefresh(); } catch (er) { toast(er.message); }
+  };
+
+  function onboarding() {
+    var rows = HQ.onb || [];
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Onboarding</h3><p>Everything new clients tell us, in one place.</p></div><a class="btn2 red" href="/onboarding" target="_blank" rel="noopener">' + ico('clipboard') + 'Open the client form</a></div>' +
+      '<div class="panel">' + (rows.length ? rows.map(function (r) {
+        return '<details class="sm"><summary>' + e(r.business) + ' <span class="chip" style="margin-left:8px">' + e(r.client || 'older form') + '</span> <span style="color:var(--mut);font-weight:400;font-size:13px">· ' + e(new Date(r.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + (r.basecamp ? ' · <a class="lnk" href="' + e(r.basecamp.url) + '" target="_blank" rel="noopener">Basecamp</a>' : '') + '</span></summary><pre>' + e(r.summary || JSON.stringify(r.answers, null, 2)) + '</pre></details>';
+      }).join('') : '<div class="empty">' + ico('inbox') + 'No submissions yet. Add <code>?client=their-name</code> to the form link so answers file under that client.</div>') + '</div>';
+  }
+
+
+  var OUT_INFO = {
+    board: ['Pipeline board', 'Every lead on one board by stage.', 'kanban', ''],
+    replied: ['Replied', 'They wrote back. Answer these first.', 'reply', 'hot'], booked: ['Booked', 'Calls on the calendar.', 'check', 'win'],
+    won: ['Won', 'Closed deals.', 'flag', 'win'], sent: ['Awaiting reply', 'Emailed, nothing back yet.', 'mail', ''],
+    inbound: ['Inbound', 'People who came to us.', 'star', 'hot'], giveaway: ['Giveaway', 'Entrants from the giveaway.', 'gift', ''],
+    manual: ['Manual', 'Added by hand, never auto-emailed.', 'plus', ''], nosite: ['No Website', 'Call list of businesses without a site.', 'phone', ''],
+    new: ['Queue', 'Waiting to be drafted.', 'circle', 'cold'], drafted: ['Drafted', 'Written, waiting for approval.', 'edit', ''],
+    all: ['All leads', 'The full list in a table.', 'list', 'cold'], unreachable: ['Unreachable', 'No working email or phone.', 'ban', 'cold'], rejected: ['Rejected', 'Pulled from outreach.', 'x', 'cold']
+  };
+  function outCount(k) {
+    var live = (state.prospects || []).filter(function (p) { return !p.internal && p.status !== 'test'; });
+    for (var i = 0; i < NAV.length; i++) for (var j = 0; j < NAV[i][1].length; j++) { var it = NAV[i][1][j]; if (it[0] === k) return it[3] ? live.filter(it[3]).length : live.length; }
+    return live.length;
+  }
+  function ocard(k, i) {
+    var o = OUT_INFO[k]; return '<button class="oc ' + o[3] + '" style="animation-delay:' + i * 30 + 'ms" onclick="navTo(\'' + k + '\')"><div class="top2"><div class="ci">' + ico(o[2]) + '</div><span class="arrow">' + ico('arrow') + '</span></div><div class="n">' + outCount(k).toLocaleString() + '</div><div class="lb">' + e(o[0]) + '</div><div class="ds">' + e(o[1]) + '</div></button>';
+  }
+  function outreach() {
+    var g = function (title, sub, keys) { return '<div class="sec"><div><h3>' + title + '</h3><p>' + sub + '</p></div></div><div class="og">' + keys.map(ocard).join('') + '</div>'; };
+    var f = function (k, l) { return '<button onclick="navTo(\'' + k + '\')"><b>' + outCount(k).toLocaleString() + '</b><span>' + l + '</span></button>'; };
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Outreach</h3><p>Cold email and new business. Click any box to open it.</p></div></div>' +
+      '<div class="funnel">' + f('all', 'Leads') + f('sent', 'Contacted') + f('replied', 'Replied') + f('booked', 'Booked') + f('won', 'Won') + '</div>' +
+      g('Pipeline', 'Where each conversation stands.', ['replied', 'sent', 'booked', 'won']) +
+      g('Where leads come from', 'Different lists, different rules.', ['inbound', 'giveaway', 'nosite', 'manual']) +
+      g('The list', 'Everything behind the scenes.', ['board', 'new', 'drafted', 'all', 'unreachable', 'rejected']);
+  }
+  async function team() {
+    var me = HQ.me; var box = '';
+    if (!me || me.role !== 'admin') return '<div class="sec"><div><h3 style="font-size:28px">Team</h3><p>Only admins can manage logins.</p></div></div><div class="panel"><div class="empty">' + ico('alert') + 'Ask Zac or Griffin to add or reset a login.</div></div>';
+    var r = await api('/api/admin/users'); HQ.users = r.users;
+    var rows = r.users.map(function (u) {
+      return '<tr><td><div class="nm">' + e(u.name) + '</div><div class="em">' + e(u.title || 'No job role set') + ' · ' + e(u.email) + '</div></td><td><span class="chip st-' + (u.role === 'admin' ? 'internal' : 'active') + '">' + (u.role === 'admin' ? 'Admin' : 'Member') + '</span>' + (u.active ? '' : ' <span class="chip st-ending">Off</span>') + (u.must_change ? ' <span class="chip need">Needs new password</span>' : '') + '</td>' +
+        '<td class="em">' + (u.last_login ? e(new Date(u.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : 'Never') + '</td><td style="text-align:right;white-space:nowrap">' +
+        '<button class="btn2 line mini" onclick="hqTitle(\'' + e(u.id) + '\')">Set job role</button> <button class="btn2 line mini" onclick="hqReset(\'' + e(u.id) + '\')">Reset password</button> ' +
+        (me.id !== u.id ? '<button class="btn2 line mini" onclick="hqActive(\'' + e(u.id) + '\',' + (u.active ? 'false' : 'true') + ')">' + (u.active ? 'Turn off' : 'Turn on') + '</button>' : '') + '</td></tr>';
+    }).join('');
+    var ln = []; try { ln = (await api('/api/lanes')).lanes; } catch (x) {}
+    var lanePanel = '<div class="panel" style="margin-bottom:16px"><h3>Who handles what</h3><p class="hint">Client emails and new tasks go to the person for that kind of work.</p>' + ln.map(function (l) { return '<div class="kv"><span>' + e(l.label) + '</span><select onchange="hqLane(\'' + e(l.key) + '\',this.value)" style="padding:8px 10px;border:1px solid var(--hair2);border-radius:9px;min-height:36px;font:inherit"><option value="">' + (l.name ? '' : 'No login yet: ' + e(l.email)) + '</option>' + r.users.filter(function (u) { return u.active; }).map(function (u) { return '<option value="' + e(u.email) + '"' + (u.email === l.email ? ' selected' : '') + '>' + e(u.name) + '</option>'; }).join('') + '</select></div>'; }).join('') + '</div>';
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team</h3><p>Everyone who can log in. Each person sees their own name.</p></div></div><div id="tempbox"></div>' + rosterPanel(r.users) + lanePanel +
+      '<div class="panel" style="margin-bottom:16px"><h3>Add a person</h3><div class="frm" style="margin-top:12px"><div><label for="nu_n">Name</label><input id="nu_n" placeholder="Full name"></div><div><label for="nu_e">Email</label><input id="nu_e" type="email" placeholder="name@openheartmediaco.com"></div><div><label for="nu_t">Job role</label><input id="nu_t" placeholder="e.g. Web Developer"></div><div><label for="nu_r">Access</label><select id="nu_r"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn2 red" onclick="hqAddUser()">Add</button></div></div>' +
+      '<div class="panel"><table class="ttab"><thead><tr><th>Person</th><th>Access</th><th>Last in</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  var ROSTER = [
+    ['Griffin Baker', 'griffin@openheartmediaco.com', 'Operations & Account Manager', true],
+    ['Brad Baker', 'brad@openheartmediaco.com', 'Director of Strategic Growth', true],
+    ['Ariel Lewis', 'ariel@openheartmediaco.com', 'Director of Client Strategies', false],
+    ['Frank LaDue', 'frank@openheartmediaco.com', 'Web Developer / Graphic Designer', false],
+    ['Michelle Baker', 'michelle@openheartmediaco.com', 'Director of Sales', false],
+    ['Hiroshi Yamamoto Farfan', 'hiroshi@openheartmediaco.com', 'Lead Editor', false],
+    ['Mafer Rivera', 'mafer@openheartmediaco.com', 'Graphic Designer / Copywriter', false],
+    ['Valeria Sweat', 'valeria@openheartmediaco.com', 'Copywriter', false],
+    ['Tristen King', 'tristen@openheartmediaco.com', 'Lead Videographer', false],
+    ['Lisa Rodgers', 'lisa@openheartmediaco.com', 'Corporate Sales', false]
+  ];
+  function rosterPanel(existing) {
+    var have = {}; (existing || []).forEach(function (u) { have[u.email] = 1; });
+    var rows = ROSTER.filter(function (r) { return !have[r[1]]; });
+    if (!rows.length) return '';
+    return '<div class="panel" style="margin-bottom:16px"><h3>Add the whole team</h3><p class="hint">Everyone from Basecamp, with their job role. Only Brad, Griffin and Michelle are ticked for now. Tick others when you are ready, and tick Admin for people who should manage logins.</p>' +
+      '<table class="ttab"><thead><tr><th></th><th>Person</th><th>Job role</th><th>Admin</th></tr></thead><tbody>' + rows.map(function (r, i) {
+        return '<tr><td><input type="checkbox" id="rt_on' + i + '"' + (/^(brad|griffin|michelle)@/.test(r[1]) ? ' checked' : '') + '></td><td><div class="nm">' + e(r[0]) + '</div><div class="em">' + e(r[1]) + '</div></td><td class="em" style="display:table-cell">' + e(r[2]) + '</td><td><input type="checkbox" id="rt_ad' + i + '"' + (r[3] ? ' checked' : '') + '></td></tr>';
+      }).join('') + '</tbody></table><div style="margin-top:14px"><button class="btn2 red" onclick="hqAddTeam()">Add selected</button></div></div>';
+  }
+  window.hqAddTeam = async function () {
+    var have = {}; (HQ.users || []).forEach(function (u) { have[u.email] = 1; });
+    var rows = ROSTER.filter(function (r) { return !have[r[1]]; }), out = [], fail = [];
+    for (var i = 0; i < rows.length; i++) {
+      var on = document.getElementById('rt_on' + i); if (!on || !on.checked) continue;
+      var ad = document.getElementById('rt_ad' + i);
+      try { var r = await api('/api/admin/users', 'POST', { name: rows[i][0], email: rows[i][1], title: rows[i][2], role: ad && ad.checked ? 'admin' : 'member' }); out.push([rows[i][0], rows[i][1], r.temp_password]); }
+      catch (er) { fail.push(rows[i][0] + ': ' + er.message); }
+    }
+    await show('hq:team');
+    var b = document.getElementById('tempbox'); if (!b) return;
+    var text = out.map(function (o) { return o[0] + ' | ' + o[1] + ' | ' + o[2]; }).join('\n');
+    b.innerHTML = '<div class="tempbox"><b>Temporary passwords (shown once)</b><div style="margin:12px 0;display:grid;gap:6px">' + out.map(function (o) { return '<div>' + e(o[0]) + ' &nbsp;<span style="color:#9db3d6">' + e(o[1]) + '</span> &nbsp;<code style="font-size:15px">' + e(o[2]) + '</code></div>'; }).join('') + '</div>' +
+      (fail.length ? '<div style="color:#ff9d97;font-size:13px">' + e(fail.join(' · ')) + '</div>' : '') +
+      '<button class="btn2 glass" onclick="navigator.clipboard.writeText(' + e(JSON.stringify(text)) + ');toast(\'Copied\')">Copy all</button>' +
+      '<div style="color:#9db3d6;font-size:13px;margin-top:10px">Send each person their own password privately. They choose their own the first time they log in. Close this page and these are gone.</div></div>';
+    window.scrollTo(0, 0);
+  };
+
+  function showTemp(who, pw) {
+    var b = document.getElementById('tempbox'); if (!b) return;
+    b.innerHTML = '<div class="tempbox"><b>Temporary password for ' + e(who) + '</b><div style="margin:10px 0"><code>' + e(pw) + '</code></div><div style="color:#9db3d6;font-size:13px">Send it to them privately. It is shown once. They pick their own password the first time they log in.</div></div>';
+    window.scrollTo(0, 0);
+  }
+  window.hqAddUser = async function () {
+    var n = document.getElementById('nu_n').value, em = document.getElementById('nu_e').value, ro = document.getElementById('nu_r').value, ti = document.getElementById('nu_t').value;
+    try { var r = await api('/api/admin/users', 'POST', { name: n, email: em, role: ro, title: ti }); await show('hq:team'); showTemp(r.user.name, r.temp_password); } catch (er) { toast(er.message); }
+  };
+  window.hqReset = async function (id) {
+    if (!confirm('Reset this password? Their old password stops working.')) return;
+    try { var r = await api('/api/admin/users/' + id + '/reset', 'POST', {}); var u = (HQ.users || []).filter(function (x) { return x.id === id; })[0]; await show('hq:team'); showTemp(u ? u.name : 'them', r.temp_password); } catch (er) { toast(er.message); }
+  };
+  window.hqTitle = async function (id) {
+    var u = (HQ.users || []).filter(function (x) { return x.id === id; })[0]; var t = prompt('Job role for ' + (u ? u.name : 'this person') + ' (for example Web Developer, Ads Strategist):', (u && u.title) || '');
+    if (t === null) return; try { await api('/api/admin/users/' + id + '/title', 'POST', { title: t }); show('hq:team'); } catch (er) { toast(er.message); }
+  };
+  window.hqLane = async function (lane, email) { if (!email) return; try { await api('/api/admin/lanes', 'POST', { lane: lane, email: email }); toast('Saved'); } catch (er) { toast(er.message); show('hq:team'); } };
+  window.hqActive = async function (id, on) { try { await api('/api/admin/users/' + id + '/active', 'POST', { active: on }); show('hq:team'); } catch (er) { toast(er.message); } };
+
+
+  async function loadMail(force) {
+    if (!HQ.me || HQ.me.legacy) return;
+    if (HQ.mailLoading) return; if (HQ.mail && !force) return;
+    HQ.mailLoading = true;
+    try { HQ.mail = await api('/api/me/mail'); } catch (er) { HQ.mail = { connected: false, error: er.message }; }
+    HQ.mailLoading = false;
+  }
+  function ago2(ms) {
+    var m = Math.round((Date.now() - ms) / 60000); if (m < 60) return Math.max(m, 1) + 'm'; var hr = Math.round(m / 60); if (hr < 24) return hr + 'h'; return Math.round(hr / 24) + 'd';
+  }
+  function mail() {
+    var m = HQ.mail, me = HQ.me;
+    var head = '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Mail</h3><p>Email from your clients, pulled from your own Gmail.</p></div></div>';
+    if (!me || me.legacy) return head + '<div class="panel"><div class="empty">' + ico('mail') + 'Sign in with your own email to connect Gmail.</div></div>';
+    if (!m) return head + '<div class="sk" style="height:140px"></div>';
+    if (!m.connected) {
+      return head + '<div class="panel" style="max-width:640px"><h3>Connect your Gmail</h3><p class="hint">The CRM reads your inbox to find email from client addresses and shows it here, so nothing from a client gets missed. It does not send, delete or change anything, and it only shows mail from addresses you have linked to a client. You can disconnect any time.</p>' +
+        (m.configured === false ? '<div class="banner">' + ico('alert') + '<div>Google is not set up on the server yet.</div></div>' : '<a class="btn2 red" href="/api/me/gmail/connect">' + ico('mail') + 'Connect my Gmail</a>') + (m.error ? '<p style="color:var(--bad);margin-top:10px;font-size:13px">' + e(m.error) + '</p>' : '') + '</div>';
+    }
+    var byC = {}; (m.matched || []).forEach(function (x) { (byC[x.client.slug] = byC[x.client.slug] || { n: x.client.name, items: [] }).items.push(x); });
+    var blocks = Object.keys(byC).map(function (k) {
+      return '<div class="panel" style="margin-bottom:14px"><h3>' + e(byC[k].n) + '<span class="ct">' + byC[k].items.length + '</span></h3>' + byC[k].items.map(function (x) {
+        return '<a class="mrow" href="https://mail.google.com/mail/u/' + encodeURIComponent(m.account || 0) + '/#inbox/' + e(x.thread) + '" target="_blank" rel="noopener"><i class="' + (x.unread ? 'un' : '') + '"></i><div><b>' + e(x.name) + '</b><span class="sj">' + e(x.subject) + '</span><span class="sn">' + e(x.snippet) + '</span></div><em>' + e(ago2(x.date)) + '</em></a>';
+      }).join('') + '</div>';
+    }).join('');
+    var clientsList = (HQ.data && HQ.data.clients || []).filter(function (c) { return c.status !== 'internal'; });
+    var isAdmin = me.role === 'admin';
+    var unm = (m.unmatched || []).length ? '<div class="panel"><h3>Who are these?</h3><p class="hint">Senders from your inbox that are not linked to a client yet. Link a company to a client and its email shows up above.</p>' + m.unmatched.map(function (u, i) {
+      return '<div class="urow"><div style="min-width:0"><b>' + e(u.domain) + '</b><div class="em2">' + e(u.count) + ' email' + (u.count > 1 ? 's' : '') + ' · ' + e(u.example) + '</div></div>' + (isAdmin ? '<select id="um' + i + '"><option value="">Choose client</option>' + clientsList.map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('') + '</select><button class="btn2 line mini" onclick="hqLinkDomain(' + i + ',\'' + e(u.domain) + '\')">Link</button>' : '') + '</div>';
+    }).join('') + '</div>' : '';
+    return head + '<div class="mhead"><span>Connected as <b>' + e(m.account || me.email) + '</b> · ' + (m.unread || 0) + ' unread from clients</span><span><a class="lnk" onclick="hqMailRefresh()">Refresh</a> · <a class="lnk" onclick="hqMailOff()">Disconnect</a></span></div>' +
+      (m.error ? '<div class="banner">' + ico('alert') + '<div>' + e(m.error) + '</div></div>' : '') +
+      (blocks || '<div class="panel"><div class="empty">' + ico('inbox') + 'No client email in the last 14 days' + (isAdmin ? '. Link a sender below, or add email addresses on each client page.' : '.') + '</div></div>') + unm;
+  }
+  window.hqMailRefresh = async function () { HQ.mail = null; show('hq:mail'); };
+  window.hqMailOff = async function () { if (!confirm('Disconnect your Gmail from the CRM?')) return; try { await api('/api/me/gmail/disconnect', 'POST', {}); HQ.mail = null; HQ.cal = null; show('hq:mail'); } catch (er) { toast(er.message); } };
+  window.hqLinkDomain = async function (i, domain) {
+    var slug = (document.getElementById('um' + i) || {}).value; if (!slug) { toast('Choose a client first'); return; }
+    var c = HQ.data.clients.filter(function (x) { return x.slug === slug; })[0] || {};
+    try { await api('/api/hq/client/' + slug, 'PUT', { domains: (c.domains || []).concat([domain]) }); toast('Linked'); HQ.data = null; HQ.mail = null; await fetchHq(false); show('hq:mail'); } catch (er) { toast(er.message); }
+  };
+
+
+  // ---- client page tabs: Overview, Content, Brain, Guidelines ----
+  var DRIVE_ROOT = 'https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK';
+  function tabsBar(c) {
+    var t = function (k, l) { return '<button class="tb ' + ((HQ.ctab || 'overview') === k ? 'on' : '') + '" onclick="hqCTab(\'' + k + '\')">' + l + '</button>'; };
+    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('copy', 'Copy') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
+  }
+  window.hqCTab = function (k) { HQ.ctab = k; show(navKey); };
+  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
+  function linksPanel(c) {
+    var rows = [];
+    if (c.drive) rows.push(['Drive: ' + c.name, 'https://drive.google.com/drive/folders/' + c.drive]);
+    rows.push(['Drive: all clients', DRIVE_ROOT]);
+    if (c.work && c.work.linked) rows.push(['Basecamp project', c.work.project.url]);
+    if (c.website) rows.push(['Website', c.website]);
+    return '<div class="panel"><h3>Folders and links</h3>' + rows.map(function (r) { return '<div class="kv"><span>' + e(r[0]) + '</span><a class="lnk" href="' + e(r[1]) + '" target="_blank" rel="noopener">Open</a></div>'; }).join('') + '</div>';
+  }
+  function clientEvents(c) {
+    var ev = (HQ.cal && HQ.cal.events) || [], keys = (c.match || []).concat([(c.name || '').toLowerCase()]).filter(Boolean).map(function (k) { return k.toLowerCase(); });
+    return ev.filter(function (x) { var t = (x.title + ' ' + (x.project || '')).toLowerCase(); return keys.some(function (k) { return t.indexOf(k) > -1; }); });
+  }
+  function contentTab(c) {
+    var d = HQ.content[c.slug], me = HQ.me, cal = HQ.cal;
+    var evs = clientEvents(c), calHtml;
+    if (!me || me.legacy) calHtml = '<div class="empty">Sign in with your own login to see the calendar.</div>';
+    else if (!cal || !cal.connected) calHtml = '<div class="empty">' + ico('clock') + 'Connect Google on the Mail page to see filming dates.</div>';
+    else if (!evs.length) calHtml = '<div class="empty">' + ico('check') + 'Nothing on the calendar for ' + e(c.name) + ' in the next two weeks.</div>';
+    else calHtml = evs.slice(0, 8).map(function (x) { var dt = evDate(x); return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + e(x.color || '#13233f') + '"><span class="tm">' + e(dayLabel(dt) + (x.allDay ? '' : ', ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.project || x.cal) + '</em></a>'; }).join('');
+    var body;
+    if (!d) body = '<div class="sk" style="height:160px"></div>';
+    else if (d.legacy || d.connected === false) body = '<div class="empty">' + ico('mail') + 'Connect your Google account on the Mail page to see uploads.</div>';
+    else if (d.noFolder) body = '<div class="empty">' + ico('inbox') + 'No Drive folder is linked to this client yet.</div>';
+    else if (d.needsDrive) body = '<div class="empty">' + ico('alert') + (d.apiOff ? 'Google Drive is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Drive API and click Enable.' : 'Drive access was not granted. On the Mail page click Disconnect, then connect Google again and allow Drive.') + '</div>';
+    else if (d.error) body = '<div class="empty">' + ico('alert') + e(d.error) + '</div>';
+    else if (!d.weeks.length && !(d.unnamed || []).length) body = '<div class="empty">' + ico('check') + 'No files in the Reels, Drone or Photos folders.</div>';
+    else body = d.weeks.map(function (w) {
+      return '<div style="margin-bottom:20px"><div class="list-h"><b>Week of ' + e(dshort(w.week)) + '</b><span>' + w.items.length + ' piece' + (w.items.length > 1 ? 's' : '') + '</span></div>' + w.items.map(function (x) {
+        return '<div class="td"><span class="pn">' + x.n + '</span><div style="min-width:0"><a href="' + e(x.url) + '" target="_blank" rel="noopener">' + e(x.subject) + ' · ' + e(x.label) + '</a><div class="who"><span class="chip">' + e(x.type) + '</span> uploaded ' + e(dshort(x.uploaded)) + '</div></div><span class="due">Due ' + e(dshort(x.due)) + '</span></div>';
+      }).join('') + '</div>';
+    }).join('') + ((d.unnamed || []).length ? '<div class="note2" style="margin-top:6px"><b>' + d.unnamed.length + ' file' + (d.unnamed.length > 1 ? 's' : '') + ' need renaming</b> to the standard (CLIENT_TYPE_DATE_Subject_LABEL_001) before they can be filed: ' + d.unnamed.slice(0, 5).map(function (u) { return '<a class="lnk" href="' + e(u.url) + '" target="_blank" rel="noopener">' + e(u.name) + '</a>'; }).join(', ') + '</div>' : '');
+    var folders = (d && d.folders && d.folders.length ? d.folders.map(function (f) { return '<a class="chip" style="text-decoration:none" href="' + e(f.url) + '" target="_blank" rel="noopener">' + e(f.name) + '</a>'; }).join(' ') : '');
+    return '<div class="two"><div class="panel"><h3>Content by week</h3><p class="hint">Uploaded footage, numbered by the week it landed. Due is 10 business days after upload.</p>' + body + '</div><div style="display:grid;gap:16px">' +
+      '<div class="panel"><h3>Next on the calendar</h3>' + calHtml + '</div>' + linksPanel(c) + (folders ? '<div class="panel"><h3>Drive folders</h3><div class="chips" style="margin-top:6px">' + folders + '</div></div>' : '') + '</div></div>';
+  }
+  function nextShootDate(c) {
+    var evs = clientEvents(c).filter(function (x) { return /shoot|film/i.test(x.title + ' ' + x.cal); });
+    if (!evs.length) return ''; var d = evDate(evs[0]); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function shotText(l) {
+    var n = function (a, f) { return a.map(function (x, i) { return (i + 1) + '. ' + f(x); }).join('\n'); };
+    return l.name + '\n\nHOOKS TO FILM\n' + n(l.hooks, function (h) { return h.hook; }) + '\n\nB-ROLL TO GET\n' + n(l.broll, function (b) { return b.shot; }) + '\n\nPHOTOS TO GET\n' + n(l.photos, function (p) { return p.shot + (p.label ? ' (' + p.label + ')' : ''); }) + '\n\nMUST-GETS\n' + n(l.mustgets, function (m) { return m.shot + (m.for ? ' (for ' + m.for + ')' : ''); }) + (l.notes ? '\n\nNOTES\n' + l.notes : '');
+  }
+  function shotPanel(c) {
+    var lists = HQ.shots[c.slug], me = HQ.me, real = me && !me.legacy;
+    var sel = HQ.shotSel[c.slug], l = lists && lists.length ? (lists.filter(function (x) { return x.id === sel; })[0] || lists[0]) : null;
+    var def = nextShootDate(c);
+    var bar = real ? '<div class="shbar"><div><label for="sh_d">Shoot date</label><input id="sh_d" type="date" value="' + e(def || (l ? l.date : '')) + '"></div><button class="btn2 red" id="sh_b" onclick="hqGenShot(\'' + e(c.slug) + '\')">' + ico('refresh') + (l ? 'Rewrite from what is working' : 'Write the shot list') + '</button>' + (def ? '<span class="hint" style="margin:0">Next shoot on the calendar: ' + e(dshort(def)) + '</span>' : '') + '</div>' : '<div class="empty" style="padding:8px 0">Sign in with your own login to write shot lists.</div>';
+    var body = '';
+    if (l) {
+      var sec = function (title, items) { return '<div class="shsec"><h4>' + title + '</h4>' + items + '</div>'; };
+      body = '<div class="shhead"><span class="chip st-internal">' + e(l.name) + '</span>' + lists.map(function (x) { return '<a class="chip' + (x.id === l.id ? ' st-active' : '') + '" style="cursor:pointer;text-decoration:none" onclick="hqShotSel(\'' + e(c.slug) + '\',\'' + e(x.id) + '\')">' + e(dshort(x.date)) + '</a>'; }).join('') + '<span class="hint" style="margin:0 0 0 auto">Written ' + e(new Date(l.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) + ' · ' + (l.basis && l.basis.working ? 'from top posts' : 'no top-post data') + (l.basis && l.basis.archive ? ' + archive gaps' : '') + '</span></div>' +
+        sec('Hooks to film', l.hooks.map(function (x, i) { return '<div class="shi cpy" title="Click to copy" data-copy="' + e(x.hook) + '"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.hook) + '</b><div class="who">' + (x.level ? '<span class="chip">Level ' + x.level + '</span> ' : '') + (x.mimic ? 'Copies: ' + e(x.mimic) : '') + (x.why ? ' · ' + e(x.why) : '') + '</div>' + (x.verify && x.verify.length ? '<div class="vf">VERIFY: ' + e(x.verify.join('; ')) + '</div>' : '') + '</div></div>'; }).join('')) +
+        sec('B-roll to get', l.broll.map(function (x, i) { return '<div class="shi"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.shot) + '</b>' + (x.why ? '<div class="who">' + e(x.why) + '</div>' : '') + '</div></div>'; }).join('')) +
+        sec('Photos to get', l.photos.map(function (x, i) { return '<div class="shi"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.shot) + '</b>' + (x.label ? '<div class="who"><span class="chip">' + e(x.label) + '</span></div>' : '') + '</div></div>'; }).join('')) +
+        sec('Must-gets', l.mustgets.map(function (x, i) { return '<div class="shi"><span class="pn">' + (i + 1) + '</span><div><b>' + e(x.shot) + '</b>' + (x.for ? '<div class="who">For: ' + e(x.for) + '</div>' : '') + '</div></div>'; }).join('')) +
+        (l.notes ? '<p class="hint">' + e(l.notes) + '</p>' : '') +
+        '<div class="shfoot"><button class="btn2 line" data-copy="' + e(shotText(l)) + '" onclick="navigator.clipboard.writeText(this.getAttribute(\'data-copy\'));toast(\'Shot list copied\')">Copy the shot list</button>' + (real ? '<button class="btn2 line" onclick="hqShotTask(\'' + e(c.slug) + '\',\'' + e(l.id) + '\')">' + ico('task') + 'Send to the field team</button>' : '') + '</div>';
+    } else body = '<div class="empty" style="padding:14px 0">' + ico('clipboard') + 'No shot list yet. Pick the shoot date and write one. It uses this client\'s top posts, what is working in their industry and what is missing from the archive.</div>';
+    return '<div class="panel" style="margin-bottom:16px"><h3>Shot list</h3><p class="hint" style="margin-top:0">Named CLIENT_SHOTLIST_DATE, with the same date as the shoot and the footage. Click a hook to copy it.</p>' + bar + body + '</div>';
+  }
+  function workingPanel(c) {
+    var md = HQ.working[c.slug], admin = HQ.me && HQ.me.role === 'admin';
+    var head = '<div class="ph"><h3>What is working now</h3>' + (admin ? '<a class="lnk" onclick="hqWorkEdit(\'' + e(c.slug) + '\')">Update</a>' : '') + '</div>';
+    if (HQ.workEdit === c.slug) return '<div class="panel" style="margin-bottom:16px">' + head + '<p class="hint">Paste the latest top posts or results. The next shot list will use this.</p><textarea id="wk_t" rows="10" style="width:100%;padding:12px;border:1px solid var(--hair2);border-radius:10px;font:13px/1.5 ui-monospace,Menlo,monospace">' + e(md || '') + '</textarea><div style="margin-top:10px;display:flex;gap:8px"><button class="btn2 red" onclick="hqWorkSave(\'' + e(c.slug) + '\')">Save</button><button class="btn2 line" onclick="hqWorkEdit(\'\')">Cancel</button></div></div>';
+    return '<div class="panel md" style="margin-bottom:16px">' + head + (md ? mdHtml(md) : '<div class="empty" style="padding:10px 0">Nothing pulled yet. Paste this client\'s top posts and the shot list will build on them.</div>') + '</div>';
+  }
+  window.hqShotSel = function (slug, id) { HQ.shotSel[slug] = id; show(navKey); };
+  window.hqWorkEdit = function (slug) { HQ.workEdit = slug; show(navKey); };
+  window.hqWorkSave = async function (slug) { var v = (document.getElementById('wk_t') || {}).value || ''; try { await api('/api/hq/working/' + slug, 'PUT', { md: v }); HQ.working[slug] = v; HQ.workEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
+  window.hqGenShot = async function (slug) {
+    var d = (document.getElementById('sh_d') || {}).value || ''; var b = document.getElementById('sh_b');
+    if (!d) { toast('Pick the shoot date first'); return; }
+    if (b) { b.disabled = true; b.textContent = 'Writing... about 30 seconds'; }
+    try { var r = await api('/api/hq/shotlists/' + slug, 'POST', { date: d }); HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; HQ.shotSel[slug] = r.list.id; toast('Shot list ready'); } catch (er) { toast(er.message); }
+    show(navKey);
+  };
+  window.hqShotTask = async function (slug, id) { try { var r = await api('/api/hq/shotlists/' + slug + '/' + id + '/task', 'POST', {}); await refreshTasks(); toast('Sent to ' + r.owner); } catch (er) { toast(er.message); } };
+  function copyTab(c) {
+    var md = HQ.copy[c.slug];
+    var ideas = factsPanel(c) + shotPanel(c) + workingPanel(c);
+    if (md == null) return ideas + '<div class="sk" style="height:200px"></div>';
+    if (!md) return ideas + '<div class="panel"><div class="empty">' + ico('inbox') + 'No copy research for ' + e(c.name) + ' yet.</div></div>';
+    return ideas + '<div class="panel md"><p class="hint" style="margin-top:0">Click any headline idea to copy it. Anything marked VERIFY needs the client to confirm before it runs.</p>' + mdHtml(md) + '</div>';
+  }
+  function brainTab(c) {
+    var md = HQ.brain[c.slug];
+    if (md == null) return '<div class="sk" style="height:200px"></div>';
+    if (!md) return '<div class="panel"><div class="empty">' + ico('inbox') + 'No brain file for ' + e(c.name) + ' yet.</div></div>';
+    return factsPanel(c) + '<div class="panel md">' + mdHtml(md) + '</div>';
+  }
+  function factsPanel(c) {
+    var f = HQ.facts[c.slug], admin = HQ.me && HQ.me.role === 'admin';
+    var head = '<div class="ph"><h3>' + ico('check') + ' Confirmed facts</h3>' + (admin ? '<a class="lnk" onclick="hqFactsEdit(\'' + e(c.slug) + '\')">Edit</a>' : '') + '</div><p class="hint" style="margin-top:0">What the team has verified about ' + e(c.name) + '. These override everything in the brain below and drive the shot lists.</p>';
+    if (HQ.factsEdit === c.slug) return '<div class="panel" style="margin-bottom:16px;border-left:4px solid var(--ok)">' + head + '<textarea id="fx_t" rows="8" style="width:100%;padding:12px;border:1px solid var(--hair2);border-radius:10px;font:14px/1.5 Inter,sans-serif" placeholder="One fact per line, for example: We do wall graphics, storefronts and wraps.">' + e(f || '') + '</textarea><div style="margin-top:10px;display:flex;gap:8px"><button class="btn2 red" onclick="hqFactsSave(\'' + e(c.slug) + '\')">Save</button><button class="btn2 line" onclick="hqFactsEdit(\'\')">Cancel</button></div></div>';
+    return '<div class="panel md" style="margin-bottom:16px;border-left:4px solid ' + (f ? 'var(--ok)' : 'var(--warn)') + '">' + head + (f ? mdHtml(f) : '<div class="empty" style="padding:6px 0;text-align:left">Not confirmed yet. Add what ' + e(c.name) + ' really does, and the shot lists will follow it.</div>') + '</div>';
+  }
+  window.hqFactsEdit = function (slug) { HQ.factsEdit = slug; show(navKey); };
+  window.hqFactsSave = async function (slug) { var v = (document.getElementById('fx_t') || {}).value || ''; try { await api('/api/hq/facts/' + slug, 'PUT', { md: v }); HQ.facts[slug] = v; HQ.factsEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
+  function guidesTab(c) {
+    var g = HQ.guides; if (!g) return '<div class="sk" style="height:200px"></div>';
+    var cur = HQ.guideKey || (g[0] && g[0].key), doc = HQ.guideDoc[cur];
+    return '<div class="two" style="grid-template-columns:260px 1fr"><div class="panel"><h3>Guidelines</h3><p class="hint">One system for every client.</p>' + g.map(function (x) { return '<a class="gl ' + (x.key === cur ? 'on' : '') + '" onclick="hqGuide(\'' + e(x.key) + '\')">' + e(x.title) + '</a>'; }).join('') + '</div><div class="panel md">' + (doc == null ? '<div class="sk" style="height:200px"></div>' : mdHtml(doc)) + '</div></div>';
+  }
+  window.hqGuide = async function (k) { HQ.guideKey = k; if (HQ.guideDoc[k] == null) { try { HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guideDoc[k] = ''; } } show(navKey); };
+  // Small markdown renderer: headings, lists, bold, code, links, tables, rules.
+  function mdInline(t) {
+    t = e(t);
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])_([^_]+)_(?=[\s).,]|$)/g, '$1<i>$2</i>');
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a class="lnk" href="$2" target="_blank" rel="noopener">$1</a>').replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a class="lnk" href="$2" target="_blank" rel="noopener">$2</a>');
+    return t;
+  }
+  function mdHtml(src) {
+    var lines = String(src).replace(/\r/g, '').split('\n'), out = [], i = 0, list = null, para = [];
+    function flushP() { if (para.length) { out.push('<p>' + mdInline(para.join(' ')) + '</p>'); para = []; } }
+    function closeList() { if (list) { out.push('</' + list + '>'); list = null; } }
+    while (i < lines.length) {
+      var ln = lines[i], m;
+      if (/^\s*$/.test(ln)) { flushP(); closeList(); i++; continue; }
+      if ((m = /^(#{1,4})\s+(.*)$/.exec(ln))) { flushP(); closeList(); var lv = Math.min(m[1].length + 1, 5); out.push('<h' + lv + '>' + mdInline(m[2]) + '</h' + lv + '>'); i++; continue; }
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(ln)) { flushP(); closeList(); out.push('<hr>'); i++; continue; }
+      if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1])) {
+        flushP(); closeList(); var cells = function (r) { return r.trim().replace(/^\||\|$/g, '').split('|').map(function (x) { return x.trim(); }); };
+        var hd = cells(ln); i += 2; var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+        var hcol = hd.map(function (x) { return /headline/i.test(x); });
+        out.push('<div class="mdt"><table><thead><tr>' + hd.map(function (x) { return '<th>' + mdInline(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.map(function (r) { return '<tr>' + r.map(function (x, ci) { return hcol[ci] ? '<td class="cpy" title="Click to copy" data-copy="' + e(x.replace(/^"|"$/g, '')) + '">' + mdInline(x) + '</td>' : '<td>' + mdInline(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>'); continue;
+      }
+      if ((m = /^\s*[-*]\s+(.*)$/.exec(ln))) { flushP(); if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; } out.push('<li>' + mdInline(m[1]) + '</li>'); i++; continue; }
+      if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(ln))) { flushP(); if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; } out.push('<li>' + mdInline(m[1]) + '</li>'); i++; continue; }
+      closeList(); para.push(ln.trim()); i++;
+    }
+    flushP(); closeList(); return out.join('');
+  }
+  async function loadClientData(slug) {
+    var tab = HQ.ctab;
+    if (HQ.ctabSlug !== slug) { HQ.ctabSlug = slug; }
+    if (tab === 'copy') {
+      if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
+      if (HQ.shots[slug] == null) { try { HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; } catch (x) { HQ.shots[slug] = []; } }
+      if (HQ.working[slug] == null) { try { HQ.working[slug] = (await api('/api/hq/working/' + slug)).md; } catch (x) { HQ.working[slug] = ''; } }
+    }
+    if (tab === 'copy' && HQ.copy[slug] == null) { try { HQ.copy[slug] = (await api('/api/hq/copy/' + slug)).md; } catch (x) { HQ.copy[slug] = ''; } }
+    if ((tab === 'brain' || tab === 'copy') && HQ.facts[slug] == null) { try { HQ.facts[slug] = (await api('/api/hq/facts/' + slug)).md; } catch (x) { HQ.facts[slug] = ''; } }
+    if (tab === 'brain' && HQ.brain[slug] == null) { try { HQ.brain[slug] = (await api('/api/hq/brain/' + slug)).md; } catch (x) { HQ.brain[slug] = ''; } }
+    if (tab === 'guides' && !HQ.guides) { try { HQ.guides = (await api('/api/hq/guidelines')).docs; var k = HQ.guideKey || (HQ.guides[0] && HQ.guides[0].key); if (k && HQ.guideDoc[k] == null) HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guides = []; } }
+    if (tab === 'content') {
+      if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
+      if (HQ.content[slug] == null) { try { HQ.content[slug] = await api('/api/hq/content/' + slug); } catch (x) { HQ.content[slug] = { error: x.message }; } }
+    }
+  }
+
+
+  function contentWeek() {
+    var d = HQ.cw, head = '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Content</h3><p>What was uploaded each week, what is due, and what is on the film calendar. Every file must be named CLIENT_TYPE_DATE_Subject_LABEL_001.</p></div></div>';
+    var shoots = ((HQ.cal && HQ.cal.events) || []).filter(function (x) { return /shoot|film/i.test(x.title + ' ' + x.cal); }).slice(0, 6);
+    var sh = '<div class="panel" style="margin-bottom:16px"><h3>' + ico('film') + ' Next on the film calendar</h3>' + (shoots.length ? shoots.map(function (x) { var dt = evDate(x); return '<a class="ag" href="' + e(x.link) + '" target="_blank" rel="noopener" style="grid-template-columns:200px 8px minmax(0,1fr)"><span class="at">' + e(dayLabel(dt)) + (x.allDay ? '' : ', ' + e(dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))) + '</span><i style="background:' + e(x.color || '#e22a24') + '"></i><span class="an">' + e(x.title) + '</span></a>'; }).join('') : '<div class="empty" style="padding:10px 0">' + (HQ.cal && HQ.cal.connected ? 'No shoots on the calendar in the next two weeks.' : 'Connect Google on the Mail page to see filming dates.') + '</div>') + '</div>';
+    if (!d) return head + sh + '<div class="sk" style="height:180px"></div>';
+    if (d.legacy || d.connected === false) return head + sh + '<div class="panel"><div class="empty">' + ico('mail') + 'Connect your Google account on the Mail page to see uploads.</div></div>';
+    var st = d.state; if (st && (st.needsDrive || st.error) && !d.rows.length) return head + sh + '<div class="panel"><div class="empty">' + ico('alert') + (st.needsDrive ? (st.apiOff ? 'Google Drive is not turned on for this project yet. In Google Cloud, open APIs & Services, then Library, search Google Drive API and click Enable.' : 'Drive access was not granted. On the Mail page click Disconnect, then connect Google again and allow Drive.') : e(st.error)) + '</div></div>';
+    var tot = d.rows.reduce(function (a, r) { return a + r.thisWeek; }, 0), ren = d.rows.reduce(function (a, r) { return a + r.unnamed; }, 0);
+    return head + sh + '<div class="panel"><h3>Uploads by client</h3><p class="hint">Week of ' + e(dshort(d.thisWk)) + ': <b>' + tot + '</b> piece' + (tot === 1 ? '' : 's') + ' uploaded' + (ren ? ' · <b style="color:var(--bad)">' + ren + ' file' + (ren > 1 ? 's' : '') + ' need renaming</b>' : '') + '</p>' +
+      '<table class="ttab"><thead><tr><th>Client</th><th>This week</th><th>Last week</th><th>Next due</th><th>Needs rename</th></tr></thead><tbody>' + d.rows.map(function (r) {
+        var c = HQ.data.clients.filter(function (x) { return x.slug === r.slug; })[0] || { name: r.name };
+        return '<tr class="clk" onclick="hqOpenContent(\'' + e(r.slug) + '\')"><td><div class="nm" style="display:flex;align-items:center;gap:10px">' + (c.logo ? '<span class="mini-av" style="background-image:url(' + e(c.logo) + ')"></span>' : '') + e(r.name) + '</div></td><td><b>' + r.thisWeek + '</b></td><td>' + r.lastWeek + '</td><td>' + (r.nextDue ? e(dshort(r.nextDue)) : '<span class="em">None</span>') + '</td><td>' + (r.unnamed ? '<span class="chip st-ending">' + r.unnamed + '</span>' : '<span class="em">0</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  window.hqOpenContent = function (slug) { HQ.ctab = 'content'; navKey = 'hq:client:' + slug; if (typeof renderNav === 'function') renderNav(); show(navKey); };
+
+  // Phone bottom bar
+  function mnav() {
+    var el = document.getElementById('mnav'); if (!el) { el = document.createElement('nav'); el.id = 'mnav'; el.setAttribute('aria-label', 'Main'); document.body.appendChild(el); }
+    var items = [['hq:home', 'home', 'Home'], ['hq:work', 'check', 'Work'], ['hq:mail', 'mail', 'Mail'], ['hq:clients', 'users', 'Clients'], ['hq:outreach', 'kanban', 'Outreach']];
+    el.innerHTML = items.map(function (it) { return '<button class="' + ((navKey === it[0] || (it[0] === 'hq:outreach' && String(navKey).indexOf('hq:') !== 0)) ? 'on' : '') + '" onclick="navTo(\'' + it[0] + '\')">' + ico(it[1]) + '<span>' + it[2] + '</span></button>'; }).join('');
+  }
+
+  async function show(key) {
+    document.body.classList.add('hqmode');
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work' };
+    document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
+    document.getElementById('viewTitle').textContent = titles[key] || 'Client';
+    var el = root();
+    if (!HQ.data) { el.innerHTML = skeleton(); await fetchHq(false); }
+    if (!HQ.data) { el.innerHTML = '<div class="empty">Could not load: ' + e(HQ.err || 'error') + '</div>'; return; }
+    if (key === 'hq:home') { el.innerHTML = home(); if (HQ.me && !HQ.me.legacy) { if (!HQ.mail && !HQ.mailLoading) loadMail().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); if (!HQ.cal && !HQ.calLoading) loadCal().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); } }
+    else if (key === 'hq:clients') el.innerHTML = clients();
+    else if (key === 'hq:onboarding') el.innerHTML = onboarding();
+    else if (key === 'hq:mail') { el.innerHTML = mail(); if (!HQ.mail) { await loadMail(); if (navKey === 'hq:mail') el.innerHTML = mail(); } }
+    else if (key === 'hq:how') { if (!HQ.how) { try { HQ.how = await (await fetch('/how.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.how = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.how + '</div>'; }
+    else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
+    else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
+    else if (key === 'hq:outreach') el.innerHTML = outreach();
+    else if (key === 'hq:team') el.innerHTML = await team();
+    else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } await loadClientData(key.slice(10)); el.innerHTML = clientPage(key.slice(10)); }
+    window.scrollTo(0, 0); mnav();
+  }
+  window.hqNav = function (key) {
+    if (String(key).indexOf('hq:') !== 0) { document.body.classList.remove('hqmode', 'hqout'); document.body.classList.add('outdetail'); navKey = key; mnav(); if (typeof renderNav === 'function') renderNav(); return false; }
+    if (String(key).indexOf('hq:client:') === 0 && navKey !== key) HQ.ctab = 'overview';
+    navKey = key; if (typeof renderNav === 'function') renderNav(); show(key); return true;
+  };
+  window.hqRefresh = async function () { HQ.data = null; root().innerHTML = skeleton(); await fetchHq(true); show(navKey); };
+  window.hqLink = async function (slug) {
+    var v = (document.getElementById('bcl') || {}).value || '';
+    try { await api('/api/hq/client/' + slug + '/link', 'POST', { project: v }); toast('Linked'); window.hqRefresh(); } catch (er) { toast(er.message); }
+  };
+  window.hqRerender = function () { if (HQ.data && document.body.classList.contains('hqmode')) show(navKey); };
+  document.addEventListener('click', function (ev) { var t = ev.target.closest && ev.target.closest('.cpy'); if (t && navigator.clipboard) { navigator.clipboard.writeText(t.getAttribute('data-copy') || t.textContent).then(function () { toast('Copied'); }); } });
+  mnav();
+})();

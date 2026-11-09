@@ -4084,6 +4084,138 @@ async function autoShotlists() {
 }
 setTimeout(autoShotlists, 90e3); setInterval(autoShotlists, 60 * 60e3);
 
+
+// ---------- Weekly content pack: the brain fills each client's content calendar, one week at a time ----------
+const PACKS_FILE = path.join(DATA_DIR, 'packs.json');
+function loadPacks() { return readJson(PACKS_FILE, {}); }
+const DESIGNS = ['editorial', 'color_poster', 'notes_app', 'reminders_app', 'imessage', 'annotated', 'polaroid_wall', 'grid_card', 'big_number', 'review_card', 'ticket_offer'];
+const DAY_IDX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function loadPlans() {
+  const dir = path.join(__dirname, 'data', 'plan'), out = { clients: {}, keydates: [], guardrails: {} };
+  try { for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.json')).sort()) { const p = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    for (const [k, v] of Object.entries(p.clients || {})) out.clients[k] = (out.clients[k] || []).concat(v); out.keydates.push(...(p.keydates || [])); Object.assign(out.guardrails, p.guardrails || {}); } } catch {}
+  return out;
+}
+function weekDates(monday, days) { const m = new Date(monday + 'T12:00:00'); return days.map(d => { const x = new Date(m); x.setDate(m.getDate() + ((DAY_IDX[d] + 6) % 7)); return x.toISOString().slice(0, 10); }).sort(); }
+function bizBefore(dateStr, n) { const d = new Date(dateStr + 'T12:00:00'); let c = 0; while (c < n) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) c++; } return d.toISOString().slice(0, 10); }
+function clientContext(slug, c) {
+  let brain = ''; try { brain = fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8'); } catch {}
+  if (!brain) throw new Error('This client has no brain file yet.');
+  const sec = (re) => { const m = new RegExp('^## ' + re + '[^\\n]*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))', 'mi').exec(brain); return m ? m[0].slice(0, 9000) : ''; };
+  let fw = '', voc = ''; try { fw = fs.readFileSync(path.join(GUIDE_DIR, 'content-frameworks.md'), 'utf8').slice(0, 4200); } catch {} try { voc = fs.readFileSync(path.join(GUIDE_DIR, 'voice-of-customer.md'), 'utf8').slice(0, 2400); } catch {}
+  return { brain: [sec('1\\.'), sec('2\\.'), sec('3\\.'), sec('4\\.'), sec('5\\.'), brainCopy(brain).slice(0, 15000), sec('8\\.|9\\.|10\\.'), sec('12\\.')].filter(Boolean).join('\n\n'), frameworks: fw + '\n\n' + voc };
+}
+
+// National holidays only (US-wide). Computed by rule so every year is covered.
+function nthDow(y, m, dow, n) { const d = new Date(Date.UTC(y, m, 1)); let c = 0; while (true) { if (d.getUTCDay() === dow && ++c === n) return d; d.setUTCDate(d.getUTCDate() + 1); } }
+function lastDow(y, m, dow) { const d = new Date(Date.UTC(y, m + 1, 0)); while (d.getUTCDay() !== dow) d.setUTCDate(d.getUTCDate() - 1); return d; }
+function easter(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1; return new Date(Date.UTC(y, mo - 1, da)); }
+function nationalHolidays(y) {
+  const iso = d => d.toISOString().slice(0, 10), fix = (m, d) => new Date(Date.UTC(y, m, d)), thanks = nthDow(y, 10, 4, 4), bf = new Date(thanks); bf.setUTCDate(bf.getUTCDate() + 1);
+  return [[fix(0, 1), "New Year's Day"], [nthDow(y, 0, 1, 3), 'Martin Luther King Jr. Day'], [fix(1, 14), "Valentine's Day"], [nthDow(y, 1, 1, 3), "Presidents' Day"], [easter(y), 'Easter'], [nthDow(y, 4, 0, 2), "Mother's Day"],
+    [lastDow(y, 4, 1), 'Memorial Day'], [nthDow(y, 5, 0, 3), "Father's Day"], [fix(5, 19), 'Juneteenth'], [fix(6, 4), 'Independence Day'], [nthDow(y, 8, 1, 1), 'Labor Day'], [fix(9, 31), 'Halloween'],
+    [fix(10, 11), 'Veterans Day'], [thanks, 'Thanksgiving'], [bf, 'Black Friday'], [fix(11, 24), 'Christmas Eve'], [fix(11, 25), 'Christmas Day'], [fix(11, 31), "New Year's Eve"]].map(([d, n]) => ({ date: iso(d), name: n }));
+}
+function holidaysBetween(a, b) { const y1 = +a.slice(0, 4), y2 = +b.slice(0, 4), out = []; for (let y = y1; y <= y2; y++) out.push(...nationalHolidays(y)); return out.filter(h => h.date >= a && h.date <= b).sort((x, y) => (x.date < y.date ? -1 : 1)); }
+function addDaysStr(d, n) { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); }
+function promosFor(c, a, b) { return (c.promos || []).filter(p => p.start <= b && (p.end || p.start) >= a); }
+app.get('/api/hq/holidays', (req, res) => { const a = String(req.query.from || ''), b = String(req.query.to || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return res.json({ holidays: [] }); res.json({ holidays: holidaysBetween(a, b) }); });
+app.put('/api/hq/client/:slug/promos', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const all = loadClients(), c = all.find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  const ok = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || '');
+  c.promos = (Array.isArray(req.body && req.body.promos) ? req.body.promos : []).filter(p => p && p.name && ok(p.start)).slice(0, 20).map(p => ({ id: String(p.id || 'p_' + crypto.randomBytes(3).toString('hex')).slice(0, 20), name: String(p.name).slice(0, 120), start: p.start, end: ok(p.end) ? p.end : p.start, details: String(p.details || '').slice(0, 600), confirmed: !!p.confirmed }));
+  c.promos_updated = new Date().toISOString(); c.saved = true; saveClients(all); res.json({ ok: true });
+});
+
+const PACK_RULES = `You are the Open Heart Media content planner. You write ONE WEEK of posts for ONE client, filling every slot you are given. The team will edit, design, caption and schedule exactly what you write.
+Rules:
+- CONFIRMED FACTS are verified and override the brain. Follow them first. Never narrow what the client does below what they say.
+- Use only facts in the brain and confirmed facts. Never invent stats, awards, testimonials, prices, specs, names or dates. If something needs the client to confirm, put it in "verify".
+- Obey the client's compliance and claims section. If it forbids something, do not write it. List the gates that apply to each post in "gates".
+- Research-backed: every post uses a customer fear, desire or objection from the brain's customer-language section, a pattern from what is working, or a top post of the client. Say which in "basis" with its evidence label (OBSERVED, PROXY, HYPOTHESIS, TESTED, PROVEN). Nothing is PROVEN unless the brain says so.
+- Vary the angle. Across the week cover different buyer levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and different formats. Organic goes first for levels 1 to 3.
+- If the slots come from the team's plan, they are final: keep each slot's date, type and topic exactly. If a topic says "Chris picks the clip" or "Pull from footage", the client picks existing footage: do not invent a topic. Write a hook frame and a caption with fill-in blanks marked VERIFY, and say what to look for in the archive.
+- Production reality: Reels are edits of footage (archive pull or the shoot) with the hook as on-screen text. Graphics are one designed frame. Carousels are 5 cards or fewer and at most 1 per week unless the client's schedule says otherwise. If the client does not film, every Reel needs an archive pull list and a stills fallback. Use the schedule note below for the client's real mix.
+- Each post has: a one-breath hook (18 words or fewer, one person, one moment, one checkable detail), a shot list or archive pull list, on-screen text, and a caption with a hook, a body and a CTA. The CTA is one clear action.
+- For Graphic and Carousel posts choose a design from this list: ${DESIGNS.join(', ')}. Vary the designs across the week.
+- Platforms: say where it goes (Instagram, Facebook, LinkedIn). Time: use the best slot for that day (Mon 7 to 10 PM, Wed 8 to 9 AM, Thu 9 AM, Fri 6 to 8 AM) and say "schedule at Sprout best time" if the client has its own data.
+- NATIONAL HOLIDAYS (listed in the request) are triggers. A holiday that falls on a slot, or the day after one, takes that slot as a holiday post in the client's own voice. If it falls on a day with no slot, use the closest slot before it. Only the holidays listed; never add local, niche or awareness days. Sensitive clients (health care, nonprofits, schools, veterans) get respectful posts with no sales. On Thanksgiving, Christmas and similar days use no offer and no CTA beyond the client's standard sign-off unless the client says otherwise. If the brain has holiday rules for this client, follow them.
+- PROMOS (listed in the request) are triggers. Post about a promo only if it is marked CLIENT CONFIRMED, using the exact name, dates and terms given, with its real deadline. Start teasing 7 days before it begins. A promo marked NOT CONFIRMED must not be posted: put it in "notes" as waiting on the client. Never invent a discount, price or deadline.
+- Copy rules: no em dashes or en dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer, "it's not just X, it's Y"), numbers beat adjectives, front-load the point, sound unmistakably like this brand.
+Return ONLY JSON in this shape, one row per slot, in date order:
+{"theme":"","rows":[{"date":"YYYY-MM-DD","type":"Reel|Graphic|Carousel|Talking head|Testimonial","platforms":"","time":"","level":1,"idea":"","hook":"","shots":[""],"onscreen":"","design":"","caption":{"hook":"","body":"","cta":""},"basis":"","gates":[""],"verify":[""],"editing":"","trigger":"holiday name or promo name, or empty"}],"notes":""}`;
+async function makePack(slug, monday, who) {
+  const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
+  const cad = c.cadence || {}, PL = loadPlans(), sundayD = addDaysStr(monday, 6);
+  const planRows = (PL.clients[slug] || []).filter(r => r.date >= monday && r.date <= sundayD).sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (!planRows.length && !(cad.days || []).length) throw new Error('Set this client\'s posting days first (Edit details on the Overview tab).');
+  const dates = planRows.length ? planRows.map(r => r.date) : weekDates(monday, cad.days), ctx = clientContext(slug, c);
+  const planBy = new Map(planRows.map(r => [r.date, r])), gr = PL.guardrails[slug];
+  const keyd = PL.keydates.filter(k => k.date && k.date >= monday && k.date <= sundayD).map(k => `${k.date} ${k.name}: ${k.what}`).join('\n');
+  const sunday = addDaysStr(monday, 6), look = addDaysStr(monday, 13), hols = holidaysBetween(monday, look), pr = promosFor(c, monday, look);
+  const hText = hols.length ? hols.map(h => h.date + ' ' + h.name + (h.date <= sunday ? ' (THIS WEEK)' : ' (next week, tease only if it fits)')).join('; ') : 'none';
+  const pText = pr.length ? pr.map(p => `${p.name}: ${p.start} to ${p.end}. ${p.details || ''} [${p.confirmed ? 'CLIENT CONFIRMED' : 'NOT CONFIRMED, do not post'}]`).join('\n') : 'none';
+  const user = `CLIENT: ${c.name} (code ${c.code || ''})\nWEEK STARTING (Monday): ${monday}\nNATIONAL HOLIDAYS: ${hText}\nPROMOS: ${pText}\nSLOTS TO FILL (one post each)${planRows.length ? ' (FIXED BY THE TEAM\'S PLAN: keep each slot\'s date, type and topic and build it out)' : ''}:\n${dates.map(d => { const p = planBy.get(d); return d + ' ' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T12:00:00').getDay()] + (p ? ' | ' + p.type + ' | ' + p.topic + (p.flag ? ' | HOLIDAY, KEY DATE OR PROMO' : '') : ''); }).join('\n')}\nSCHEDULE NOTE FROM THE TEAM: ${cad.note || '(none)'}\nKEY DATES THIS WEEK (team plan):\n${keyd || 'none'}\n${gr ? 'LOOK AND TONE: ' + gr.look + '\nTEAM GUARDRAILS: ' + gr.rules + '\n' : ''}\nCONFIRMED FACTS (override the brain):\n${readFacts(slug).slice(0, 4000) || '(none confirmed yet)'}\n\nWHAT IS WORKING NOW (client's own top posts):\n${readWorking(slug).slice(0, 5000) || '(none provided)'}\n\nFRAMEWORKS TO APPLY:\n${ctx.frameworks}\n\nCLIENT BRAIN (the source of truth):\n${ctx.brain}`;
+  const out = await aiJson(PACK_RULES, user, 8000);
+  const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
+  const strs = (v) => (Array.isArray(v) ? v : []).map(clean).filter(Boolean).slice(0, 10);
+  const byDate = new Map((Array.isArray(out.rows) ? out.rows : []).map(r => [String(r.date || '').slice(0, 10), r]));
+  const rows = dates.map(d => {
+    const r = byDate.get(d) || {}, pr = planBy.get(d); const t = pr ? pr.type : (/carousel/i.test(r.type) ? 'Carousel' : /graphic/i.test(r.type) ? 'Graphic' : 'Reel');
+    return { date: d, type: t, platforms: clean(r.platforms), time: clean(r.time), level: Number(r.level) || 0, idea: clean(r.idea), hook: clean(r.hook), shots: strs(r.shots), onscreen: clean(r.onscreen),
+      design: (t === 'Graphic' || t === 'Carousel') ? clean(r.design) : '', topic: pr ? pr.topic : '', planned: !!pr, caption: { hook: clean(r.caption && r.caption.hook), body: clean(r.caption && r.caption.body), cta: clean(r.caption && r.caption.cta) },
+      basis: clean(r.basis), gates: strs(r.gates), verify: strs(r.verify), editing: clean(r.editing), trigger: clean(r.trigger), missing: !byDate.has(d) };
+  });
+  const pack = { week: monday, at: new Date().toISOString(), by: who || 'auto', theme: clean(out.theme), notes: clean(out.notes), rows, basis: { working: !!readWorking(slug), facts: !!readFacts(slug) }, inputs: { holidays: hols.filter(h => h.date <= sunday).map(h => h.name), promoStamp: c.promos_updated || '' }, released: null };
+  const all = loadPacks(); all[slug] = Object.assign({}, all[slug] || {}); const prev = all[slug][monday]; if (prev && prev.released) pack.released = prev.released; all[slug][monday] = pack;
+  fs.writeFileSync(PACKS_FILE, JSON.stringify(all, null, 2)); return pack;
+}
+app.get('/api/hq/packs/:slug', (req, res) => {
+  const c = loadClients().find(x => x.slug === req.params.slug) || {}, p = loadPacks()[String(req.params.slug)] || {};
+  res.json({ packs: Object.values(p).sort((a, b) => a.week < b.week ? 1 : -1).slice(0, 8).map(k => ({ ...k, stale: !k.released && !!(c.promos_updated && c.promos_updated !== ((k.inputs || {}).promoStamp || '')) && promosFor(c, k.week, addDaysStr(k.week, 13)).length > 0 })), promos: c.promos || [] });
+});
+app.post('/api/hq/packs/:slug', async (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  const w = String((req.body && req.body.week) || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(w) || new Date(w + 'T12:00:00').getDay() !== 1) return res.status(400).json({ error: 'Pick a week that starts on a Monday.' });
+  try { res.json({ pack: await makePack(String(req.params.slug), w, me.name) }); } catch (e) { res.status(500).json({ error: String(e.message).slice(0, 220) }); }
+});
+function releasePack(slug, week, whoName) {
+  const all = loadPacks(), pack = (all[slug] || {})[week]; if (!pack) throw new Error('No pack for that week.'); if (pack.released) throw new Error('This pack was already released.');
+  const c = loadClients().find(x => x.slug === slug), today = new Date().toISOString().slice(0, 10), tasks = loadTasks(), made = [];
+  const clip = (t, n) => String(t || '').slice(0, n);
+  const mk = (lane, title, rows, leadDays) => {
+    if (!rows.length) return; const owner = ownerFor(c, lane); if (!owner) return;
+    const first = rows.map(r => r.date).sort()[0], due0 = bizBefore(first, leadDays), due = due0 < today ? today : due0;
+    const note = rows.map(r => `${r.date} ${r.type}: ${clip(r.hook || r.idea, 110)}`).join('\n').slice(0, 1000);
+    const t = { id: 't_' + crypto.randomBytes(5).toString('hex'), title, client: slug, lane, owner: owner.id, due, status: 'open', created_at: new Date().toISOString(), created_by: 'pack', note, source: { type: 'pack', slug, week } };
+    tasks.push(t); made.push({ title: t.title, owner: owner.name, due });
+  };
+  const wk = week.slice(5).replace('-', '/'), reels = pack.rows.filter(r => r.type === 'Reel'), gfx = pack.rows.filter(r => r.type !== 'Reel');
+  mk('content', `Edit ${reels.length} reel${reels.length > 1 ? 's' : ''}: ${c.name}, week of ${wk}`, reels, 2);
+  mk('graphics', `Design ${gfx.length} post${gfx.length > 1 ? 's' : ''}: ${c.name}, week of ${wk}`, gfx, 2);
+  mk('copy', `Captions and scheduling: ${c.name}, week of ${wk} (${pack.rows.length} posts)`, pack.rows, 1);
+  saveTasks(tasks); pack.released = { at: new Date().toISOString(), by: whoName || 'auto' }; fs.writeFileSync(PACKS_FILE, JSON.stringify(all, null, 2)); return made;
+}
+app.post('/api/hq/packs/:slug/:week/release', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  try { res.json({ ok: true, tasks: releasePack(String(req.params.slug), String(req.params.week), me.name) }); } catch (e) { res.status(400).json({ error: String(e.message) }); }
+});
+// Weekly rhythm (needs AUTO_IDEAS=1): Thursday afternoon the next week's pack is written for every client; Friday morning it is released as tasks.
+function nextMonday() { const d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); return d.toISOString().slice(0, 10); }
+async function autoPacks() {
+  if (process.env.AUTO_IDEAS !== '1') return;
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })), dow = et.getDay(), hr = et.getHours(), wk = nextMonday();
+  for (const c of loadClients().filter(x => ['active', 'seasonal', 'onboarding'].includes(x.status) && (x.cadence || {}).days && x.cadence.days.length)) {
+    try {
+      const have = (loadPacks()[c.slug] || {})[wk];
+      if (dow === 4 && hr >= 15 && !have) { await makePack(c.slug, wk, 'auto'); console.log('[pack] made', c.slug, wk); }
+      else if (dow === 5 && hr >= 8 && have && !have.released) { releasePack(c.slug, wk, 'auto'); console.log('[pack] released', c.slug, wk); }
+    } catch (e) { console.error('[pack] failed', c.slug, e.message); }
+  }
+}
+setInterval(autoPacks, 30 * 60e3);
+
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
   const all = gUsers(); delete all[me.id]; saveGUsers(all); mailCache.delete(me.id); calCache.delete(me.id); res.json({ ok: true });
@@ -4985,17 +5117,17 @@ async function provisionBasecamp(row) {
 // ---------- Open Heart Media CRM: client hub (Home, Clients, Onboarding) ----------
 const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
 const CLIENT_SEED = [
-  { slug: 'sun-and-shield', code: 'SS', drive: '1XMWaL-O8WStjYgOhuzUWnDMiRIu1cGX7', logo: '/logos/sun-and-shield.png', color: '#1f2c78', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
-  { slug: 'matchett-homes', code: 'MTCH', drive: '1QaDvSYRYmwDJyVWme2a104Wz645NJEX1', logo: '/logos/matchett-homes.png', color: '#90b040', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
-  { slug: 'ifab', code: 'IFAB', drive: '1tN7KiLRzkrJTrVfEaWrwzGC0UEt6DR98', logo: '/logos/ifab.png', color: '#921c1f', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
-  { slug: 'vnphc', code: 'VNPHC', drive: '1kmrBVMF-ZETl_-LEUwI0M8X9R7RrOYLh', logo: '/logos/vnphc.png', color: '#bad230', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
-  { slug: 'adnormous', code: 'ADN', drive: '15AaQ-I5nrWGZ_mH3Bw8jtkZ_2sycu3Oa', logo: '/logos/adnormous.png', color: '#a71619', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
-  { slug: 'cisga', code: 'CISGA', drive: '1ktR5iqpuM0fI_rkw0YtqqEFlLdeM9xFr', logo: '/logos/cisga.png', color: '#dc332c', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
-  { slug: 'nitro', code: 'NITRO', drive: '18IEZgfAyWgbtsFGc0A-a82JcTeXNH3V4', logo: '/logos/nitro.png', color: '#6c0f14', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
-  { slug: 'bkvf', code: 'BKVF', drive: '1FTen0mIG36C8DIAYWOSS4cGRScsBKrnm', logo: '/logos/bkvf.png', color: '#1a1a1a', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
-  { slug: 'urc', code: 'URC', drive: '1vTvEJedXaL3P06iL6JODAJbciz9gdYUw', logo: '/logos/urc.png', color: '#1d2749', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
+  { slug: 'sun-and-shield', promos: [{ id: 'p_thanks', name: 'THANKS: $100 off ceramic coating with a tint package', start: '2026-11-09', end: '2026-11-24', details: 'Code THANKS. Approved by Neal. Terms line on every post: valid with a full-vehicle window tint package, one offer per vehicle, cannot be combined, no cash value, mention the code, ends 11:59 PM on the last date. No promo posts on Veterans Day or Thanksgiving.', confirmed: true }, { id: 'p_bf', name: 'BLACK FRIDAY: $150 off PPF or ceramic with tint', start: '2026-11-27', end: '2026-11-30', details: 'Code FRIDAY. Approved by Neal. Same terms line. Black Friday LAST DAY post on Mon 11/30, ends 11:59 PM.', confirmed: true }], cadence: { days: ['Mon','Wed','Fri'], note: 'Bi-weekly Monday shoots with Neal. The 12-video plan is the shoot list. Nothing needs inventing between shoots.' }, code: 'SS', drive: '1XMWaL-O8WStjYgOhuzUWnDMiRIu1cGX7', logo: '/logos/sun-and-shield.png', color: '#1f2c78', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
+  { slug: 'matchett-homes', cadence: { days: [], note: 'SET THE SCHEDULE: not recorded in the brain. Filming is rare; most posts use existing footage.' }, code: 'MTCH', drive: '1QaDvSYRYmwDJyVWme2a104Wz645NJEX1', logo: '/logos/matchett-homes.png', color: '#90b040', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
+  { slug: 'ifab', cadence: { days: ['Mon','Wed','Fri'], note: 'Nothing new is filmed. Reels are archive re-cuts with a stills fallback. November plan: 6 reels, 5 carousels, 2 graphics.' }, code: 'IFAB', drive: '1tN7KiLRzkrJTrVfEaWrwzGC0UEt6DR98', logo: '/logos/ifab.png', color: '#921c1f', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
+  { slug: 'vnphc', cadence: { days: ['Mon','Wed','Fri'], note: 'Filming is rare. Use existing footage and staff or caregiver voices. No client stories.' }, code: 'VNPHC', drive: '1kmrBVMF-ZETl_-LEUwI0M8X9R7RrOYLh', logo: '/logos/vnphc.png', color: '#bad230', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
+  { slug: 'adnormous', cadence: { days: ['Mon','Wed','Thu','Fri'], note: 'Consistent filming: installs and warehouse.' }, code: 'ADN', drive: '15AaQ-I5nrWGZ_mH3Bw8jtkZ_2sycu3Oa', logo: '/logos/adnormous.png', color: '#a71619', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
+  { slug: 'cisga', cadence: { days: ['Mon','Wed','Fri'], note: 'Filming is rare: events and staff only. November plan: 3 reels, 8 carousels, 2 graphics. No student footage.' }, code: 'CISGA', drive: '1ktR5iqpuM0fI_rkw0YtqqEFlLdeM9xFr', logo: '/logos/cisga.png', color: '#dc332c', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
+  { slug: 'nitro', cadence: { days: ['Mon','Wed','Fri'], note: 'Plus one new best-seller product video a week (new footage). Other posts use existing footage and macros.' }, code: 'NITRO', drive: '18IEZgfAyWgbtsFGc0A-a82JcTeXNH3V4', logo: '/logos/nitro.png', color: '#6c0f14', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
+  { slug: 'bkvf', cadence: { days: ['Mon','Wed','Thu','Fri'], note: 'Plus 1 to 2 Baja Gold creatives a week.' }, code: 'BKVF', drive: '1FTen0mIG36C8DIAYWOSS4cGRScsBKrnm', logo: '/logos/bkvf.png', color: '#1a1a1a', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
+  { slug: 'urc', cadence: { days: ['Mon','Wed','Thu','Fri'], note: 'Suggested weekly balance: 1 reel, 2 carousels, 1 graphic, one carousel to LinkedIn. Consistent filming: crew and sales reps.' }, code: 'URC', drive: '1vTvEJedXaL3P06iL6JODAJbciz9gdYUw', logo: '/logos/urc.png', color: '#1d2749', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
   { slug: 'open-heart-media', code: 'OHM', logo: '/logos/open-heart-media.png', color: '#1a2b4c', name: 'Open Heart Media', status: 'internal', services: [], match: ['open heart media'] },
-  { slug: 'abls', code: 'ABLS', logo: '/logos/abls.png', color: '#eab831', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
+  { slug: 'abls', cadence: { days: [], note: 'SET THE SCHEDULE: this client is ads-led. Organic is founder-first and owner-filmed.' }, code: 'ABLS', logo: '/logos/abls.png', color: '#eab831', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
   { slug: 'nabs', logo: '/logos/nabs.png', color: '#8c8f96', name: 'North Atlanta Birth Services', status: 'ending', note: 'Ending Nov 25.', services: [], match: ['nabs', 'north atlanta birth'] },
   { slug: 'sm-crocker', logo: '/logos/sm-crocker.png', color: '#a52c23', name: 'S.M Crocker', status: 'active', kind: 'website', services: [], match: ['crocker'] },
   { slug: 'jl-adams', logo: '/logos/jl-adams.png', color: '#641012', name: 'JL Adams Inc.', status: 'active', kind: 'website', services: [], match: ['jl adams'] },
@@ -5009,7 +5141,7 @@ function loadClients() {
   if (!c) { c = CLIENT_SEED; try { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c, null, 2)); } catch {} }
   // keep match names fresh: add any new names from the built-in list to a saved client
   for (const sd of CLIENT_SEED) { if (!c.find(y => y.slug === sd.slug)) c.push({ ...sd }); }
-  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (sd.logo) { x.logo = sd.logo; x.color = sd.color; } if (sd.code) x.code = sd.code; if (sd.drive) x.drive = sd.drive; if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
+  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (sd.logo) { x.logo = sd.logo; x.color = sd.color; } if (sd.cadence && !(x.cadence && x.cadence.edited)) x.cadence = sd.cadence; if (sd.promos && !x.promos_updated) x.promos = sd.promos; if (sd.code) x.code = sd.code; if (sd.drive) x.drive = sd.drive; if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
   // clients that only exist because they submitted the onboarding form
   const known = new Set(c.map(x => x.slug));
   for (const r of loadOnboarding()) {
@@ -5097,6 +5229,7 @@ app.put('/api/hq/client/:slug', (req, res) => {
   if (Array.isArray(b.services)) c.services = b.services.filter(x => SERV.includes(x));
   for (const k of ['website_owner', 'ads_owner', 'account_owner']) if (typeof b[k] === 'string') c[k] = b[k].slice(0, 80);
   if (typeof b.note === 'string') c.note = b.note.slice(0, 300);
+  if (b.cadence && typeof b.cadence === 'object') c.cadence = { days: (Array.isArray(b.cadence.days) ? b.cadence.days : []).filter(d => ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].includes(d)), note: String(b.cadence.note || '').slice(0, 500), edited: true };
   if (Array.isArray(b.domains)) c.domains = Array.from(new Set(b.domains.map(x => String(x).toLowerCase().trim()).filter(x => /^[a-z0-9.@_+-]{3,80}$/.test(x)))).slice(0, 12);
   c.edited = true; c.saved = true; saveClients(all); workCache.delete(c.slug);
   res.json({ ok: true });

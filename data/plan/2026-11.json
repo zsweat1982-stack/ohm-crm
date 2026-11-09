@@ -1,0 +1,898 @@
+{
+ "month": "2026-11",
+ "source": "OHM November 2026 Content Plan (Nov 3)",
+ "clients": {
+  "sun-and-shield": [
+   {
+    "date": "2026-11-02",
+    "type": "Reel",
+    "topic": "PPF install re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Carousel",
+    "topic": "PPF vs ceramic coating",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Reel",
+    "topic": "Before and after",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Reel",
+    "topic": "THANKS promo starts: $100 off ceramic",
+    "flag": true
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you, no promo",
+    "flag": true
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Graphic",
+    "topic": "THANKS: water bead hero",
+    "flag": true
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Graphic",
+    "topic": "THANKS: tint plus ceramic",
+    "flag": true
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Carousel",
+    "topic": "Tint film types",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Reel",
+    "topic": "THANKS: 6-second cutdown",
+    "flag": true
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Graphic",
+    "topic": "THANKS ends tomorrow",
+    "flag": true
+   },
+   {
+    "date": "2026-11-25",
+    "type": "Reel",
+    "topic": "Black Friday is coming, no price",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Reel",
+    "topic": "BLACK FRIDAY: $150 off, code FRIDAY",
+    "flag": true
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Graphic",
+    "topic": "Black Friday LAST DAY",
+    "flag": true
+   }
+  ],
+  "vnphc": [
+   {
+    "date": "2026-11-02",
+    "type": "Carousel",
+    "topic": "Choosing a care agency",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Reel",
+    "topic": "Caregiver moment",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Carousel",
+    "topic": "Who pays for home care",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Reel",
+    "topic": "Wisdom of Elders, ep 1",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you",
+    "flag": true
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Carousel",
+    "topic": "World Kindness Day",
+    "flag": true
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "Caregiver burnout",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "Wisdom of Elders, ep 2",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Carousel",
+    "topic": "Respite care explained",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Carousel",
+    "topic": "Holiday visit checklist",
+    "flag": true
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Reel",
+    "topic": "Wisdom of Elders, ep 3",
+    "flag": false
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Reel",
+    "topic": "Wisdom of Elders, ep 4",
+    "flag": false
+   }
+  ],
+  "matchett-homes": [
+   {
+    "date": "2026-11-02",
+    "type": "Talking head",
+    "topic": "Chris picks the clip",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Carousel",
+    "topic": "Custom build, phase by phase",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Testimonial",
+    "topic": "Pull from footage",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Talking head",
+    "topic": "Chris picks the clip",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you",
+    "flag": true
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Testimonial",
+    "topic": "Pull from footage",
+    "flag": false
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Talking head",
+    "topic": "Chris picks the clip",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Graphic",
+    "topic": "Questions to ask a builder",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Carousel",
+    "topic": "Project photos",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Talking head",
+    "topic": "Chris picks the clip",
+    "flag": false
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Testimonial",
+    "topic": "Pull from footage",
+    "flag": false
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Talking head",
+    "topic": "Chris picks the clip",
+    "flag": false
+   }
+  ],
+  "ifab": [
+   {
+    "date": "2026-11-02",
+    "type": "Reel",
+    "topic": "Build reveal",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Carousel",
+    "topic": "One build, start to finish",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Reel",
+    "topic": "Texture close-ups",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Reel",
+    "topic": "Scale reveal",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you",
+    "flag": true
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Carousel",
+    "topic": "What we build",
+    "flag": false
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "The bottle replica",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "Process re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Carousel",
+    "topic": "Meet the team",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Reel",
+    "topic": "Highlight reel",
+    "flag": false
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Carousel",
+    "topic": "Exhibit work",
+    "flag": false
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Reel",
+    "topic": "Year-end highlights",
+    "flag": false
+   }
+  ],
+  "adnormous": [
+   {
+    "date": "2026-11-02",
+    "type": "Reel",
+    "topic": "Wrap reveal",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Carousel",
+    "topic": "Vinyl vs printed",
+    "flag": false
+   },
+   {
+    "date": "2026-11-05",
+    "type": "Reel",
+    "topic": "Process time-lapse",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Carousel",
+    "topic": "Project spotlight",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Reel",
+    "topic": "Reveal re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you",
+    "flag": true
+   },
+   {
+    "date": "2026-11-12",
+    "type": "Carousel",
+    "topic": "Fleet wrap checklist",
+    "flag": false
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Reel",
+    "topic": "Golf tournament (date TBC)",
+    "flag": true
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "Which sign fits",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "Detail close-ups",
+    "flag": false
+   },
+   {
+    "date": "2026-11-19",
+    "type": "Reel",
+    "topic": "Process re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Carousel",
+    "topic": "Project spotlight",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Reel",
+    "topic": "Holiday storefronts",
+    "flag": false
+   },
+   {
+    "date": "2026-11-25",
+    "type": "Carousel",
+    "topic": "Small Business Saturday",
+    "flag": true
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Reel",
+    "topic": "Black Friday, offer if confirmed",
+    "flag": true
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Carousel",
+    "topic": "Plan your 2027 signage",
+    "flag": true
+   }
+  ],
+  "cisga": [
+   {
+    "date": "2026-11-02",
+    "type": "Carousel",
+    "topic": "How support reaches a student",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Reel",
+    "topic": "Alumni voice",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Carousel",
+    "topic": "One caring adult",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Reel",
+    "topic": "Alumni re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Carousel",
+    "topic": "42+ districts map",
+    "flag": false
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Graphic",
+    "topic": "World Kindness Day",
+    "flag": true
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "Start a fundraiser",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "Alumni voice",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Carousel",
+    "topic": "Thank you",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Carousel",
+    "topic": "What supporters made possible",
+    "flag": true
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Carousel",
+    "topic": "Ways to help",
+    "flag": false
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Carousel",
+    "topic": "Giving Tuesday is tomorrow",
+    "flag": true
+   }
+  ],
+  "nitro": [
+   {
+    "date": "2026-11-02",
+    "type": "Reel",
+    "topic": "Race re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Carousel",
+    "topic": "Tuning tip",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Reel",
+    "topic": "Track-day edit",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Reel",
+    "topic": "NEW best-seller product video",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you",
+    "flag": true
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Carousel",
+    "topic": "Beginner build checklist",
+    "flag": false
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "LiPo safety, needs sign-off",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "NEW best-seller product video",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Reel",
+    "topic": "Race re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Carousel",
+    "topic": "RC gift guide",
+    "flag": true
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Reel",
+    "topic": "NEW best-seller product video, offer if confirmed",
+    "flag": true
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Reel",
+    "topic": "NEW best-seller product video",
+    "flag": true
+   }
+  ],
+  "bkvf": [
+   {
+    "date": "2026-11-02",
+    "type": "Carousel",
+    "topic": "Connection is prevention",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Reel",
+    "topic": "Peer event re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-05",
+    "type": "Carousel",
+    "topic": "Checking in on a friend",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Reel",
+    "topic": "Archive re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Carousel",
+    "topic": "Veterans Day week",
+    "flag": true
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Reel",
+    "topic": "Veterans Day tribute (hero)",
+    "flag": true
+   },
+   {
+    "date": "2026-11-12",
+    "type": "Carousel",
+    "topic": "Supporting a veteran",
+    "flag": true
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Graphic",
+    "topic": "Resources graphic",
+    "flag": true
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "Start a fundraiser",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "Archive re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-19",
+    "type": "Carousel",
+    "topic": "Thank you",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Reel",
+    "topic": "Archive re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Carousel",
+    "topic": "Holidays can be heavy",
+    "flag": true
+   },
+   {
+    "date": "2026-11-25",
+    "type": "Reel",
+    "topic": "Archive re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Carousel",
+    "topic": "Giving Tuesday is Dec 1",
+    "flag": true
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Graphic",
+    "topic": "Giving Tuesday tomorrow",
+    "flag": true
+   }
+  ],
+  "urc": [
+   {
+    "date": "2026-11-02",
+    "type": "Graphic",
+    "topic": "Customer review graphic",
+    "flag": false
+   },
+   {
+    "date": "2026-11-04",
+    "type": "Carousel",
+    "topic": "5 signs your roof needs attention",
+    "flag": false
+   },
+   {
+    "date": "2026-11-05",
+    "type": "Reel",
+    "topic": "Braxton Beal on a recent job, video due",
+    "flag": false
+   },
+   {
+    "date": "2026-11-06",
+    "type": "Reel",
+    "topic": "Quarterly meeting highlights, video due",
+    "flag": false
+   },
+   {
+    "date": "2026-11-09",
+    "type": "Carousel",
+    "topic": "Fall roof check: what to look at",
+    "flag": false
+   },
+   {
+    "date": "2026-11-11",
+    "type": "Graphic",
+    "topic": "Veterans Day thank you",
+    "flag": true
+   },
+   {
+    "date": "2026-11-12",
+    "type": "Carousel",
+    "topic": "Project spotlight",
+    "flag": false
+   },
+   {
+    "date": "2026-11-13",
+    "type": "Reel",
+    "topic": "Meet the crew, archive re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-16",
+    "type": "Carousel",
+    "topic": "Roof layers, top to deck",
+    "flag": false
+   },
+   {
+    "date": "2026-11-18",
+    "type": "Reel",
+    "topic": "Tear-off day re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-19",
+    "type": "Carousel",
+    "topic": "Commercial project spotlight",
+    "flag": false
+   },
+   {
+    "date": "2026-11-20",
+    "type": "Graphic",
+    "topic": "Crew spotlight",
+    "flag": false
+   },
+   {
+    "date": "2026-11-23",
+    "type": "Carousel",
+    "topic": "Before winter: roof checklist",
+    "flag": false
+   },
+   {
+    "date": "2026-11-25",
+    "type": "Reel",
+    "topic": "Archive re-cut",
+    "flag": false
+   },
+   {
+    "date": "2026-11-26",
+    "type": "Graphic",
+    "topic": "Happy Thanksgiving",
+    "flag": true
+   },
+   {
+    "date": "2026-11-27",
+    "type": "Carousel",
+    "topic": "Project spotlight",
+    "flag": false
+   },
+   {
+    "date": "2026-11-30",
+    "type": "Carousel",
+    "topic": "Repair or replace: how to tell",
+    "flag": false
+   }
+  ]
+ },
+ "keydates": [
+  {
+   "date": "2026-11-01",
+   "name": "Daylight saving ended",
+   "what": "Context only. Darker evenings. Hook for Sun & Shield and Adnormous."
+  },
+  {
+   "date": "2026-11-03",
+   "name": "Election Day",
+   "what": "No client posts anything political. Neutral evergreen content only."
+  },
+  {
+   "date": "2026-11-10",
+   "name": "Marine Corps birthday",
+   "what": "BKVF optional. Not a scheduled post day."
+  },
+  {
+   "date": "2026-11-09",
+   "name": "Sun & Shield THANKS promo",
+   "what": "$100 off ceramic coating with a tint package, code THANKS, Nov 9 to 24."
+  },
+  {
+   "date": "2026-11-11",
+   "name": "VETERANS DAY",
+   "what": "The big one. BKVF hero Reel plus a Thursday and Friday follow. Sun & Shield, VNPHC, Matchett, iFab, Adnormous, Nitro Pro and URC post a thank-you graphic. CISGA stays on plan. No offers, no sales ties."
+  },
+  {
+   "date": "2026-11-13",
+   "name": "World Kindness Day",
+   "what": "VNPHC carousel, CISGA graphic."
+  },
+  {
+   "date": "2026-11-26",
+   "name": "THANKSGIVING",
+   "what": "All clients post a thank-you graphic, about 8 AM. Sun & Shield posts a plain thank-you Story only, no offer. BKVF carries the crisis block."
+  },
+  {
+   "date": "2026-11-27",
+   "name": "Black Friday",
+   "what": "Sun & Shield: $150 off PPF or ceramic with tint, code FRIDAY, Nov 27 to 30. Nitro Pro and Adnormous: an offer only if the client confirms it in writing. Do not invent a discount."
+  },
+  {
+   "date": "2026-11-28",
+   "name": "Small Business Saturday",
+   "what": "No Saturday posts. Adnormous teases on Wed 11/25."
+  },
+  {
+   "date": "2026-11-30",
+   "name": "Cyber Monday",
+   "what": "Sun & Shield: Black Friday LAST DAY, ends 11:59 PM. Nitro Pro only with a confirmed offer. Adnormous runs evergreen."
+  },
+  {
+   "date": "2026-12-01",
+   "name": "Giving Tuesday",
+   "what": "BKVF and CISGA tease on Mon 11/30. December plan carries the day. Donation asks run on Meta, never TikTok."
+  },
+  {
+   "date": "",
+   "name": "Family Caregivers Month",
+   "what": "VNPHC theme for the whole month."
+  }
+ ],
+ "guardrails": {
+  "sun-and-shield": {
+   "look": "Show the car, then the film. Clean before and after, close detail, slow motion. Calm and premium.",
+   "rules": "No \"rock chip warranty\" (XPEL excludes road debris), no 9H or scratch-proof, no durability numbers. Self-heal clips say \"light marring only\". Every offer carries the terms line: valid with a full-vehicle window tint package, one offer per vehicle, cannot be combined, no cash value, mention the code, ends 11:59 PM on the last date. No promos on Veterans Day or Thanksgiving. No fake countdowns."
+  },
+  "vnphc": {
+   "look": "Warm, plain, human. Caregiver and family angle. Never fear.",
+   "rules": "Zero client imagery, no anonymized stories. Never imply Medicare pays for private duty home care. Staff footage only with signed release. Wisdom of Elders: no current clients on camera, signed releases from every guest."
+  },
+  "matchett-homes": {
+   "look": "Chris is the face. Trust, 20 years, orderly and unhurried. Customer is 60 and up.",
+   "rules": "Talking head and testimonial slots have no assigned topic, Chris picks the clip. Release on file for testimonials. No invented projects, awards or prices."
+  },
+  "ifab": {
+   "look": "The build is the hero. Scale, texture, process. Let the work fill the frame.",
+   "rules": "Only projects in the archive or on ifabatl.com. No client names without OK."
+  },
+  "adnormous": {
+   "look": "Transformation first, blank to finished. Material and process close-ups.",
+   "rules": "Real jobs only. Before and after from the same angle on the same vehicle or storefront."
+  },
+  "cisga": {
+   "look": "Warm and hopeful. Adults on camera only. Alumni voices lead.",
+   "rules": "No student face, voice, name, work, silhouette, back of head or hands. Donation asks on Meta, never TikTok."
+  },
+  "nitro": {
+   "look": "Fast and loud. Race action and tech tips for people who know the hobby.",
+   "rules": "Check every number against NitroPro published data, commenters will catch errors. LiPo safety needs client sign-off. The product video is new footage."
+  },
+  "urc": {
+   "look": "The roof and the crew. Close shingle and flashing detail, tear-off day, commercial jobs. Plain and proud.",
+   "rules": "Georgia law: describe the ROOF, never the insurance claim. Never \"we handle your claim\", \"we work with your insurance\", \"you may be entitled\", \"$0 out of pocket\" or \"we cover your deductible\". Commercial work is the safe harbor. Archive drone clips need Part 107 provenance. Month of Giving (PTSD Foundation of America) only if URC confirms it for 2026 in writing."
+  },
+  "bkvf": {
+   "look": "Quiet, respectful, peer to peer. Connection is prevention.",
+   "rules": "Say \"died by suicide\", never method or location, never \"22 a day\". Crisis block verbatim on relevant posts: Veterans Crisis Line, dial 988 then press 1, text 838255, chat at VeteransCrisisLine.net, 24/7, no VA enrollment needed. Access only, never treatment outcomes."
+  }
+ }
+}
