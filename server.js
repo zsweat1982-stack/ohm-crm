@@ -4112,6 +4112,7 @@ function formatRules(slug) {
   if (gr) parts.push('## This client\'s look and tone\n' + gr.look + '\n\n## This client\'s guardrails\n' + gr.rules);
   const lines = brain.split('\n').filter(l => /^\s*[-*]/.test(l) && /(on[- ]screen|text on screen|caption|CTA|hashtag|emoji|tone|voice|never say|do not say|words to use|avoid)/i.test(l)).map(l => l.trim()).slice(0, 14);
   if (lines.length) parts.push('## From the client brain\n' + lines.join('\n'));
+  try { const ex = fs.readFileSync(path.join(__dirname, 'data', 'formats', slug + '.md'), 'utf8'); if (ex) parts.push('## Client-specific formats and examples\n' + ex.slice(0, 7000)); } catch {}
   return parts.join('\n\n');
 }
 

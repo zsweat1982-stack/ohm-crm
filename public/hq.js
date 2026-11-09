@@ -471,10 +471,10 @@
   var DRIVE_ROOT = 'https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK';
   function tabsBar(c) {
     var t = function (k, l) { return '<button class="tb ' + ((HQ.ctab || 'overview') === k ? 'on' : '') + '" onclick="hqCTab(\'' + k + '\')">' + l + '</button>'; };
-    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('pack', 'Weekly pack') + t('copy', 'Copy') + t('brain', 'Brain') + t('guides', 'Guidelines') + '</div>';
+    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('pack', 'Weekly pack') + t('copy', 'Copy') + t('brain', 'Brain') + t('formats', 'Formats') + t('guides', 'Guidelines') + '</div>';
   }
   window.hqCTab = function (k) { HQ.ctab = k; show(navKey); };
-  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'pack' ? packTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : ''; }
+  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'pack' ? packTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : t === 'formats' ? formatsTab(c) : ''; }
   function linksPanel(c) {
     var rows = [];
     if (c.drive) rows.push(['Drive: ' + c.name, 'https://drive.google.com/drive/folders/' + c.drive]);
@@ -652,6 +652,7 @@
   }
   window.hqFactsEdit = function (slug) { HQ.factsEdit = slug; show(navKey); };
   window.hqFactsSave = async function (slug) { var v = (document.getElementById('fx_t') || {}).value || ''; try { await api('/api/hq/facts/' + slug, 'PUT', { md: v }); HQ.facts[slug] = v; HQ.factsEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
+  function formatsTab(c) { var f = HQ.fmt && HQ.fmt[c.slug]; if (f == null) return '<div class="sk" style="height:200px"></div>'; return '<div class="panel"><h3>Formats and rules</h3><p class="hint" style="margin-top:0">Graphic and static ad formats with example copy, the Reel hook and text on screen system, and caption rules. Every Reel and graphic in the weekly pack follows this.</p><div class="md">' + mdHtml(f) + '</div></div>'; }
   function guidesTab(c) {
     var g = HQ.guides; if (!g) return '<div class="sk" style="height:200px"></div>';
     var cur = HQ.guideKey || (g[0] && g[0].key), doc = HQ.guideDoc[cur];
@@ -702,6 +703,7 @@
     if (tab === 'copy' && HQ.copy[slug] == null) { try { HQ.copy[slug] = (await api('/api/hq/copy/' + slug)).md; } catch (x) { HQ.copy[slug] = ''; } }
     if ((tab === 'brain' || tab === 'copy') && HQ.facts[slug] == null) { try { HQ.facts[slug] = (await api('/api/hq/facts/' + slug)).md; } catch (x) { HQ.facts[slug] = ''; } }
     if (tab === 'brain' && HQ.brain[slug] == null) { try { HQ.brain[slug] = (await api('/api/hq/brain/' + slug)).md; } catch (x) { HQ.brain[slug] = ''; } }
+    if (tab === 'formats') { HQ.fmt = HQ.fmt || {}; if (HQ.fmt[slug] == null) { try { HQ.fmt[slug] = (await api('/api/hq/formats/' + slug)).md || ''; } catch (x) { HQ.fmt[slug] = ''; } } }
     if (tab === 'guides' && !HQ.guides) { try { HQ.guides = (await api('/api/hq/guidelines')).docs; var k = HQ.guideKey || (HQ.guides[0] && HQ.guides[0].key); if (k && HQ.guideDoc[k] == null) HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guides = []; } }
     if (tab === 'content') {
       if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
