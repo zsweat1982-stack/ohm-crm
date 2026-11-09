@@ -1,0 +1,10 @@
+# Confirmed facts: URC (Universal Roofing and Construction)
+
+Source: urcroof.com home page, read Nov 9, 2026, plus the Nov 8 brain (office list, Google Maps). Verify anything marked VERIFY with Carrie Shay.
+
+- Business: Universal Roofing & Construction (urcroof.com, Buford, GA). Residential roof repair, roof replacement, gutter replacement and repair; commercial roofing including TPO with a commercial project gallery. Page title: "Commercial and Residential Roofing | Universal Roofing & Construction."
+- Georgia office and phone: 4226 Hamilton Mill Road, Buford, GA 30519, (770) 685-0225 (site header: "Call for a free estimate: 770-685-0225"). Google Maps listing matches, 4.9 stars, 379 reviews on Nov 8 (brain). Use the Buford number on Georgia posts. Other offices on the site use other numbers (Nashville 615). Do not put a 615 number on a Georgia post.
+- Locations listed on the site: Buford GA, Sugar Hill GA, Savannah GA, Nashville TN, Franklin TN, Hendersonville TN, Montgomery AL, Mt Meigs AL, Greenville SC, Des Moines IA, Pleasant Hill IA. VERIFY which markets our content serves.
+- CONFLICT, VERIFY: the site says "offer a 10-year warranty" with no published terms, and "over 100 5-star reviews" (Google shows 379). Do not name the warranty or a review count until Carrie gives the written terms and current count.
+- COMPLIANCE FLAG: the site says URC "specialize[s] in insurance claims, making your life easier." Plan guardrail is Georgia law: describe the ROOF, never the insurance claim. Never "we handle your claim," "we work with your insurance," "you may be entitled," "$0 out of pocket," "we cover your deductible." Do not repeat the site's insurance wording in any post. Commercial work is the safe harbor.
+- Guardrails from the plan: close shingle and flashing detail, tear-off day, commercial jobs; archive drone clips need Part 107 provenance; Month of Giving (PTSD Foundation of America) only if URC confirms it for 2026 in writing; rep names and earnings claims need owner OK before reuse. Thanksgiving: no offer or CTA.
