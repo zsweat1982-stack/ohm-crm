@@ -3517,7 +3517,7 @@ const GMAIL_TOKEN_FILE = path.join(DATA_DIR, 'gmail_token.json');
 const GMAIL_SEEN_FILE = path.join(DATA_DIR, 'gmail_seen.json');
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const GMAIL_REDIRECT = `${PUBLIC_URL}/api/gmail/callback`;
+const GMAIL_REDIRECT = process.env.GOOGLE_REDIRECT_URI || `${PUBLIC_URL}/api/gmail/callback`;
 
 function gmailToken() { try { return JSON.parse(fs.readFileSync(GMAIL_TOKEN_FILE, 'utf8')); } catch { return null; } }
 function saveGmailToken(t) { fs.writeFileSync(GMAIL_TOKEN_FILE, JSON.stringify(t)); }
