@@ -221,7 +221,7 @@
       '<button class="btn2 red" onclick="hqAddTask()">Add</button></div></details>' : '';
     var total = all.filter(function (x) { return !x.done; }).length;
     return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Work</h3><p>Your tasks, client emails that need a reply, and to-dos from Basecamp.</p></div>' + (real ? '<button class="btn2 line" onclick="hqSyncMail()">' + ico('refresh') + 'Check mail now</button>' : '') + '</div>' +
-      '<div class="note2" style="margin-bottom:12px"><b>Everything is due Friday at 5:00 PM.</b> No exceptions. Each Monday this page shows what you are making that week.</div><div class="tabs">' + (real ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + tab('done', 'Done') + '</div>' + form +
+      '<div class="note2" style="margin-bottom:12px"><b>Content is due every Friday at 5:00 PM.</b> No exceptions. Each Monday this page shows the content you are making that week. Client email replies are due the next business day.</div><div class="tabs">' + (real ? tab('mine', 'Mine') : '') + tab('late', 'Late') + tab('all', 'Everyone') + tab('done', 'Done') + '</div>' + form +
       (!d.connected ? '<div class="banner">' + ico('alert') + '<div>Basecamp is not connected, so only CRM tasks show. <a class="lnk" href="/api/basecamp/connect">Connect</a></div></div>' : '') +
       '<div class="panel">' + (rows.length ? rows.map(function (x) {
         var mine = me && (x.ownerId === me.id), canClose = x.k === 'crm' && (mine || (me && me.role === 'admin'));
