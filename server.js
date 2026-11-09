@@ -4100,6 +4100,11 @@ app.get('/api/hq/inventory/:slug', async (req, res) => {
   const c = loadClients().find(x => x.slug === req.params.slug); if (!c || !c.drive) return res.json({ connected: true, noFolder: true });
   try { res.json({ connected: true, ...(await getInventory(me.id, c) || { folders: [] }) }); } catch (e) { res.json({ connected: true, folders: [], error: String(e.message).slice(0, 120) }); }
 });
+// Visual look for a client: palette, fonts, weekly color rotation, feed grid mockup, saved competitor reference images.
+app.get('/api/hq/look/:slug', (req, res) => {
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, '');
+  try { res.json(JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'look', slug + '.json'), 'utf8'))); } catch { res.json({ none: true }); }
+});
 // Format rules for a client, assembled from its brain and the team's plan: reels, text on screen, captions, graphics.
 app.get('/api/hq/formats/:slug', (req, res) => {
   const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''); res.json({ md: formatRules(slug) });

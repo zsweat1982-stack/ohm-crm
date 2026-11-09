@@ -1,0 +1,138 @@
+{
+  "source": "Palette and type from the Sun and Shield Basecamp branding guidelines (2025). Zac kept logo, colors and contact info on Nov 4, 2026. The grid and weekly rotation are our plan (RULE), not tested. Reference images were saved from the Meta Ad Library on Nov 9, 2026 (video ads show one frame). They are references for layout and text placement, not to copy.",
+  "palette": [
+    {
+      "name": "Navy",
+      "hex": "#1f2c78",
+      "use": "Base background for graphics and text cards. Most of the feed."
+    },
+    {
+      "name": "Gold",
+      "hex": "#f8ba16",
+      "use": "Headline text on navy, highlight bar, the weekly accent."
+    },
+    {
+      "name": "White",
+      "hex": "#ffffff",
+      "use": "Body text on navy, clean cards, caption text."
+    },
+    {
+      "name": "Silver",
+      "hex": "#a7a9ae",
+      "use": "Secondary text, dividers, small labels. Never body text on white."
+    }
+  ],
+  "fonts": [
+    "Headlines: bold condensed all caps (guideline font: Now). Gold on navy.",
+    "Body: same family, regular weight, white on navy.",
+    "Reel text on screen: 8 words or fewer per card, inside the phone-safe zone."
+  ],
+  "rules": [
+    "Keep high contrast between any text and its background (navy and gold, navy and white).",
+    "Real shop photos only: Neal at work, squeegee close-ups, front ends under studio lights. No stock cars.",
+    "Premium and calm: metallics, deep blacks, gloss. No neon, no clutter.",
+    "Weekly color: text, highlight and the reel cover frame follow that week's accent so the grid reads as one feed."
+  ],
+  "weekly": [
+    {
+      "week": "Week 1",
+      "accent": "#f8ba16",
+      "name": "Gold",
+      "note": "Gold headlines and highlight bars."
+    },
+    {
+      "week": "Week 2",
+      "accent": "#ffffff",
+      "name": "White",
+      "note": "White headlines, gold only on the number or price."
+    },
+    {
+      "week": "Week 3",
+      "accent": "#a7a9ae",
+      "name": "Silver",
+      "note": "Silver and navy, metallic feel, gold on the CTA only."
+    },
+    {
+      "week": "Week 4",
+      "accent": "#f8ba16",
+      "name": "Gold",
+      "note": "Back to gold. Review what got saves and shares, keep that color."
+    }
+  ],
+  "grid": [
+    {
+      "t": "Reel cover",
+      "bg": "#1f2c78",
+      "fg": "#f8ba16",
+      "text": "TESLA OWNERS: READ THIS"
+    },
+    {
+      "t": "Photo",
+      "bg": "#0e1638",
+      "fg": "#ffffff",
+      "text": "Neal, film install"
+    },
+    {
+      "t": "Local callout",
+      "bg": "#f8ba16",
+      "fg": "#1f2c78",
+      "text": "ALPHARETTA TESLA AND RIVIAN OWNERS"
+    },
+    {
+      "t": "Photo",
+      "bg": "#2b2f3a",
+      "fg": "#a7a9ae",
+      "text": "Front end, studio light"
+    },
+    {
+      "t": "Reel cover",
+      "bg": "#1f2c78",
+      "fg": "#ffffff",
+      "text": "WHAT PPF REALLY COSTS"
+    },
+    {
+      "t": "Review card",
+      "bg": "#ffffff",
+      "fg": "#1f2c78",
+      "text": "5 stars, real customer quote"
+    },
+    {
+      "t": "Big number",
+      "bg": "#1f2c78",
+      "fg": "#f8ba16",
+      "text": "10 YR"
+    },
+    {
+      "t": "Reel cover",
+      "bg": "#0e1638",
+      "fg": "#f8ba16",
+      "text": "TINT MYTH"
+    },
+    {
+      "t": "Photo",
+      "bg": "#2b2f3a",
+      "fg": "#ffffff",
+      "text": "Before and after"
+    }
+  ],
+  "refs": [
+    {
+      "label": "AP3 Paint Protection: Rivian static",
+      "img": "/look/sun-and-shield/ap3-rivian.jpg",
+      "url": "https://www.facebook.com/ads/library/?id=1372305994698563",
+      "note": "Real shop photo, film going on, then the finished car. Black bar across the middle with white and yellow all-caps text: NO MORE ROCK CHIPS. One idea. Local rival, started Oct 17, 2026."
+    },
+    {
+      "label": "Atlanta Auto Aesthetics: grand opening",
+      "img": "/look/sun-and-shield/aaa-grand-opening.jpg",
+      "url": "https://www.facebook.com/ads/library/?id=1139518255086198",
+      "note": "Frame from the video. Red and white boxes for the offer ($300 OFF), italic white text with an outline over the car, black pills for the location and urgency. Heavy and busy. Ours should be calmer. Started Nov 5, 2026."
+    },
+    {
+      "label": "Atlanta Auto Aesthetics: price frame",
+      "img": "/look/sun-and-shield/aaa-damage.jpg",
+      "url": "https://www.facebook.com/ads/library/?id=1120789870905159",
+      "note": "Frame from the video. Clean white studio, italic white text with outline, price in a white pill ('Full Front Package Starting at Only $1549'). Text sits in the middle of the frame. Started Oct 1, 2026."
+    }
+  ]
+}

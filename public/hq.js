@@ -474,10 +474,10 @@
   var DRIVE_ROOT = 'https://drive.google.com/drive/folders/1WD7bOn5UUWQ69L6ftSwRTHulK8i_TeiK';
   function tabsBar(c) {
     var t = function (k, l) { return '<button class="tb ' + ((HQ.ctab || 'overview') === k ? 'on' : '') + '" onclick="hqCTab(\'' + k + '\')">' + l + '</button>'; };
-    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('pack', 'Weekly pack') + t('copy', 'Copy') + t('brain', 'Brain') + t('formats', 'Formats') + t('guides', 'Guidelines') + '</div>';
+    return '<div class="tabs" style="margin-top:4px">' + t('overview', 'Overview') + t('content', 'Content') + t('pack', 'Weekly pack') + t('copy', 'Copy') + t('brain', 'Brain') + t('formats', 'Formats') + t('look', 'Look') + t('guides', 'Guidelines') + '</div>';
   }
   window.hqCTab = function (k) { HQ.ctab = k; show(navKey); };
-  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'pack' ? packTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : t === 'formats' ? formatsTab(c) : ''; }
+  function tabBody(c) { var t = HQ.ctab; return t === 'content' ? contentTab(c) : t === 'pack' ? packTab(c) : t === 'copy' ? copyTab(c) : t === 'brain' ? brainTab(c) : t === 'guides' ? guidesTab(c) : t === 'formats' ? formatsTab(c) : t === 'look' ? lookTab(c) : ''; }
   function linksPanel(c) {
     var rows = [];
     if (c.drive) rows.push(['Drive: ' + c.name, 'https://drive.google.com/drive/folders/' + c.drive]);
@@ -666,6 +666,22 @@
   window.hqFactsEdit = function (slug) { HQ.factsEdit = slug; show(navKey); };
   window.hqFactsSave = async function (slug) { var v = (document.getElementById('fx_t') || {}).value || ''; try { await api('/api/hq/facts/' + slug, 'PUT', { md: v }); HQ.facts[slug] = v; HQ.factsEdit = ''; toast('Saved'); show(navKey); } catch (er) { toast(er.message); } };
   function scriptText(x) { return 'HOOK: ' + x.hook + (x.body && x.body.length ? '\nBODY:\n- ' + x.body.join('\n- ') : '') + (x.cta ? '\nCTA: ' + x.cta : '') + (x.onscreen ? '\nTEXT ON SCREEN: ' + x.onscreen : ''); }
+  function lookTab(c) {
+    var L = HQ.look && HQ.look[c.slug]; if (L == null) return '<div class="sk" style="height:200px"></div>';
+    if (L.none) return '<div class="panel"><h3>Look</h3><p class="hint" style="margin-top:0">No visual guide built for this client yet. It needs the palette, fonts, a feed grid and saved reference images.</p></div>';
+    var e = function (x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
+    var sw = (L.palette || []).map(function (p) { return '<div style="flex:1;min-width:140px;border:1px solid #e3e3e8;border-radius:10px;overflow:hidden"><div style="background:' + e(p.hex) + ';height:64px"></div><div style="padding:8px 10px"><b>' + e(p.name) + '</b> <code>' + e(p.hex) + '</code><div class="hint" style="margin:4px 0 0">' + e(p.use) + '</div></div></div>'; }).join('');
+    var wk = (L.weekly || []).map(function (w) { return '<div style="flex:1;min-width:150px;border:1px solid #e3e3e8;border-radius:10px;padding:8px 10px"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:' + e(w.accent) + ';border:1px solid #ccc;vertical-align:-2px"></span> <b>' + e(w.week) + ': ' + e(w.name) + '</b><div class="hint" style="margin:4px 0 0">' + e(w.note) + '</div></div>'; }).join('');
+    var gr = (L.grid || []).map(function (g) { return '<div style="aspect-ratio:4/5;background:' + e(g.bg) + ';color:' + e(g.fg) + ';display:flex;flex-direction:column;justify-content:flex-end;padding:8px;font-weight:800;font-size:12px;line-height:1.1;text-transform:uppercase"><span style="font-size:9px;opacity:.7;font-weight:600">' + e(g.t) + '</span>' + e(g.text) + '</div>'; }).join('');
+    var rf = (L.refs || []).map(function (r) { return '<div style="flex:1;min-width:200px;max-width:280px"><a href="' + e(r.url) + '" target="_blank" rel="noopener"><img src="' + e(r.img) + '" alt="' + e(r.label) + '" style="width:100%;border-radius:10px;border:1px solid #e3e3e8" onerror="this.style.display=\'none\'"></a><div style="margin-top:6px"><b>' + e(r.label) + '</b></div><div class="hint" style="margin:2px 0 0">' + e(r.note) + '</div></div>'; }).join('');
+    return '<div class="panel"><h3>Look: palette and feed</h3><p class="hint" style="margin-top:0">' + e(L.source) + '</p>' +
+      '<h4>Palette</h4><div style="display:flex;gap:10px;flex-wrap:wrap">' + sw + '</div>' +
+      '<h4>Type</h4><ul>' + (L.fonts || []).map(function (x) { return '<li>' + e(x) + '</li>'; }).join('') + '</ul>' +
+      '<h4>Rules</h4><ul>' + (L.rules || []).map(function (x) { return '<li>' + e(x) + '</li>'; }).join('') + '</ul>' +
+      '<h4>Weekly color rotation</h4><div style="display:flex;gap:10px;flex-wrap:wrap">' + wk + '</div>' +
+      '<h4>Feed grid mockup (what the profile should look like)</h4><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;max-width:420px">' + gr + '</div>' +
+      '<h4>Competitor references (saved images, click for the live ad)</h4><div style="display:flex;gap:14px;flex-wrap:wrap">' + rf + '</div></div>';
+  }
   function formatsTab(c) { var f = HQ.fmt && HQ.fmt[c.slug]; if (f == null) return '<div class="sk" style="height:200px"></div>'; return '<div class="panel"><h3>Formats and rules</h3><p class="hint" style="margin-top:0">Graphic and static ad formats with example copy, the Reel hook and text on screen system, and caption rules. Every Reel and graphic in the weekly pack follows this.</p><div class="md">' + mdHtml(f) + '</div></div>'; }
   function guidesTab(c) {
     var g = HQ.guides; if (!g) return '<div class="sk" style="height:200px"></div>';
@@ -719,6 +735,7 @@
     if ((tab === 'brain' || tab === 'copy') && HQ.facts[slug] == null) { try { HQ.facts[slug] = (await api('/api/hq/facts/' + slug)).md; } catch (x) { HQ.facts[slug] = ''; } }
     if (tab === 'brain' && HQ.brain[slug] == null) { try { HQ.brain[slug] = (await api('/api/hq/brain/' + slug)).md; } catch (x) { HQ.brain[slug] = ''; } }
     if (tab === 'formats') { HQ.fmt = HQ.fmt || {}; if (HQ.fmt[slug] == null) { try { HQ.fmt[slug] = (await api('/api/hq/formats/' + slug)).md || ''; } catch (x) { HQ.fmt[slug] = ''; } } }
+    if (tab === 'look') { HQ.look = HQ.look || {}; if (HQ.look[slug] == null) { try { HQ.look[slug] = await api('/api/hq/look/' + slug); } catch (x) { HQ.look[slug] = { none: true }; } } }
     if (tab === 'guides' && !HQ.guides) { try { HQ.guides = (await api('/api/hq/guidelines')).docs; var k = HQ.guideKey || (HQ.guides[0] && HQ.guides[0].key); if (k && HQ.guideDoc[k] == null) HQ.guideDoc[k] = (await api('/api/hq/guidelines/' + k)).md; } catch (x) { HQ.guides = []; } }
     if (tab === 'content') {
       if (!HQ.cal && HQ.me && !HQ.me.legacy) await loadCal();
