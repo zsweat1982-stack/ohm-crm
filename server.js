@@ -4234,17 +4234,112 @@ async function handleOnboardingV2(d, req, res) {
   if (counter.n) row.scrubbed = counter.n;
   const rows = loadOnboarding(); rows.push(row);
   try { saveOnboarding(rows); } catch (e) { console.error('[onboarding] save failed -', e.message); return res.status(500).json({ error: 'Could not save. Please try again.' }); }
+  let bcNote = '';
+  if (readJson(BC_TOKEN_FILE, null)) {
+    try { const pr = await provisionBasecamp(row); bcNote = `Basecamp project created: ${pr.url}\n\n`; row.basecamp = pr; saveOnboarding(rows); }
+    catch (e) { console.error('[onboarding] basecamp failed -', e.message); bcNote = `Basecamp project was NOT created (${e.message}). Create it by hand.\n\n`; }
+  }
   try {
     if (process.env.SENDGRID_API_KEY && SALES.length) {
       await sgMail.sendMultiple({
         to: SALES, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
         replyTo: email,
         subject: `ONBOARDING COMPLETE: ${business} (${client})`,
-        text: row.summary + (counter.n ? `\n\nNote: ${counter.n} answer(s) looked like a credential and were removed before saving.\n` : ''),
+        text: bcNote + row.summary + (counter.n ? `\n\nNote: ${counter.n} answer(s) looked like a credential and were removed before saving.\n` : ''),
       });
     }
   } catch (e) { console.error('[onboarding] notify failed -', e.message); }
   res.json({ ok: true, id: row.id });
+}
+
+
+// ---------- Basecamp: auto-create a client project when onboarding comes in ----------
+// One-time setup: register an integration at launchpad.37signals.com/integrations with redirect URI
+// https://app.openheartmediaco.com/api/basecamp/callback, put BASECAMP_CLIENT_ID and
+// BASECAMP_CLIENT_SECRET in Render, then open /api/basecamp/connect while logged in.
+const BC_ACCOUNT = process.env.BASECAMP_ACCOUNT_ID || '5689303';
+const BC_TOKEN_FILE = path.join(DATA_DIR, 'basecamp_token.json');
+const BC_PROJECTS_FILE = path.join(DATA_DIR, 'basecamp_projects.json');
+const CRM_URL = (process.env.CRM_URL || 'https://app.openheartmediaco.com').replace(/\/$/, '');
+const BC_UA = 'OHM CRM (zac@openheartmediaco.com)';
+const BC_TEAM = { zac: 44772906, griffin: 44733453, ariel: 46843205, frank: 44842358 };
+function readJson(f, d) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } }
+async function bcToken() {
+  const t = readJson(BC_TOKEN_FILE, null);
+  if (!t || !t.refresh_token) throw new Error('Basecamp is not connected. Open /api/basecamp/connect while logged in.');
+  if (t.access_token && t.expires_at && Date.now() < t.expires_at - 3600e3) return t.access_token;
+  const q = new URLSearchParams({ type: 'refresh', refresh_token: t.refresh_token, client_id: process.env.BASECAMP_CLIENT_ID || '', client_secret: process.env.BASECAMP_CLIENT_SECRET || '' });
+  const r = await fetch('https://launchpad.37signals.com/authorization/token?' + q, { method: 'POST' });
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error('Basecamp token refresh failed: ' + JSON.stringify(j).slice(0, 200));
+  const nt = { ...t, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 1209600) * 1000 };
+  fs.writeFileSync(BC_TOKEN_FILE, JSON.stringify(nt));
+  return nt.access_token;
+}
+async function bc(method, urlPath, body) {
+  const tok = await bcToken();
+  const r = await fetch(`https://3.basecampapi.com/${BC_ACCOUNT}${urlPath}`, {
+    method, headers: { Authorization: 'Bearer ' + tok, 'User-Agent': BC_UA, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined });
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`Basecamp ${method} ${urlPath} -> ${r.status} ${txt.slice(0, 200)}`);
+  return txt ? JSON.parse(txt) : {};
+}
+app.get('/api/basecamp/connect', (req, res) => {
+  if (!process.env.BASECAMP_CLIENT_ID) return res.status(400).send('Set BASECAMP_CLIENT_ID and BASECAMP_CLIENT_SECRET in Render first.');
+  const q = new URLSearchParams({ type: 'web_server', client_id: process.env.BASECAMP_CLIENT_ID, redirect_uri: CRM_URL + '/api/basecamp/callback' });
+  res.redirect('https://launchpad.37signals.com/authorization/new?' + q);
+});
+app.get('/api/basecamp/callback', async (req, res) => {
+  try {
+    const q = new URLSearchParams({ type: 'web_server', client_id: process.env.BASECAMP_CLIENT_ID || '', client_secret: process.env.BASECAMP_CLIENT_SECRET || '',
+      redirect_uri: CRM_URL + '/api/basecamp/callback', code: String(req.query.code || '') });
+    const r = await fetch('https://launchpad.37signals.com/authorization/token?' + q, { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok || !j.refresh_token) throw new Error(JSON.stringify(j).slice(0, 200));
+    fs.writeFileSync(BC_TOKEN_FILE, JSON.stringify({ access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 1209600) * 1000 }));
+    res.send('Basecamp connected. New onboarding submissions will now create a project automatically. You can close this tab.');
+  } catch (e) { res.status(500).send('Basecamp connect failed: ' + esc(e.message)); }
+});
+app.get('/api/basecamp/status', (req, res) => { if (!teamOnly(req, res)) return; res.json({ connected: !!readJson(BC_TOKEN_FILE, null), projects: readJson(BC_PROJECTS_FILE, {}) }); });
+
+const BC_FOLDERS = ['Onboarding', 'Brand Assets', 'To be Approved', 'Ad Creative', 'Website', 'Reports', 'Research and Client Brain', 'Contracts and Billing'];
+const BC_LAUNCH_GATE = [
+  ['Onboarding answers reviewed with the client on the kickoff call', 'ariel', 'Read the onboarding answers in the CRM. Fill any "not sure" with the client on the call.'],
+  ['Account access confirmed for every platform we need', 'ariel', 'Google Business Profile, Search Console, GA4, Google Ads, Meta, website admin. Invitations only, never passwords.'],
+  ['Conversion tracking passes the test form and the 60 second test call', 'ariel', 'Lead reaches the inbox or CRM, GA4 shows form_submit and call_60s, Google Ads and Meta show the conversion.'],
+  ['Break-even cost per lead written down with the owner', 'ariel', 'Average job value, close rate, margin, and the cost per lead that still makes money.'],
+  ['Website Checklist run in full on the live site', 'frank', 'Every section and the Pass standards table. Mark each row Pass, or write a reason and fix date.'],
+  ['Google Business Profile matches the website, 10 or more real photos', 'frank', 'Name, address and phone exactly match. Services, hours and categories complete.'],
+  ['Ads Checklist run in full before any campaign launches', 'ariel', 'No ad account launches until tracking passes and a strategist signs.'],
+  ['Strategist sign-off on the launch plan', 'griffin', 'A second person reviews tracking results, budget and the first 30 days of creative.'],
+  ['First 30 days of content approved by the client', 'ariel', 'Approvals live in the To be Approved folder.'],
+  ['Client reporting scheduled', 'griffin', 'Monthly blended report date set. Quarterly review date set.'],
+  ['Monthly and Quarterly Checks list created for this client', 'griffin', 'Copy from an existing client. Website items to Frank, ads items to Ariel.'],
+  ['Launch day: confirm everything is live and tell the client', 'griffin', 'Final walk through, then send the client the launch note.'],
+];
+async function provisionBasecamp(row) {
+  const done = readJson(BC_PROJECTS_FILE, {});
+  if (done[row.client] && row.client !== 'unassigned') return done[row.client];
+  const proj = await bc('POST', '/projects.json', { name: row.business, description: `Client onboarding submitted ${row.at.slice(0, 10)}. Contact: ${row.contact_name || ''} ${row.email}` });
+  const dock = Object.fromEntries((proj.dock || []).map(d => [d.name, d.id]));
+  const B = proj.id;
+  try { await bc('PUT', `/projects/${B}/people/users.json`, { grant: Object.values(BC_TEAM) }); } catch (e) { console.error('[basecamp] grant failed -', e.message); }
+  if (dock.vault) for (const t of BC_FOLDERS) { try { await bc('POST', `/buckets/${B}/vaults/${dock.vault}/vaults.json`, { title: t }); } catch (e) { console.error('[basecamp] folder', t, e.message); } }
+  if (dock.todoset) {
+    const list = await bc('POST', `/buckets/${B}/todosets/${dock.todoset}/todolists.json`, { name: 'Launch gate (all 12 before going live)', description: 'Nothing goes live until every item here is closed.' });
+    for (const [title, who, desc] of BC_LAUNCH_GATE) {
+      try { await bc('POST', `/buckets/${B}/todolists/${list.id}/todos.json`, { content: title, description: `<p>${desc}</p>`, assignee_ids: [BC_TEAM[who]],
+        completion_subscriber_ids: [BC_TEAM.griffin, BC_TEAM.zac], notify: false }); } catch (e) { console.error('[basecamp] todo', title, e.message); }
+    }
+  }
+  if (dock.message_board) {
+    try { await bc('POST', `/buckets/${B}/message_boards/${dock.message_board}/messages.json`, { subject: 'Onboarding answers',
+      content: '<pre>' + esc(row.summary || '').slice(0, 90000) + '</pre>', status: 'active' }); } catch (e) { console.error('[basecamp] message', e.message); }
+  }
+  const out = { id: B, url: proj.app_url, at: new Date().toISOString() };
+  done[row.client] = out; fs.writeFileSync(BC_PROJECTS_FILE, JSON.stringify(done, null, 2));
+  return out;
 }
 
 app.post('/api/onboarding', async (req, res) => {
