@@ -4461,19 +4461,21 @@ const CLIENT_SEED = [
   { slug: 'sun-and-shield', name: 'Sun and Shield', status: 'active', services: ['Website', 'Ads', 'Social', 'CRM'], match: ['sun and shield', 'sun & shield'] },
   { slug: 'matchett-homes', name: 'Matchett Homes', status: 'active', services: ['Website', 'Ads', 'Social'], match: ['matchett'] },
   { slug: 'ifab', name: 'iFab', status: 'active', services: ['Website', 'Social'], match: ['ifab'] },
-  { slug: 'vnphc', name: 'VNPHC', status: 'active', services: ['Website', 'Ads'], match: ['vnphc'] },
+  { slug: 'vnphc', name: 'VNPHC', status: 'active', services: ['Website', 'Ads'], match: ['vnphc', 'visiting nurse'] },
   { slug: 'adnormous', name: 'Adnormous', status: 'active', services: ['Website', 'Ads'], match: ['adnormous'] },
-  { slug: 'cisga', name: 'CISGA', status: 'active', services: ['Website', 'Social'], match: ['cisga'] },
-  { slug: 'nitro', name: 'Nitro', status: 'active', services: ['Social', 'Ads'], match: ['nitro'] },
-  { slug: 'bkvf', name: 'BKVF', status: 'ads_off', services: ['Social'], match: ['bkvf'] },
-  { slug: 'urc', name: 'URC', status: 'active', services: ['Social'], match: ['urc'] },
+  { slug: 'cisga', name: 'CISGA', status: 'active', services: ['Website', 'Social'], match: ['cisga', 'communities in school'] },
+  { slug: 'nitro', name: 'Nitro', status: 'active', services: ['Social', 'Ads'], match: ['nitro', 'nitro pro racing'] },
+  { slug: 'bkvf', name: 'BKVF', status: 'ads_off', services: ['Social'], match: ['bkvf', 'brothers keeper'] },
+  { slug: 'urc', name: 'URC', status: 'active', services: ['Social'], match: ['urc', 'universal roofing'] },
   { slug: 'open-heart-media', name: 'Open Heart Media', status: 'internal', services: ['Our own marketing'], match: ['open heart media'] },
   { slug: 'abls', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: ['Ads'], match: ['best lighting', 'abls'] },
-  { slug: 'nabs', name: 'NABS', status: 'ending', note: 'Ending Nov 25.', services: ['Ads'], match: ['nabs'] },
+  { slug: 'nabs', name: 'NABS', status: 'ending', note: 'Ending Nov 25.', services: ['Ads'], match: ['nabs', 'north atlanta birth'] },
 ].map(c => ({ website_owner: 'Frank', ads_owner: 'Ariel', ...c }));
 function loadClients() {
   let c = readJson(CLIENTS_FILE, null);
   if (!c) { c = CLIENT_SEED; try { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c, null, 2)); } catch {} }
+  // keep match names fresh: add any new names from the built-in list to a saved client
+  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) x.match = Array.from(new Set([...(x.match || []), ...sd.match])); }
   // clients that only exist because they submitted the onboarding form
   const known = new Set(c.map(x => x.slug));
   for (const r of loadOnboarding()) {
