@@ -4559,23 +4559,23 @@ async function provisionBasecamp(row) {
 // ---------- Open Heart Media CRM: client hub (Home, Clients, Onboarding) ----------
 const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
 const CLIENT_SEED = [
-  { slug: 'sun-and-shield', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
-  { slug: 'matchett-homes', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
-  { slug: 'ifab', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
-  { slug: 'vnphc', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
-  { slug: 'adnormous', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
-  { slug: 'cisga', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
-  { slug: 'nitro', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
-  { slug: 'bkvf', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
-  { slug: 'urc', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
-  { slug: 'open-heart-media', name: 'Open Heart Media', status: 'internal', services: [], match: ['open heart media'] },
-  { slug: 'abls', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
-  { slug: 'nabs', name: 'North Atlanta Birth Services', status: 'ending', note: 'Ending Nov 25.', services: [], match: ['nabs', 'north atlanta birth'] },
-  { slug: 'sm-crocker', name: 'S.M Crocker', status: 'active', kind: 'website', services: [], match: ['crocker'] },
-  { slug: 'jl-adams', name: 'JL Adams Inc.', status: 'active', kind: 'website', services: [], match: ['jl adams'] },
-  { slug: 'ts-wiring', name: 'TS Wiring', status: 'active', kind: 'website', services: [], match: ['ts wiring'] },
-  { slug: 'carver-plumbing', name: 'Carver Plumbing', status: 'active', kind: 'website', services: [], match: ['carver plumbing'] },
-  { slug: 'ontraxx', name: 'OnTraxx', status: 'returning', kind: 'returning', note: 'Coming back.', services: [], match: ['ontraxx'] },
+  { slug: 'sun-and-shield', logo: '/logos/sun-and-shield.png', color: '#1f2c78', name: 'Sun and Shield', status: 'active', services: [], match: ['sun and shield', 'sun & shield'] },
+  { slug: 'matchett-homes', logo: '/logos/matchett-homes.png', color: '#90b040', name: 'Matchett Homes', status: 'active', services: [], match: ['matchett'] },
+  { slug: 'ifab', logo: '/logos/ifab.png', color: '#921c1f', name: 'iFab', domains: ['ifabatl.com'], status: 'active', services: [], match: ['ifab'] },
+  { slug: 'vnphc', logo: '/logos/vnphc.png', color: '#bad230', name: 'Visiting Nurse', status: 'active', services: [], match: ['vnphc', 'visiting nurse'] },
+  { slug: 'adnormous', logo: '/logos/adnormous.png', color: '#a71619', name: 'Adnormous', status: 'active', services: [], match: ['adnormous'] },
+  { slug: 'cisga', logo: '/logos/cisga.png', color: '#dc332c', name: 'CISGA', domains: ['cisga.org'], status: 'active', services: [], match: ['cisga', 'communities in school'] },
+  { slug: 'nitro', logo: '/logos/nitro.png', color: '#6c0f14', name: 'Nitro', status: 'active', services: [], match: ['nitro', 'nitro pro racing'] },
+  { slug: 'bkvf', logo: '/logos/bkvf.png', color: '#1a1a1a', name: 'Brothers Keeper', status: 'ads_off', services: [], match: ['bkvf', 'brothers keeper'] },
+  { slug: 'urc', logo: '/logos/urc.png', color: '#1d2749', name: 'Universal Roofing & Construction', status: 'active', services: [], match: ['urc', 'universal roofing'] },
+  { slug: 'open-heart-media', logo: '/logos/open-heart-media.png', color: '#1a2b4c', name: 'Open Heart Media', status: 'internal', services: [], match: ['open heart media'] },
+  { slug: 'abls', logo: '/logos/abls.png', color: '#eab831', name: "America's Best Lighting", status: 'seasonal', note: 'Seasonal. Likely ends at the end of November.', services: [], match: ['best lighting', 'abls'] },
+  { slug: 'nabs', logo: '/logos/nabs.png', color: '#8c8f96', name: 'North Atlanta Birth Services', status: 'ending', note: 'Ending Nov 25.', services: [], match: ['nabs', 'north atlanta birth'] },
+  { slug: 'sm-crocker', logo: '/logos/sm-crocker.png', color: '#a52c23', name: 'S.M Crocker', status: 'active', kind: 'website', services: [], match: ['crocker'] },
+  { slug: 'jl-adams', logo: '/logos/jl-adams.png', color: '#641012', name: 'JL Adams Inc.', status: 'active', kind: 'website', services: [], match: ['jl adams'] },
+  { slug: 'ts-wiring', logo: '/logos/ts-wiring.png', color: '#063661', name: 'TS Wiring', status: 'active', kind: 'website', services: [], match: ['ts wiring'] },
+  { slug: 'carver-plumbing', logo: '/logos/carver-plumbing.png', color: '#1f4e79', name: 'Carver Plumbing', status: 'active', kind: 'website', services: [], match: ['carver plumbing'] },
+  { slug: 'ontraxx', logo: '/logos/ontraxx.png', color: '#97292c', name: 'OnTraxx', status: 'returning', kind: 'returning', note: 'Coming back.', services: [], match: ['ontraxx'] },
   { slug: 'zach-haines', name: 'Zach Haines', status: 'proposal', kind: 'proposal', note: 'Proposal pending approval.', services: [], match: ['zach haines'] },
 ].map(c => ({ website_owner: '', ads_owner: '', account_owner: '', kind: 'retainer', domains: [], ...c }));
 function loadClients() {
@@ -4583,7 +4583,7 @@ function loadClients() {
   if (!c) { c = CLIENT_SEED; try { fs.writeFileSync(CLIENTS_FILE, JSON.stringify(c, null, 2)); } catch {} }
   // keep match names fresh: add any new names from the built-in list to a saved client
   for (const sd of CLIENT_SEED) { if (!c.find(y => y.slug === sd.slug)) c.push({ ...sd }); }
-  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
+  for (const sd of CLIENT_SEED) { const x = c.find(y => y.slug === sd.slug); if (x) { x.match = Array.from(new Set([...(x.match || []), ...sd.match])); x.name = sd.name; if (sd.logo) { x.logo = sd.logo; x.color = sd.color; } if (!x.kind) x.kind = sd.kind; x.domains = Array.from(new Set([...(x.domains || []), ...(sd.domains || [])])); if (!x.edited) { x.services = []; x.website_owner = ''; x.ads_owner = ''; x.account_owner = ''; } } }
   // clients that only exist because they submitted the onboarding form
   const known = new Set(c.map(x => x.slug));
   for (const r of loadOnboarding()) {

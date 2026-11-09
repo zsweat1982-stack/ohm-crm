@@ -32,6 +32,7 @@
   function ico(n, cls) { return '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (P[n] || '') + '</svg>'; }
   window.hqIcon = function (n) { n = ALIAS[n] || n; return P[n] ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + P[n] + '</svg>' : null; };
 
+  function brand(c) { return (c && c.color) || hue((c && c.name) || ''); }
   function hue(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return COLORS[h % COLORS.length]; }
   function ini(n) { var w = String(n).replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + ((w[1] || '')[0] || (w[0] || '')[1] || '')).toUpperCase(); }
   function e(s) { return esc(s == null ? '' : String(s)); }
@@ -55,11 +56,11 @@
   function avatar(c, size) {
     var h = health(c), p = progress(c), circ = 2 * Math.PI * 24, off = circ * (1 - p / 100);
     return '<div class="avr"' + (size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '') + '><svg viewBox="0 0 56 56"><circle class="tr" cx="28" cy="28" r="24"/><circle class="pg" cx="28" cy="28" r="24" stroke="' + h.col + '" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + (c.work && c.work.linked ? off.toFixed(1) : circ.toFixed(1)) + '"/></svg>' +
-      '<div class="av" style="background:' + hue(c.name) + '">' + e(ini(c.name)) + '</div></div>';
+      (c.logo ? '<div class="av lg" style="background-image:url(' + e(c.logo) + ')"></div>' : '<div class="av" style="background:' + hue(c.name) + '">' + e(ini(c.name)) + '</div>') + '</div>';
   }
   function card(c, i) {
     var h = health(c), w = c.work;
-    return '<a class="cl" tabindex="0" style="animation-delay:' + Math.min(i || 0, 12) * 35 + 'ms" onclick="hqNav(\'hq:client:' + e(c.slug) + '\')" onkeydown="if(event.key===\'Enter\')hqNav(\'hq:client:' + e(c.slug) + '\')">' +
+    return '<a class="cl" tabindex="0" style="--bc:' + e(brand(c)) + ';animation-delay:' + Math.min(i || 0, 12) * 35 + 'ms" onclick="hqNav(\'hq:client:' + e(c.slug) + '\')" onkeydown="if(event.key===\'Enter\')hqNav(\'hq:client:' + e(c.slug) + '\')">' +
       '<div class="cl-top">' + avatar(c) +
       '<div style="min-width:0"><div class="cl-name">' + e(c.name) + '</div><div class="cl-sub">' + e(c.note || (c.services || []).join(' · ') || (KIND[c.kind] || 'Client')) + '</div></div>' +
       '<div style="margin-left:auto" class="hl ' + h.k + '"><i></i>' + e(h.t) + '</div></div>' +
@@ -172,7 +173,7 @@
     if (w && w.linked) tl += '<div class="ev"><b>Basecamp project linked</b><div class="m">' + e(w.project.name) + '</div></div>';
     if (!tl) tl = '<div class="empty" style="padding:8px 0">Nothing logged yet.</div>';
     return '<button class="back" onclick="hqNav(\'hq:clients\')">' + ico('back') + 'All clients</button>' +
-      '<div class="banner-h rise" style="--cc:' + hue(c.name) + '"><div class="row">' + avatar(c, 76) + '<div class="grow"><h2>' + e(c.name) + '</h2>' +
+      '<div class="banner-h rise" style="--cc:' + brand(c) + '"><div class="row">' + avatar(c, 76) + '<div class="grow"><h2>' + e(c.name) + '</h2>' +
       '<div class="chips" style="margin-top:10px"><span class="chip">' + e(STATUS[c.status] || c.status) + '</span>' + (c.services || []).map(function (s) { return '<span class="chip">' + e(s) + '</span>'; }).join('') + '</div></div>' +
       '<div class="hl ' + h.k + '" style="font-size:14px"><i style="width:10px;height:10px"></i>' + e(h.t) + '</div></div></div>' +
       (c.note ? '<div class="banner">' + ico('alert') + '<div>' + e(c.note) + '</div></div>' : '') +

@@ -283,3 +283,6 @@ body.hqout .top .sp{display:block}
 .urow{display:flex;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--hair)}.urow>div:first-child{flex:1}.urow .em2{font-size:12.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46ch}
 .urow select{padding:8px 10px;border:1px solid var(--hair2);border-radius:9px;min-height:38px;font:inherit}
 @media(max-width:700px){.urow{flex-wrap:wrap}.mrow .sn{max-width:34ch}}
+
+.avr .av.lg{background-size:cover;background-position:center;background-repeat:no-repeat;background-color:#fff;box-shadow:0 0 0 1px rgba(11,18,32,.08)}
+.cl{border-top:3px solid var(--bc,transparent)}
