@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Open Heart Media Client Onboarding</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a1220; --navy:#13233f; --red:#e22a24; --red-ink:#b81d18;
+  --bg:#f6f7f9; --card:#ffffff; --text:#111c2b; --mut:#5c6a7e; --line:#dfe3ea; --soft:#eef1f6;
+  --ok:#1f7a4d; --warn:#9a5b00; --focus:#3b82f6;
+  --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-head:"Bricolage Grotesque","Figtree",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b1220; --card:#121c30; --text:#e8edf6; --mut:#9db0cc; --line:#26334d; --soft:#182339;
+    --navy:#e8edf6; --red:#ff5a54; --red-ink:#ff8a85; --ok:#5fd29a; --warn:#f0b35a; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:16px/1.5 var(--font-body);-webkit-font-smoothing:antialiased;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));}
+.wrap{max-width:860px;margin:0 auto;padding-block:20px 80px}
+header.top{display:flex;align-items:center;gap:14px;padding-block:6px 18px}
+header.top img{height:34px;display:block}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) header.top img{filter:invert(1) hue-rotate(180deg)}}
+.prep{margin-left:auto;font-size:13px;color:var(--mut);text-align:right}
+.prep b{color:var(--text)}
+.hero{background:var(--ink);color:#fff;border-radius:14px;padding:26px 24px;margin-bottom:18px}
+.hero h1{font:700 30px/1.15 var(--font-head);margin:0 0 10px;text-wrap:balance}
+.hero p{margin:0;color:#c9d4e8;max-width:62ch}
+.hero .tag{display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#ff7a75;font-weight:700;margin-bottom:10px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:16px 0 0}
+.rules div{background:rgba(255,255,255,.07);border-radius:10px;padding:10px 12px;font-size:14px;color:#dbe4f4}
+.rules b{display:block;color:#fff;margin-bottom:2px}
+.progress{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:10px 0 12px}
+.bar{height:8px;background:var(--soft);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--red);transition:width .25s}
+.plabel{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--mut);margin-top:6px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0}
+.steps button{border:1px solid var(--line);background:var(--card);color:var(--mut);border-radius:99px;padding:5px 11px;font:500 12.5px var(--font-body);cursor:pointer}
+.steps button[aria-current="true"]{background:var(--navy);color:var(--bg);border-color:var(--navy)}
+.steps button.done{color:var(--ok);border-color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px}
+.card h2{font:700 24px/1.2 var(--font-head);margin:0 0 6px;text-wrap:balance}
+.card .intro{color:var(--mut);margin:0 0 20px;max-width:64ch}
+.field{margin:0 0 20px}
+.field>label,.field>.lab{display:block;font-weight:600;margin-bottom:4px}
+.field .help{display:block;color:var(--mut);font-size:14px;margin:0 0 7px;max-width:70ch}
+.req{color:var(--red);margin-left:3px}
+input[type=text],input[type=email],input[type=tel],input[type=url],input[type=number],textarea,select{
+  width:100%;font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px 12px;min-height:44px}
+textarea{min-height:92px;resize:vertical}
+input:focus,textarea:focus,select:focus,button:focus-visible{outline:3px solid var(--focus);outline-offset:1px;border-color:var(--focus)}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opts.inline{flex-flow:row wrap;gap:8px}
+.opt{display:flex;align-items:flex-start;gap:9px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);cursor:pointer;min-height:44px}
+.opt input{margin-top:4px;width:18px;height:18px;flex:none;accent-color:var(--red)}
+.opt:has(input:checked){border-color:var(--navy);background:var(--soft)}
+.grid{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+.grid table{border-collapse:collapse;width:100%;min-width:560px}
+.grid th,.grid td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:14px}
+.grid th{background:var(--soft);font-weight:600}
+.grid tr:last-child td{border-bottom:0}
+.grid td:first-child{font-weight:600;min-width:140px}
+.grid input,.grid select{min-height:40px;padding:7px 9px;font-size:14px}
+.err{color:var(--red-ink);font-size:14px;margin-top:5px}
+.field.bad input,.field.bad textarea,.field.bad .opt{border-color:var(--red)}
+.nav{display:flex;gap:10px;justify-content:space-between;margin-top:26px;flex-wrap:wrap}
+button.btn{font:600 16px var(--font-body);border-radius:10px;padding:12px 20px;min-height:46px;cursor:pointer;border:1px solid var(--navy);background:var(--card);color:var(--navy)}
+button.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+button.btn:disabled{opacity:.55;cursor:not-allowed}
+.note{background:var(--soft);border-left:4px solid var(--navy);padding:12px 14px;border-radius:8px;margin:0 0 20px;font-size:15px}
+.note.warn{border-left-color:var(--warn)}
+.sum{display:grid;gap:8px;margin:0 0 18px}
+.sum div{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);font-size:15px}
+.sum .ok{color:var(--ok);font-weight:600}.sum .miss{color:var(--warn);font-weight:600}
+.sum button{border:0;background:none;color:var(--navy);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+.saved{font-size:13px;color:var(--mut)}
+.done-card{text-align:left}
+.done-card h2{color:var(--ok)}
+.hp{position:absolute;left:-9999px;height:0;overflow:hidden}
+footer{margin-top:22px;color:var(--mut);font-size:13px}
+@media (max-width:560px){.hero h1{font-size:25px}.card{padding:18px}.prep{display:none}}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img alt="Open Heart Media" src="data:image/png;base64,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">
+    <div class="prep" id="prep"></div>
+  </header>
+
+  <section class="hero" id="hero">
+    <span class="tag">Client onboarding</span>
+    <h1>Let's start with the facts, not guesses.</h1>
+    <p>This form gives our team everything we need to do a complete job for your business. Plan on 30 to 45 minutes. You can stop at any time and come back on the same device. Your answers save as you go.</p>
+    <div class="rules">
+      <div><b>Not sure? Say so.</b>Write "not sure" and we will work it out together on our kickoff call.</div>
+      <div><b>No passwords. Ever.</b>We never ask for passwords here. We send you account invitations to approve.</div>
+      <div><b>Your business assets stay yours.</b>Your domain, website and business profiles stay in your name.</div>
+    </div>
+  </section>
+
+  <div class="progress" id="progress">
+    <div class="bar"><i id="barfill"></i></div>
+    <div class="plabel"><span id="plabel">Step 1</span><span class="saved" id="saved"></span></div>
+    <div class="steps" id="steps" role="tablist"></div>
+  </div>
+
+  <main><div class="card" id="card"></div></main>
+  <footer>Open Heart Media | 225 Reformation Pkwy, Suite 200, Canton, GA 30114. Your answers are used only to set up and run your marketing.</footer>
+</div>
+
+
+<script>
+"use strict";
+// ---------- Settings ----------
+var ENDPOINT = "/api/onboarding";   // Open Heart Media CRM
+var FORM_NAME = "onboarding";
+var SERVICES = [
+  "Website design or rebuild",
+  "Google Business Profile and local SEO",
+  "Paid ads (Meta and Google)",
+  "Social media content and posting",
+  "Video and photo production",
+  "Email or text marketing",
+  "Branding and design"
+];
+
+// ---------- Field helpers ----------
+function T(k,l,h,o){return Object.assign({k:k,l:l,t:"text",h:h||""},o||{});}
+function E(k,l,h,o){return Object.assign({k:k,l:l,t:"email",h:h||""},o||{});}
+function P(k,l,h,o){return Object.assign({k:k,l:l,t:"tel",h:h||""},o||{});}
+function U(k,l,h,o){return Object.assign({k:k,l:l,t:"url",h:h||""},o||{});}
+function L(k,l,h,o){return Object.assign({k:k,l:l,t:"long",h:h||""},o||{});}
+function C(k,l,opts,h,o){return Object.assign({k:k,l:l,t:"choice",opts:opts,h:h||""},o||{});}
+function M(k,l,opts,h,o){return Object.assign({k:k,l:l,t:"multi",opts:opts,h:h||""},o||{});}
+function G(k,l,rows,cols,h,o){return Object.assign({k:k,l:l,t:"grid",rows:rows,cols:cols,h:h||""},o||{});}
+var YNN=["Yes","No","Not sure"];
+
+// ---------- The questions ----------
+var SECTIONS = [
+{id:"start",title:"About you and what you need",intro:"Start here so we know who we are talking to and what you are hiring us for.",fields:[
+  T("business_name","Business name","The name your customers know you by.",{req:1,ac:"organization"}),
+  T("legal_name","Legal business name","As it appears on your license, tax or bank paperwork. Write 'same' if it is the same."),
+  C("entity","Type of business",["LLC","S corporation or C corporation","Sole proprietor","Partnership","Nonprofit","Franchise or branch of a larger company","Other"],"",{inline:1}),
+  T("contact_name","Your name","The person filling this out.",{req:1,ac:"name"}),
+  T("contact_title","Your title or role"),
+  E("contact_email","Your email",'',{req:1,ac:"email"}),
+  P("contact_phone","Your mobile or best phone number",'',{req:1,ac:"tel"}),
+  L("decision_maker","Who makes the final decision on marketing?","Name, role, email and phone. Write 'me' if it is you."),
+  M("services","What are you hiring us for?",SERVICES,"Check everything that applies. Sections that do not apply to you are hidden.",{req:1}),
+  T("go_live","When do you want to see first results?","A date, an event or a season. Write 'no rush' if there is none."),
+  L("why_now","What made you decide to get help now?","Be as blunt as you like.")
+]},
+{id:"details",title:"Business details",intro:"We will use this as the single source of truth. Your name, address and phone will be copied exactly the same everywhere online.",fields:[
+  P("public_phone","Phone number customers should call","Include area code."),
+  P("alt_phone","Any other phone numbers customers use","Texting line, second location, after hours."),
+  L("address","Business address","If you do not want the street address shown publicly, say so and tell us if you serve customers at their location (a service-area business)."),
+  C("sab","Do customers come to you or do you go to them?",["Customers come to our location","We go to the customer","Both","Online only"],"",{inline:1}),
+  L("hours","Business hours","Each day, and the hours someone is actually answering the phone."),
+  L("holiday_hours","Holiday and seasonal hours","Closures, early closes, seasonal changes."),
+  U("website","Current website address","Write 'none' if you do not have one."),
+  E("general_email","Main email shown to the public"),
+  E("lead_email","Email where new leads should be sent","Can be more than one. Separate with commas."),
+  T("year_started","Year started"),
+  T("employees","Number of employees (a range is fine)"),
+  L("locations","Other locations, branches or brands","Name and address of each."),
+  L("languages","Languages your customers speak","So we know if we need Spanish or other translations."),
+  L("about_you","Describe your business in 2 or 3 sentences, as if telling a friend")
+]},
+{id:"offer",title:"Your offer",intro:"What you sell, what you want to be known for, and what we must never promise.",fields:[
+  L("top_services","Your top 3 services or products by revenue","Rank them. Add rough percent of revenue if you know."),
+  L("all_services","Everything else you offer","The full list, even the small stuff."),
+  L("not_want","Work you do NOT want more of","Services, job sizes or customers we should not attract."),
+  L("prices_publish","Prices or price ranges you are comfortable publishing"),
+  L("prices_hide","Prices we should never publish"),
+  L("different","What makes you different? Give us 3 things, in your words."),
+  L("guarantees","Guarantees or warranties we may mention","Exactly as written, including limits."),
+  L("financing","Financing, payment plans or discounts you offer"),
+  L("brands","Brands, manufacturers or partners you carry or work with","Note any rules about using their names or logos."),
+  L("certs_show","Certifications, licenses, memberships or awards you want shown"),
+  L("offers_now","Offers or promotions running now or planned","With start and end dates. We need your OK on every offer before it is used."),
+  L("busy_slow","Your busiest and slowest months, and why"),
+  T("capacity","How many new customers or jobs can you handle each month?"),
+  T("lead_time","Current wait time or backlog"),
+  L("never_say","Anything we must NEVER say or promise")
+]},
+{id:"customers",title:"Your customers",intro:"The better we know who buys and why, the better every ad, page and post works.",fields:[
+  L("best_customer","Describe your best customer in a few sentences","Who they are, what they need, why they are great to work with."),
+  L("worst_customer","Describe the customer you do not want"),
+  L("why_call","What is the main reason people call you?"),
+  L("urgency","Is the work urgent or planned?",null),
+  L("questions","The top 5 questions people ask before they buy","Use their words."),
+  L("objections","The top 5 reasons people hesitate, say no, or choose someone else"),
+  L("buy_process","How do people decide? Who is involved?","One person, a couple, a committee, a board, a referral source."),
+  L("how_found","How do customers find you today?","Referrals, Google, social media, signs, repeat business, events. Rough percent if you know."),
+  L("referral_repeat","How much of your work is repeat or referral?"),
+  L("customer_value","What is a customer worth over time?","Repeat purchases, service plans, referrals."),
+  L("areas_served","Towns, counties or zip codes you serve"),
+  L("areas_not","Areas you do NOT serve or do not want"),
+  T("radius","How far will you travel?")
+].map(function(f){ if(f.k==="urgency"){return C("urgency","Is the work urgent or planned?",["Mostly urgent or emergency","Mostly planned","About half and half"],"",{inline:1});} return f; })},
+{id:"goals",title:"Goals and numbers",intro:"These numbers let us set targets and tell you honestly whether marketing is paying for itself. Ranges and rough guesses are fine.",fields:[
+  T("leads_goal","How many new leads a month would be a good month?"),
+  T("avg_job","Average job or order value"),
+  T("margin","Rough profit per average job, in dollars or percent","This stays private. It sets the most a lead can cost before you lose money."),
+  T("close_rate","Out of 10 leads, about how many become customers?","If you do not know, say so. We will track it for 30 days."),
+  T("new_cust_cap","How many new customers can you serve each month?"),
+  T("revenue_now","Rough yearly revenue (a range is fine)","Optional."),
+  L("goal90","Your goal for the next 90 days"),
+  L("goal12","Your goal for the next 12 months"),
+  L("good_lead","What counts as a GOOD lead for you?"),
+  L("bad_lead","What counts as a BAD lead for you?"),
+  L("win6","If we are working together 6 months from now, what would make you say this was a win?"),
+  L("frustration","What is your biggest frustration with marketing so far?"),
+  L("deadlines","Dates, events or seasons we must plan around")
+]},
+{id:"leads",title:"Lead handling",intro:"Great marketing fails when leads go unanswered. This tells us how leads will actually be handled.",fields:[
+  L("who_phone","Who answers the phone?","Names, hours, and what happens after hours."),
+  L("who_forms","Who answers web forms, texts and messages?"),
+  C("response","How fast can you reliably respond to a new lead?",["Within 5 minutes","Within 1 hour","Same business day","Next business day","Not sure"],"Be honest. We will plan around the real answer.",{inline:1}),
+  L("crm","Do you use a CRM, lead sheet or scheduling tool?","Name it, and say who uses it."),
+  L("quote_process","What happens between a lead and a booked job?","Call, estimate, visit, quote, deposit."),
+  C("report_jobs","Can you send us booked jobs and job values each month?",["Yes, every month","Yes, if it is easy","Not sure","No"],"This lets us improve results using real sales, not just clicks.",{inline:1}),
+  L("report_how","How will you send booked jobs, and who will send them?"),
+  C("record_calls","Are you OK with us using call tracking that records calls?",YNN,"We check your state's rules before turning it on.",{inline:1}),
+  C("text_ok","OK to text leads from a tracked number?",YNN,"",{inline:1}),
+  L("spam","Are you getting spam or bad leads today? Where from?")
+]},
+{id:"history",title:"Marketing so far",intro:"So we do not repeat what failed and we keep what works.",fields:[
+  M("tried","What have you tried?",["Google or Meta ads","Social media posting","Email or text","Print, mailers or signs","Referral programs","SEO or a blog","Events or sponsorships","Radio, TV or billboards","Lead-buying sites (Angi, Thumbtack and similar)","Nothing yet"]),
+  L("tried_results","How did each one go?","What worked, what did not, and roughly what you spent."),
+  T("spend_now","What do you spend on marketing each month right now?"),
+  L("agencies","Past agencies or freelancers, and why it ended"),
+  L("contracts","Contracts still in force","Website, hosting, ads, SEO, with end dates."),
+  L("best_ever","Best marketing result you ever had"),
+  L("worst_waste","Biggest waste of money you ever had"),
+  L("assets","Marketing assets you already own","Photos, videos, email list, customer list, domain, content.")
+]},
+{id:"compete",title:"Competition",intro:"We will study these businesses before we write a word.",fields:[
+  G("competitors","Your top competitors",["Competitor 1","Competitor 2","Competitor 3","Competitor 4","Competitor 5"],[{k:"name",l:"Business name"},{k:"web",l:"Website"},{k:"better",l:"What they do better"},{k:"worse",l:"What you do better"}],"Include anyone you respect or worry about."),
+  C("price_pos","Where do you sit on price?",["Lowest price","Mid-market","Premium"],"",{inline:1}),
+  L("admire","Any business, in any industry, whose marketing you admire?","Paste links."),
+  L("comp_say","What do competitors say or do that bothers you?")
+]},
+{id:"brand",title:"Brand",intro:"How you look and sound. Send original files, not screenshots.",fields:[
+  U("logo_link","Link to your logo files","A shared folder link (Google Drive, Dropbox or similar). We need the original files, ideally vector."),
+  L("colors","Brand colors and fonts","Names or hex codes. Write 'not sure' if you do not have them."),
+  U("brand_guide","Link to your brand guide, if you have one"),
+  T("tagline","Tagline or slogan"),
+  L("voice_words","Words or phrases that sound like you"),
+  L("avoid_words","Words, phrases or styles that do NOT sound like you"),
+  M("tone","Pick the tone that fits",["Friendly","Professional","Bold","Funny","Technical","Warm and caring","Premium","Down to earth"]),
+  L("story","Your story","How and why the business started."),
+  L("values","What you believe in and stand for"),
+  U("media_link","Link to existing photos and videos","A shared folder link."),
+  C("media_rights","Do you own the rights to those photos and videos?",YNN,"",{inline:1}),
+  L("testimonials","Testimonials or reviews we may use","Paste them or link them. Tell us who said yes to being quoted by name."),
+  L("team_bios","Team members to feature","Names, roles, and whether each person is comfortable on camera and online."),
+  L("community","Community, charity or partner involvement we should mention"),
+  L("brand_sensitive","Anything about your brand, history or industry that is sensitive")
+]},
+{id:"website",title:"Website",cond:["Website design or rebuild","Google Business Profile and local SEO","Paid ads (Meta and Google)"],intro:"What you have now and what you need.",fields:[
+  U("site_url","Current website address"),
+  T("site_platform","What is it built on?","WordPress, Wix, Squarespace, Shopify, custom, not sure."),
+  L("site_manager","Who built and manages it today?","Name, company, and how to reach them."),
+  L("site_hosting","Who hosts it and who owns the hosting account?"),
+  L("site_domain","Where is your domain registered, and whose name is on it?","This must be in your business name. If it is not, we will help fix it."),
+  T("domain_expiry","Domain renewal date, if you know it"),
+  L("site_wrong","What is wrong with the site today?"),
+  L("site_right","What do you like about it and want to keep?"),
+  L("pages_need","Pages you need","Home, services, about, reviews, gallery, FAQ, contact, anything else."),
+  M("features","Features you need",["Contact forms","Click-to-call","Online booking","Online store","Customer portal","Quote or price calculator","Photo or project gallery","Blog","Live chat","Multiple languages","Online payments","Donations"]),
+  L("integrations","Tools it must connect to","CRM, email platform, payment processor, scheduling."),
+  L("site_likes","3 websites you like, and what you like about each","Paste links."),
+  L("site_dislikes","Websites you do not like"),
+  L("site_legal","Legal or accessibility needs","Accessibility, privacy, medical privacy, cookies, terms of service."),
+  L("site_content","Who will supply text and photos for the site?"),
+  T("site_deadline","Launch deadline, if any"),
+  L("store_info","Online store only: how many products, shipping rules, payment processor, return policy")
+]},
+{id:"local",title:"Google profile and local listings",cond:["Website design or rebuild","Google Business Profile and local SEO","Paid ads (Meta and Google)"],intro:"How customers find you on Google Maps and online directories.",fields:[
+  C("has_gbp","Do you have a Google Business Profile?",YNN,"It is the listing that shows on Google Maps.",{inline:1}),
+  L("gbp_owner","Which Google account owns it?","The email address that manages it."),
+  L("gbp_reviews","About how many Google reviews do you have, and your rating?"),
+  U("review_link","Your Google review link, if you have it"),
+  L("review_process","How do you ask customers for reviews today?"),
+  L("review_respond","Who replies to reviews?"),
+  L("bad_reviews","Any negative or fake reviews we should know about?"),
+  L("old_names","Old business names, addresses or phone numbers","Past ones that may still appear online. This is the most common cause of ranking problems."),
+  L("dupes","Other listings you know about","Duplicates, old listings, anything you could not claim."),
+  M("listings","Where are you listed?",["Facebook","Yelp","Apple Business Connect","Bing Places","Better Business Bureau","Chamber of commerce","Nextdoor","Angi or HomeAdvisor","Industry directories","Not sure"])
+]},
+{id:"social",title:"Social media",cond:["Social media content and posting","Video and photo production","Paid ads (Meta and Google)"],intro:"Your current accounts and how you want us to handle them.",fields:[
+  G("social_accts","Your accounts",["Facebook","Instagram","TikTok","LinkedIn","YouTube","X (Twitter)","Nextdoor","Pinterest","Other"],[{k:"link",l:"Link or handle"},{k:"admin",l:"Who has admin access? (name and email)"},{k:"active",l:"Active?",t:"select",o:["","Yes","Sometimes","No","Do not have"]}]),
+  L("social_goal","What should social media do for your business?"),
+  C("freq","How often would you like to post?",["Daily","3 to 5 times a week","1 to 2 times a week","A few times a month","Whatever you recommend"],"",{inline:1}),
+  L("social_respond","Who replies to comments and messages, and how fast?"),
+  L("social_off","Topics, events or opinions we must stay away from"),
+  L("tag","Partners, vendors, suppliers or local accounts to tag or collaborate with"),
+  L("social_like","Accounts or posts you like","Paste links, any industry."),
+  L("social_worked","Past posts that did well, and ones that flopped"),
+  L("ugc","Are you OK with us sharing customer photos, reviews and tagged posts?","Say who must approve."),
+  L("contests","Giveaways or contests: any rules, legal limits or approvals we need to know?")
+]},
+{id:"content",title:"Filming and content",cond:["Video and photo production","Social media content and posting"],intro:"So our field team arrives prepared and nothing goes on camera that should not.",fields:[
+  L("shoot_loc","Where do we film?","Address of each location."),
+  L("onsite","On-site contact for shoot days","Name and phone."),
+  L("access","Access, parking, check-in, security or gate codes we should know about","Do not send passwords or private codes here. Tell us how to get them."),
+  L("shoot_times","Best days and times to film"),
+  L("blackouts","Dates we should avoid"),
+  L("people_ok","People who can appear on camera","Names, roles, and how comfortable each is."),
+  L("people_no","People who must NOT appear on camera"),
+  L("privacy_people","Customers, patients, students or minors we must not show"),
+  L("releases","Who will collect signed releases?","Every adult on camera needs one. We provide them."),
+  L("not_show","Places, vehicles, products, documents, logos or customer names we must not show"),
+  L("safety","Safety rules, uniforms or protective gear required on site"),
+  C("drone","Do you want drone footage?",["Yes","No","Not sure"],"We check local airspace rules before flying.",{inline:1}),
+  L("stories","5 projects, customers or stories worth filming"),
+  L("before_after","Before and after photos or footage we can use"),
+  L("events","Events and seasonal moments to plan around"),
+  L("footage_have","Existing footage or photos we should know about"),
+  L("content_like","Videos or content you love","Paste links."),
+  L("content_dislike","Content styles you dislike"),
+  C("camera_comfort","How comfortable are you on camera?",["Love it","OK with some coaching","Prefer not to","Do not want to be on camera"],"",{inline:1}),
+  L("post_approval","Anything that needs your approval before we post it")
+]},
+{id:"ads",title:"Paid advertising",cond:["Paid ads (Meta and Google)"],intro:"If you already have ad accounts we can work from, tell us below. If not, we build and run your ads in our own ad account. These answers set the plan and the guardrails.",fields:[
+  T("ad_budget","Monthly ad budget you are comfortable with"),
+  C("ad_funded","Is the budget approved and ready to be funded?",YNN,"",{inline:1}),
+  L("ad_payer","Do you have preferences on how ad spend is paid?","We will confirm the details with you on the kickoff call. Never send card numbers here."),
+  M("ad_platforms","Where should we advertise?",["Google Search","Google Maps","Google Performance Max","YouTube","Facebook and Instagram","TikTok","LinkedIn","Not sure, recommend for me"]),
+  L("ad_goal","What action do you want from an ad?","Calls, forms, bookings, store sales, event signups."),
+  L("ad_offer","Offers to promote","Remember, every offer needs your written OK."),
+  L("ad_geo","Where should ads run?","Towns, zip codes or a radius, plus areas to exclude."),
+  L("ad_hours","Days and hours ads should run","Match it to when someone answers the phone."),
+  L("ad_accts","Ad accounts you already have","Facebook ad account, Google Ads customer ID, pixel. IDs are fine. No logins. Write 'none' if you do not have any."),
+  C("ad_special","Do your ads fall into a Meta special ad category?",["Housing or real estate","Credit or financing","Employment","Health or medical","Social issues, elections or politics","None of these","Not sure"],"Platforms restrict targeting for these.",{inline:1}),
+  L("ad_rules","Industry advertising rules or claims we cannot make"),
+  C("ad_comp","OK to bid on competitor names?",YNN,"",{inline:1}),
+  L("ad_negative","Searches or audiences you do NOT want","Jobs, free, DIY, certain towns, certain services."),
+  L("ad_page","Where should ads send people?","Your current site, a new landing page, not sure."),
+  L("ad_past","Past ad results you know","Spend, leads, cost per lead, what worked."),
+  L("ad_approver","Who approves ads, and how fast can they reply?")
+]},
+{id:"tracking",title:"Tracking and data",cond:["Website design or rebuild","Google Business Profile and local SEO","Paid ads (Meta and Google)"],intro:"We cannot improve what we cannot measure. Tell us what is already set up.",fields:[
+  C("ga4","Is Google Analytics installed?",YNN,"",{inline:1}),
+  C("gtm","Is Google Tag Manager installed?",YNN,"",{inline:1}),
+  C("gsc","Is Google Search Console set up?",YNN,"",{inline:1}),
+  C("pixel","Is the Meta (Facebook) pixel installed?",YNN,"",{inline:1}),
+  L("track_other","Other tracking, call tracking or CRM connections you know about"),
+  U("privacy_url","Link to your privacy policy, if you have one"),
+  C("cookie","Do you have a cookie or consent banner?",YNN,"",{inline:1}),
+  L("track_ok","Are we allowed to add tracking code to your site?","Say who must approve it.")
+]},
+{id:"email",title:"Email and text marketing",cond:["Email or text marketing"],intro:"Your list, your tools and your rules.",fields:[
+  T("email_tool","Email or text platform you use"),
+  T("list_size","Approximate list size"),
+  L("list_source","How was the list built? Did people opt in?"),
+  L("email_freq","How often do you send today?"),
+  L("email_auto","Automations you already have","Welcome, abandoned cart, review requests, reminders."),
+  L("email_goals","What should email or text do for you?"),
+  L("email_rules","Consent, unsubscribe or compliance rules we must follow")
+]},
+{id:"rules",title:"Rules, licenses and approvals",intro:"The guardrails. These keep your business and ours out of trouble.",fields:[
+  L("licenses","Licenses, certifications and insurance that affect what we can say","What we may show, and what we should not publish."),
+  M("industry","Your industry includes",["Health care or medical","Mental health or crisis support","Finance, credit or insurance","Real estate or housing","Legal services","Education or children","Home services or construction","Automotive","Food and drink","Alcohol or regulated products","Nonprofit or fundraising","Franchise or corporate-controlled brand","None of these"]),
+  L("claims","Claims we cannot make, or must word a certain way"),
+  L("disclaimers","Disclaimers that must appear"),
+  L("privacy_rules","Privacy rules we must follow","Patient privacy, student privacy, minors, customer names."),
+  L("corporate","Does a parent company, franchisor or board have to approve our work?","Who, and how long does it take?"),
+  L("music","Any restrictions on music or outside content"),
+  L("flagged","Has a platform ever rejected your ads, restricted your page or banned an account?","What happened?"),
+  L("cant_post","Anything that can never be posted or published")
+]},
+{id:"comm",title:"Working together",intro:"How you like to communicate and approve work.",fields:[
+  L("best_contact","Best way to reach you day to day","Call, text, email, Basecamp. Best times."),
+  L("approvers","Who approves content and ads?","Names, emails, and how quickly each can reply."),
+  L("backup_approver","Backup approver if the main one is unavailable"),
+  L("report_to","Who should receive monthly reports?","Emails."),
+  L("copy","Anyone who must be copied on important messages"),
+  C("checkin","How often would you like check-ins?",["Weekly","Every two weeks","Monthly","Only when something needs attention"],"",{inline:1}),
+  L("checkin_time","Preferred day and time for check-ins"),
+  L("work_style","How do you like to work?","Short and direct, detailed, visual, hands-off, hands-on."),
+  L("pet_peeves","Anything that frustrates you in a vendor relationship"),
+  L("away","Vacations or busy periods in the next 90 days"),
+  L("kickoff","When can you do a 2 hour kickoff call?","Give us 3 options, with time zone."),
+  L("anything","Anything else we should know")
+]},
+{id:"access",title:"Accounts and access",intro:"Tell us what exists and who owns it. We will send you official invitations to approve, one at a time. Please do not type or send any passwords or codes, in this form or by email or text.",fields:[
+  G("access","Your accounts",["Google Business Profile","Google Ads","Google Analytics","Google Tag Manager","Google Search Console","Meta Business (Facebook Page, Instagram, ad account, pixel)","Website admin or CMS","Website hosting","Domain registrar and DNS","Email or text platform","TikTok","LinkedIn","YouTube","CRM, booking or ordering tools","Call tracking","Yelp and review sites","Apple Business Connect or Bing Places","Other"],[{k:"have",l:"Do you have it?",t:"select",o:["","Yes","No","Not sure"]},{k:"owner",l:"Who owns or manages it? (name and email)"}]),
+  {k:"ack_access",l:"I understand that Open Heart Media will send invitations for me to approve, and that I should never send passwords.",t:"ack"}
+]},
+{id:"review",title:"Review and send",intro:"Check what you have filled out. You can go back to any section. Sections you skipped are fine to leave and finish on the kickoff call.",fields:[]}
+];
+
+// ---------- State ----------
+var params = new URLSearchParams(location.search);
+var CLIENT = (params.get("client") || params.get("c") || "").toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,60);
+var PRESET_NAME = (params.get("name") || "").slice(0,120);
+var KEY = "ohm-onboarding-" + (CLIENT || "general");
+var state = {};
+var cur = 0;
+var submitted = false;
+
+function load(){ try{ var s = localStorage.getItem(KEY); if(s){ var o=JSON.parse(s); state=o.a||{}; cur=Math.min(o.c||0,SECTIONS.length-1); submitted=!!o.s; } }catch(e){} }
+var saveTimer;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(function(){
+    try{ localStorage.setItem(KEY, JSON.stringify({a:state,c:cur,s:submitted})); document.getElementById("saved").textContent="Saved on this device"; }
+    catch(e){ document.getElementById("saved").textContent="Autosave unavailable in this browser"; }
+  },250);
+}
+function pretty(slug){ return slug.split("-").map(function(w){return w? w[0].toUpperCase()+w.slice(1):w}).join(" "); }
+
+// ---------- Visibility and completeness ----------
+function visible(sec){
+  if(!sec.cond) return true;
+  var svc = state.services || [];
+  return sec.cond.some(function(c){return svc.indexOf(c)>-1;});
+}
+function visibleSections(){ return SECTIONS.filter(visible); }
+function hasValue(f){
+  var v = state[f.k];
+  if(f.t==="grid"){ return v && Object.keys(v).some(function(r){ return Object.keys(v[r]||{}).some(function(c){return (v[r][c]||"").trim();}); }); }
+  if(f.t==="multi") return v && v.length>0;
+  if(f.t==="ack") return !!v;
+  return v!==undefined && String(v).trim()!=="";
+}
+function sectionStats(sec){
+  var tot=sec.fields.length, done=sec.fields.filter(hasValue).length;
+  var req = sec.fields.filter(function(f){return f.req;});
+  var missReq = req.filter(function(f){return !hasValue(f);});
+  return {total:tot,done:done,missReq:missReq};
+}
+
+// ---------- DOM helpers ----------
+function h(tag,attrs){ var n=document.createElement(tag); attrs=attrs||{};
+  Object.keys(attrs).forEach(function(k){ if(k==="class") n.className=attrs[k]; else if(k==="text") n.textContent=attrs[k]; else if(k.slice(0,2)==="on") n.addEventListener(k.slice(2),attrs[k]); else if(attrs[k]!==false&&attrs[k]!==null&&attrs[k]!==undefined) n.setAttribute(k,attrs[k]===true?"":attrs[k]); });
+  for(var i=2;i<arguments.length;i++){ var c=arguments[i]; if(c==null) continue; n.appendChild(typeof c==="string"? document.createTextNode(c): c); }
+  return n; }
+var uid=0;
+function fieldNode(f){
+  var id="f"+(uid++);
+  var wrap=h("div",{class:"field","data-k":f.k});
+  if(f.t==="ack"){
+    var cb=h("input",{type:"checkbox",id:id}); cb.checked=!!state[f.k];
+    cb.addEventListener("change",function(){state[f.k]=cb.checked;save();});
+    wrap.appendChild(h("label",{class:"opt","for":id},cb,h("span",{text:f.l})));
+    return wrap;
+  }
+  var lab=h("label",{"for":id},f.l, f.req?h("span",{class:"req","aria-hidden":"true",text:"*"}):null);
+  if(f.t==="choice"||f.t==="multi"||f.t==="grid"){ lab=h("div",{class:"lab",id:id+"l"},f.l, f.req?h("span",{class:"req","aria-hidden":"true",text:"*"}):null); }
+  wrap.appendChild(lab);
+  if(f.h) wrap.appendChild(h("span",{class:"help",text:f.h}));
+  if(f.t==="long"){
+    var ta=h("textarea",{id:id,rows:"3"}); ta.value=state[f.k]||"";
+    ta.addEventListener("input",function(){state[f.k]=ta.value;save();updateProgress();});
+    wrap.appendChild(ta);
+  } else if(f.t==="choice"){
+    var box=h("div",{class:"opts"+(f.inline?" inline":""),role:"radiogroup","aria-labelledby":id+"l"});
+    f.opts.forEach(function(o,i){
+      var rid=id+"o"+i; var r=h("input",{type:"radio",name:id,id:rid,value:o}); r.checked=state[f.k]===o;
+      r.addEventListener("change",function(){state[f.k]=o;save();updateProgress();});
+      box.appendChild(h("label",{class:"opt","for":rid},r,h("span",{text:o})));
+    });
+    wrap.appendChild(box);
+  } else if(f.t==="multi"){
+    var mb=h("div",{class:"opts",role:"group","aria-labelledby":id+"l"});
+    f.opts.forEach(function(o,i){
+      var cid=id+"o"+i; var c=h("input",{type:"checkbox",id:cid,value:o});
+      c.checked=(state[f.k]||[]).indexOf(o)>-1;
+      c.addEventListener("change",function(){
+        var cur=(state[f.k]||[]).slice(); var ix=cur.indexOf(o);
+        if(c.checked&&ix<0)cur.push(o); if(!c.checked&&ix>-1)cur.splice(ix,1);
+        state[f.k]=cur; save(); updateProgress(); if(f.k==="services") renderSteps();
+      });
+      mb.appendChild(h("label",{class:"opt","for":cid},c,h("span",{text:o})));
+    });
+    wrap.appendChild(mb);
+  } else if(f.t==="grid"){
+    var tbl=h("table"); var thead=h("thead"); var hr=h("tr");
+    hr.appendChild(h("th",{text:""})); f.cols.forEach(function(c){hr.appendChild(h("th",{text:c.l}));});
+    thead.appendChild(hr); tbl.appendChild(thead);
+    var tb=h("tbody");
+    f.rows.forEach(function(r,ri){
+      var tr=h("tr"); tr.appendChild(h("td",{text:r}));
+      f.cols.forEach(function(c,ci){
+        var td=h("td"); var cid=id+"r"+ri+"c"+ci; var cell;
+        var val=((state[f.k]||{})[r]||{})[c.k]||"";
+        if(c.t==="select"){ cell=h("select",{id:cid,"aria-label":r+" "+c.l}); c.o.forEach(function(o){cell.appendChild(h("option",{value:o,text:o||"Select"}));}); cell.value=val; }
+        else { cell=h("input",{type:"text",id:cid,"aria-label":r+" "+c.l}); cell.value=val; }
+        var ev=c.t==="select"?"change":"input";
+        cell.addEventListener(ev,function(){ var g=state[f.k]=state[f.k]||{}; g[r]=g[r]||{}; g[r][c.k]=cell.value; save(); updateProgress(); });
+        td.appendChild(cell); tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); wrap.appendChild(h("div",{class:"grid"},tbl));
+  } else {
+    var inp=h("input",{type:f.t,id:id}); if(f.ac) inp.setAttribute("autocomplete",f.ac);
+    if(f.t==="tel") inp.setAttribute("inputmode","tel");
+    inp.value=state[f.k]||"";
+    inp.addEventListener("input",function(){state[f.k]=inp.value;save();updateProgress();});
+    wrap.appendChild(inp);
+  }
+  return wrap;
+}
+
+// ---------- Rendering ----------
+function renderSteps(){
+  var vs=visibleSections(); var box=document.getElementById("steps"); box.innerHTML="";
+  vs.forEach(function(s,i){
+    var st=sectionStats(s); var ix=SECTIONS.indexOf(s);
+    var b=h("button",{type:"button",role:"tab","aria-current":ix===cur?"true":"false",class:(s.id!=="review"&&st.total&&st.done===st.total?"done":""),text:(i+1)+". "+s.title.replace(/ and .*$/,"")});
+    b.addEventListener("click",function(){go(ix);});
+    box.appendChild(b);
+  });
+  updateProgress();
+}
+function updateProgress(){
+  var vs=visibleSections().filter(function(s){return s.id!=="review";});
+  var tot=0,done=0; vs.forEach(function(s){var st=sectionStats(s);tot+=st.total;done+=st.done;});
+  var pct=tot?Math.round(done/tot*100):0;
+  document.getElementById("barfill").style.width=pct+"%";
+  var vsAll=visibleSections(); var pos=vsAll.indexOf(SECTIONS[cur])+1;
+  document.getElementById("plabel").textContent="Section "+pos+" of "+vsAll.length+"  |  "+pct+"% answered";
+}
+function go(i){
+  if(!visible(SECTIONS[i])){ var n=i; while(n<SECTIONS.length-1&&!visible(SECTIONS[n])) n++; i=n; }
+  cur=i; save(); render(); window.scrollTo({top:document.getElementById("progress").offsetTop-4,behavior:"smooth"});
+}
+function neighbor(dir){ var i=cur+dir; while(i>=0&&i<SECTIONS.length&&!visible(SECTIONS[i])) i+=dir; return i; }
+
+function render(){
+  var card=document.getElementById("card"); card.innerHTML=""; uid=0;
+  if(submitted){ renderDone(card); renderSteps(); return; }
+  var s=SECTIONS[cur];
+  document.getElementById("hero").hidden = cur>0;
+  card.appendChild(h("h2",{text:s.title}));
+  card.appendChild(h("p",{class:"intro",text:s.intro}));
+  if(s.id==="review"){ renderReview(card); }
+  else{
+    if(s.id==="start") card.appendChild(h("div",{class:"note",text:"Fields marked * are required. Everything else you can skip or answer with 'not sure'."}));
+    if(s.id==="access") card.appendChild(h("div",{class:"note warn",text:"Never type a password, code or card number anywhere on this form."}));
+    s.fields.forEach(function(f){ card.appendChild(fieldNode(f)); });
+  }
+  var prev=neighbor(-1), next=neighbor(1);
+  var nav=h("div",{class:"nav"});
+  nav.appendChild(h("button",{type:"button",class:"btn",text:"Back",disabled:prev<0,onclick:function(){ if(prev>=0) go(prev); }}));
+  if(s.id!=="review") nav.appendChild(h("button",{type:"button",class:"btn primary",text:"Continue",onclick:function(){ if(!validateSection(s)) return; if(next<SECTIONS.length) go(next); }}));
+  card.appendChild(nav);
+  renderSteps();
+}
+function validateSection(s){
+  var bad=false; var first=null;
+  document.querySelectorAll(".field").forEach(function(n){ n.classList.remove("bad"); var e=n.querySelector(".err"); if(e) e.remove(); });
+  s.fields.forEach(function(f){
+    if(f.req && !hasValue(f)){
+      var n=document.querySelector('.field[data-k="'+f.k+'"]'); if(n){ n.classList.add("bad"); n.appendChild(h("div",{class:"err",role:"alert",text:"Please answer this one so we can reach you."})); if(!first) first=n; }
+      bad=true;
+    }
+    if(f.t==="email" && hasValue(f) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(state[f.k]).trim())){
+      var n2=document.querySelector('.field[data-k="'+f.k+'"]'); if(n2){ n2.classList.add("bad"); n2.appendChild(h("div",{class:"err",role:"alert",text:"That email address does not look right."})); if(!first) first=n2; } bad=true;
+    }
+  });
+  if(first) first.scrollIntoView({behavior:"smooth",block:"center"});
+  return !bad;
+}
+function missingRequired(){
+  var out=[];
+  SECTIONS.forEach(function(s){ if(!visible(s)) return; s.fields.forEach(function(f){ if(f.req && !hasValue(f)) out.push({s:s,f:f}); }); });
+  return out;
+}
+function renderReview(card){
+  var vs=visibleSections().filter(function(s){return s.id!=="review";});
+  var sum=h("div",{class:"sum"});
+  vs.forEach(function(s){
+    var st=sectionStats(s); var ix=SECTIONS.indexOf(s);
+    var left=h("span",{text:s.title});
+    var right=h("span",{},h("span",{class:st.done===st.total?"ok":"miss",text:st.done+" of "+st.total+" answered"}),"  ",h("button",{type:"button",text:"Open",onclick:function(){go(ix);}}));
+    sum.appendChild(h("div",{},left,right));
+  });
+  card.appendChild(sum);
+  var miss=missingRequired();
+  if(miss.length){ card.appendChild(h("div",{class:"note warn",role:"alert",text:"Before sending, please answer the required questions: "+miss.map(function(m){return m.f.l;}).join(", ")+"."})); }
+  var wrap=h("div",{class:"field"});
+  var cb=h("input",{type:"checkbox",id:"confirm"}); cb.checked=!!state._confirm;
+  cb.addEventListener("change",function(){state._confirm=cb.checked;save();send.disabled=!(cb.checked&&!missingRequired().length);});
+  wrap.appendChild(h("label",{class:"opt","for":"confirm"},cb,h("span",{text:"I confirm these answers are accurate to the best of my knowledge,."})));
+  card.appendChild(wrap);
+  var msg=h("div",{id:"sendmsg",role:"status"});
+  var send=h("button",{type:"button",class:"btn primary",text:"Send to Open Heart Media",onclick:function(){submit(send,msg);}});
+  send.disabled=!(state._confirm&&!miss.length);
+  var nav=h("div",{class:"nav"}, h("button",{type:"button",class:"btn",text:"Back",onclick:function(){go(neighbor(-1));}}), send);
+  card.appendChild(msg); card.appendChild(nav);
+}
+
+// ---------- Submit ----------
+function valueText(f){
+  var v=state[f.k];
+  if(f.t==="grid"){ return Object.keys(v||{}).map(function(r){ var row=v[r]; var parts=f.cols.map(function(c){return row[c.k]?c.l+": "+row[c.k]:"";}).filter(Boolean); return parts.length? r+" | "+parts.join(" | "):""; }).filter(Boolean).join("\n"); }
+  if(f.t==="multi") return (v||[]).join(", ");
+  if(f.t==="ack") return v?"Yes":"";
+  return v==null?"":String(v);
+}
+function buildSummary(){
+  var lines=[];
+  lines.push("CLIENT ONBOARDING: "+(state.business_name||CLIENT||"Unknown"));
+  lines.push("Link code: "+(CLIENT||"none")); lines.push("Submitted: "+new Date().toISOString()); lines.push("");
+  SECTIONS.forEach(function(s){ if(!visible(s)||!s.fields.length) return;
+    lines.push("== "+s.title.toUpperCase()+" ==");
+    s.fields.forEach(function(f){ var t=valueText(f); lines.push(f.l+"\n"+(t.trim()?t:"(no answer)")+"\n"); });
+  });
+  return lines.join("\n");
+}
+function submit(btn,msg){
+  var miss=missingRequired(); if(miss.length||!state._confirm){ return; }
+  btn.disabled=true; btn.textContent="Sending..."; msg.textContent="";
+  var answers={}; SECTIONS.forEach(function(s){ s.fields.forEach(function(f){ if(visible(s)&&hasValue(f)) answers[f.k]=state[f.k]; }); });
+  var summary=buildSummary();
+  var payload={form:"onboarding-v2",bot_field:"",client:CLIENT||"unassigned",
+    business_name:state.business_name||"",contact_name:state.contact_name||"",
+    contact_email:state.contact_email||"",contact_phone:state.contact_phone||"",
+    services:(state.services||[]).join(", "),submitted_at:new Date().toISOString(),
+    summary:summary,answers:answers};
+  fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); submitted=true; save(); render(); window.scrollTo({top:0}); })
+    .catch(function(e){
+      btn.disabled=false; btn.textContent="Try sending again";
+      msg.innerHTML=""; msg.appendChild(h("div",{class:"note warn",role:"alert"},
+        "We could not send your answers ("+e.message+"). Nothing is lost: they are saved on this device. Check your connection and try again. If it keeps failing, copy your answers below and email them to your Open Heart Media contact."));
+      var ta=h("textarea",{rows:"6","aria-label":"Your answers as text",readonly:true}); ta.value=summary; msg.appendChild(ta);
+    });
+}
+function renderDone(card){
+  card.className="card done-card";
+  card.appendChild(h("h2",{text:"Thank you. We have your answers."}));
+  card.appendChild(h("p",{class:"intro",text:"Your Open Heart Media team will review everything before your kickoff call. Here is what happens next."}));
+  var ul=h("ul"); ["We read your answers and study your website, Google profile and competitors.","We send you account invitations to approve one at a time. You will never be asked for a password.","We confirm your 2 hour kickoff call and bring a short plan based on what you told us."].forEach(function(t){ul.appendChild(h("li",{text:t}));});
+  card.appendChild(ul);
+  card.appendChild(h("p",{class:"saved",text:"You can close this page."}));
+}
+
+// ---------- Boot ----------
+load();
+if(!state.business_name && PRESET_NAME) state.business_name=PRESET_NAME;
+if(CLIENT){ document.getElementById("prep").appendChild(document.createTextNode("Prepared for ")); document.getElementById("prep").appendChild(h("b",{text:PRESET_NAME||pretty(CLIENT)})); }
+if(!visible(SECTIONS[cur])) cur=0;
+render();
+</script>
+</body>
+</html>

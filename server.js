@@ -4192,12 +4192,64 @@ f.addEventListener('submit',function(e){
 </script></body></html>`;
 }
 
+const ONBOARD_V2_FILE = path.join(__dirname, 'onboarding-form.html');
 app.get('/onboarding', (req, res) => {
+  try { res.set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(fs.readFileSync(ONBOARD_V2_FILE, 'utf8')); }
+  catch (e) { res.set('Content-Type', 'text/html').send(onboardingPage({ business: req.query.b || '' })); }
+});
+// The older, shorter form stays reachable for the team only (not a public path).
+app.get('/onboarding-short', (req, res) => {
   res.set('Content-Type', 'text/html').send(onboardingPage({ business: req.query.b || '' }));
 });
 
+// New full onboarding form (v2). One row per submission, tagged with the client link code, so the
+// team can see every client's answers separately. No password fields exist, and anything that
+// looks like a credential is scrubbed before it is stored or emailed.
+const ONB_CRED = /\b(pass(word|wd)?|pwd|login)\s*[:=]\s*\S+/gi;
+function scrubText(v, counter) { return String(v == null ? '' : v).replace(ONB_CRED, () => { counter.n++; return '[removed, send this a safer way]'; }); }
+function scrubDeep(v, counter, depth = 0) {
+  if (depth > 6) return '';
+  if (Array.isArray(v)) return v.slice(0, 200).map(x => scrubDeep(x, counter, depth + 1));
+  if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v).slice(0, 200)) o[String(k).slice(0, 80)] = scrubDeep(x, counter, depth + 1); return o; }
+  return scrubText(typeof v === 'string' ? v.slice(0, 6000) : v, counter);
+}
+async function handleOnboardingV2(d, req, res) {
+  if (d.bot_field) return res.json({ ok: true });                          // honeypot: pretend success
+  if (qualifyRateLimited(req.ip || 'x')) return res.status(429).json({ error: 'Too many submissions. Try again in a bit.' });
+  const business = String(d.business_name || '').trim().slice(0, 160);
+  const email = String(d.contact_email || '').trim().toLowerCase().slice(0, 254);
+  if (!business) return res.status(400).json({ error: 'Please add your business name.' });
+  if (!looksLikeEmail(email)) return res.status(400).json({ error: 'That email does not look right.' });
+  const counter = { n: 0 };
+  const client = String(d.client || 'unassigned').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 60) || 'unassigned';
+  const row = {
+    id: 'O' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+    at: new Date().toISOString(), v: 2, client, business, email,
+    contact_name: scrubText(d.contact_name, counter).slice(0, 120),
+    contact_phone: scrubText(d.contact_phone, counter).slice(0, 40),
+    services: scrubText(d.services, counter).slice(0, 600),
+    summary: scrubText(d.summary, counter).slice(0, 60000),
+    answers: scrubDeep(d.answers || {}, counter),
+  };
+  if (counter.n) row.scrubbed = counter.n;
+  const rows = loadOnboarding(); rows.push(row);
+  try { saveOnboarding(rows); } catch (e) { console.error('[onboarding] save failed -', e.message); return res.status(500).json({ error: 'Could not save. Please try again.' }); }
+  try {
+    if (process.env.SENDGRID_API_KEY && SALES.length) {
+      await sgMail.sendMultiple({
+        to: SALES, from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
+        replyTo: email,
+        subject: `ONBOARDING COMPLETE: ${business} (${client})`,
+        text: row.summary + (counter.n ? `\n\nNote: ${counter.n} answer(s) looked like a credential and were removed before saving.\n` : ''),
+      });
+    }
+  } catch (e) { console.error('[onboarding] notify failed -', e.message); }
+  res.json({ ok: true, id: row.id });
+}
+
 app.post('/api/onboarding', async (req, res) => {
   const d = req.body || {};
+  if (d.form === 'onboarding-v2') return handleOnboardingV2(d, req, res);
   const business = String(d.business || '').trim().slice(0, 160);
   const email = String(d.contact_email || '').trim().toLowerCase().slice(0, 254);
   if (!business) return res.status(400).json({ error: 'Please add your business name.' });
@@ -4238,7 +4290,25 @@ app.post('/api/onboarding', async (req, res) => {
   res.json({ ok: true, id: row.id });
 });
 
-app.get('/api/onboarding', (_, res) => res.json({ responses: loadOnboarding().slice().reverse() }));
+function teamOnly(req, res) {
+  if (!APP_PASSWORD || getCookie(req, 'ohm_auth') === AUTH_TOKEN) return true;
+  res.status(401).json({ error: 'auth required' }); return false;
+}
+app.get('/api/onboarding', (req, res) => { if (!teamOnly(req, res)) return; res.json({ responses: loadOnboarding().slice().reverse() }); });
+
+// Team view: every submission, grouped by client link code. Behind the team login.
+app.get('/admin/onboarding', (req, res) => {
+  const rows = loadOnboarding().slice().reverse();
+  const groups = {};
+  for (const r of rows) (groups[r.client || (r.v === 2 ? 'unassigned' : 'older short form')] ||= []).push(r);
+  const e = esc;
+  const body = Object.keys(groups).sort().map(g => `<h2>${e(g)} <small>${groups[g].length} submission${groups[g].length > 1 ? 's' : ''}</small></h2>` +
+    groups[g].map(r => `<details><summary><b>${e(r.business)}</b> &middot; ${e(r.contact_name || r.email)} &middot; ${e(new Date(r.at).toLocaleString('en-US', { timeZone: 'America/New_York' }))}${r.scrubbed ? ' &middot; <span style="color:#c00">credential text removed</span>' : ''}</summary>
+      <pre>${e(r.summary || JSON.stringify(r.answers, null, 2))}</pre></details>`).join('')).join('');
+  res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Onboarding submissions</title>
+<style>body{font:15px/1.5 -apple-system,Segoe UI,sans-serif;max-width:900px;margin:30px auto;padding:0 18px;color:#13233f}h2{margin:30px 0 8px;border-bottom:2px solid #e22a24;padding-bottom:4px}h2 small{font-weight:400;color:#68758c;font-size:13px}details{background:#fff;border:1px solid #e0e4ec;border-radius:8px;padding:10px 14px;margin:8px 0}pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,Menlo,monospace}body{background:#f6f7f9}</style>
+<h1>Onboarding submissions</h1>${body || '<p>No submissions yet.</p>'}`);
+});
 
 // ---------- Inbound qualified lead (contact form + campaign landing pages) ----------
 // The website's long qualifying form and the cold-outreach landing page both post here. It was
