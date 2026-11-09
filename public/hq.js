@@ -259,11 +259,14 @@
     var h = health(c), w = c.work, mine = (HQ.onb || []).filter(function (r) { return r.client === slug; });
     var formUrl = location.origin + '/onboarding?client=' + encodeURIComponent(slug), lists = '';
     if (w && w.linked) {
-      lists = w.lists.map(function (l) {
-        var m = /(\d+)\/(\d+)/.exec(l.ratio || ''), pct = m && +m[2] ? Math.round(+m[1] / +m[2] * 100) : 0;
-        return '<div style="margin-bottom:22px"><div class="list-h"><b>' + e(l.name) + '</b><span>' + e(l.ratio ? l.ratio + ' done' : '') + ' · <a class="lnk" href="' + e(l.url) + '" target="_blank" rel="noopener">Basecamp</a></span></div><div class="pbar"><i style="width:' + pct + '%"></i></div>' +
-          (l.open.length ? l.open.map(function (t) { return '<div class="td"><span class="ck"></span><div><a href="' + e(t.url) + '" target="_blank" rel="noopener">' + e(t.title) + '</a><div class="who">' + e(t.who || 'Unassigned') + '</div></div><span class="due ' + (t.overdue ? 'od' : '') + '">' + (t.due ? (t.overdue ? 'Late · ' : '') + e(dshort(t.due)) : '') + '</span></div>'; }).join('') : '<div class="empty" style="padding:12px 0">Everything here is done.</div>') + '</div>';
-      }).join('') || '<div class="empty">No to-do lists in this project yet.</div>';
+      var tdRow = function (t) { return '<div class="td"><span class="ck"></span><div><a href="' + e(t.url) + '" target="_blank" rel="noopener">' + e(t.title) + '</a><div class="who">' + e(t.who || 'Unassigned') + '</div></div><span class="due ' + (t.overdue ? 'od' : '') + '">' + (t.due ? (t.overdue ? 'Late · ' : '') + e(dshort(t.due)) : '') + '</span></div>'; };
+      var openLists = w.lists.filter(function (l) { return l.open.length; }), doneLists = w.lists.filter(function (l) { return !l.open.length; });
+      lists = openLists.map(function (l) {
+        var m = /(\d+)\/(\d+)/.exec(l.ratio || ''), pct = m && +m[2] ? Math.round(+m[1] / +m[2] * 100) : 0, rows = l.open.slice().sort(function (x, y) { return String(x.due || '9') < String(y.due || '9') ? -1 : 1; });
+        return '<div style="margin-bottom:18px"><div class="list-h"><b>' + e(l.name) + '</b><span>' + e(l.ratio ? l.ratio + ' done' : '') + ' · <a class="lnk" href="' + e(l.url) + '" target="_blank" rel="noopener">Basecamp</a></span></div><div class="pbar"><i style="width:' + pct + '%"></i></div>' +
+          rows.slice(0, 3).map(tdRow).join('') + (rows.length > 3 ? '<details class="sm" style="margin-top:6px"><summary>' + (rows.length - 3) + ' more, due later</summary>' + rows.slice(3).map(tdRow).join('') + '</details>' : '') + '</div>';
+      }).join('') + (doneLists.length ? '<details class="sm"><summary>' + doneLists.length + ' finished list' + (doneLists.length > 1 ? 's' : '') + '</summary><div style="padding:6px 2px;font-size:13px;color:#4a5468">' + doneLists.map(function (l) { return e(l.name) + ' (' + e(l.ratio || 'done') + ')'; }).join('<br>') + '</div></details>' : '');
+      if (!lists) lists = '<div class="empty">No to-do lists in this project yet.</div>';
     } else if (!HQ.data.connected) {
       lists = '<div class="empty">' + ico('link') + 'Connect Basecamp to see this client\'s to-dos.<br><br><a class="btn2 red" href="/api/basecamp/connect">Connect Basecamp</a></div>';
     } else {
