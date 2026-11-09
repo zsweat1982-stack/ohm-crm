@@ -289,10 +289,51 @@
         '<button class="btn2 line mini" onclick="hqTitle(\'' + e(u.id) + '\')">Set job role</button> <button class="btn2 line mini" onclick="hqReset(\'' + e(u.id) + '\')">Reset password</button> ' +
         (me.id !== u.id ? '<button class="btn2 line mini" onclick="hqActive(\'' + e(u.id) + '\',' + (u.active ? 'false' : 'true') + ')">' + (u.active ? 'Turn off' : 'Turn on') + '</button>' : '') + '</td></tr>';
     }).join('');
-    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team</h3><p>Everyone who can log in. Each person sees their own name.</p></div></div><div id="tempbox"></div>' +
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team</h3><p>Everyone who can log in. Each person sees their own name.</p></div></div><div id="tempbox"></div>' + rosterPanel(r.users) +
       '<div class="panel" style="margin-bottom:16px"><h3>Add a person</h3><div class="frm" style="margin-top:12px"><div><label for="nu_n">Name</label><input id="nu_n" placeholder="Full name"></div><div><label for="nu_e">Email</label><input id="nu_e" type="email" placeholder="name@openheartmediaco.com"></div><div><label for="nu_t">Job role</label><input id="nu_t" placeholder="e.g. Web Developer"></div><div><label for="nu_r">Access</label><select id="nu_r"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn2 red" onclick="hqAddUser()">Add</button></div></div>' +
       '<div class="panel"><table class="ttab"><thead><tr><th>Person</th><th>Access</th><th>Last in</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
+
+  var ROSTER = [
+    ['Griffin Baker', 'griffin@openheartmediaco.com', 'Operations & Account Manager', true],
+    ['Brad Baker', 'brad@openheartmediaco.com', 'Director of Strategic Growth', true],
+    ['Ariel Lewis', 'ariel@openheartmediaco.com', 'Director of Client Strategies', false],
+    ['Frank LaDue', 'frank@openheartmediaco.com', 'Web Developer / Graphic Designer', false],
+    ['Michelle Baker', 'michelle@openheartmediaco.com', 'Director of Sales', false],
+    ['Hiroshi Yamamoto Farfan', 'hiroshi@openheartmediaco.com', 'Lead Editor', false],
+    ['Mafer Rivera', 'mafer@openheartmediaco.com', 'Graphic Designer / Copywriter', false],
+    ['Valeria Sweat', 'valeria@openheartmediaco.com', 'Copywriter', false],
+    ['Tristen King', 'tristen@openheartmediaco.com', 'Lead Videographer', false],
+    ['Lisa Rodgers', 'lisa@openheartmediaco.com', 'Corporate Sales', false]
+  ];
+  function rosterPanel(existing) {
+    var have = {}; (existing || []).forEach(function (u) { have[u.email] = 1; });
+    var rows = ROSTER.filter(function (r) { return !have[r[1]]; });
+    if (!rows.length) return '';
+    return '<div class="panel" style="margin-bottom:16px"><h3>Add the whole team</h3><p class="hint">Everyone from Basecamp, with their job role. Uncheck anyone you do not want, and tick Admin for people who should manage logins.</p>' +
+      '<table class="ttab"><thead><tr><th></th><th>Person</th><th>Job role</th><th>Admin</th></tr></thead><tbody>' + rows.map(function (r, i) {
+        return '<tr><td><input type="checkbox" id="rt_on' + i + '" checked></td><td><div class="nm">' + e(r[0]) + '</div><div class="em">' + e(r[1]) + '</div></td><td class="em" style="display:table-cell">' + e(r[2]) + '</td><td><input type="checkbox" id="rt_ad' + i + '"' + (r[3] ? ' checked' : '') + '></td></tr>';
+      }).join('') + '</tbody></table><div style="margin-top:14px"><button class="btn2 red" onclick="hqAddTeam()">Add selected</button></div></div>';
+  }
+  window.hqAddTeam = async function () {
+    var have = {}; (HQ.users || []).forEach(function (u) { have[u.email] = 1; });
+    var rows = ROSTER.filter(function (r) { return !have[r[1]]; }), out = [], fail = [];
+    for (var i = 0; i < rows.length; i++) {
+      var on = document.getElementById('rt_on' + i); if (!on || !on.checked) continue;
+      var ad = document.getElementById('rt_ad' + i);
+      try { var r = await api('/api/admin/users', 'POST', { name: rows[i][0], email: rows[i][1], title: rows[i][2], role: ad && ad.checked ? 'admin' : 'member' }); out.push([rows[i][0], rows[i][1], r.temp_password]); }
+      catch (er) { fail.push(rows[i][0] + ': ' + er.message); }
+    }
+    await show('hq:team');
+    var b = document.getElementById('tempbox'); if (!b) return;
+    var text = out.map(function (o) { return o[0] + ' | ' + o[1] + ' | ' + o[2]; }).join('\n');
+    b.innerHTML = '<div class="tempbox"><b>Temporary passwords (shown once)</b><div style="margin:12px 0;display:grid;gap:6px">' + out.map(function (o) { return '<div>' + e(o[0]) + ' &nbsp;<span style="color:#9db3d6">' + e(o[1]) + '</span> &nbsp;<code style="font-size:15px">' + e(o[2]) + '</code></div>'; }).join('') + '</div>' +
+      (fail.length ? '<div style="color:#ff9d97;font-size:13px">' + e(fail.join(' · ')) + '</div>' : '') +
+      '<button class="btn2 glass" onclick="navigator.clipboard.writeText(' + e(JSON.stringify(text)) + ');toast(\'Copied\')">Copy all</button>' +
+      '<div style="color:#9db3d6;font-size:13px;margin-top:10px">Send each person their own password privately. They choose their own the first time they log in. Close this page and these are gone.</div></div>';
+    window.scrollTo(0, 0);
+  };
+
   function showTemp(who, pw) {
     var b = document.getElementById('tempbox'); if (!b) return;
     b.innerHTML = '<div class="tempbox"><b>Temporary password for ' + e(who) + '</b><div style="margin:10px 0"><code>' + e(pw) + '</code></div><div style="color:#9db3d6;font-size:13px">Send it to them privately. It is shown once. They pick their own password the first time they log in.</div></div>';
