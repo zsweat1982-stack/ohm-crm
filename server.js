@@ -4359,7 +4359,12 @@ const CATCHUP_FILE = path.join(DATA_DIR, 'catchup_nov2026.json');
 async function autoCatchup() {
   if (!AUTO_ON() || !GOOGLE_CLIENT_ID) return; const uid = Object.keys(gUsers())[0]; if (!uid) return;
   const done = readJson(CATCHUP_FILE, {}), cur = mondayOf(etNow()), weeks = [0, 7, 14, 21, 28, 35].map(n => addDaysStr(cur, n));
-  for (const slug of ['vnphc', 'bkvf', 'adnormous', 'ifab', 'urc', 'carver-plumbing']) {
+  if (!done['carver-task']) {
+    const hi = loadUsers().find(u => /hiroshi/i.test(u.name || '')), c = loadClients().find(x => x.slug === 'carver-plumbing');
+    if (hi && c) { const tasks = loadTasks(), fd = fridayDue(); tasks.push({ id: 't_' + crypto.randomBytes(5).toString('hex'), title: 'Carver Plumbing videos: edit and deliver', client: 'carver-plumbing', lane: 'content', owner: hi.id, due: fd.due, due_time: fd.due_time, status: 'open', created_at: new Date().toISOString(), created_by: 'zac', note: 'Carver videos are due Friday at 5 PM. Two more testimonial interviews are still to be filmed (see the client facts).', source: { type: 'manual', slug: 'carver-plumbing' } }); saveTasks(tasks); done['carver-task'] = new Date().toISOString(); fs.writeFileSync(CATCHUP_FILE, JSON.stringify(done)); console.log('[catchup] carver task for', hi.name); }
+    else console.log('[catchup] carver task skipped: no login for Hiroshi yet');
+  }
+  for (const slug of ['sun-and-shield', 'vnphc', 'bkvf', 'adnormous', 'ifab', 'urc', 'carver-plumbing']) {
     if (done[slug]) continue;
     try {
       const txt = 'BACKLOG OF RECENT FOOTAGE that has not been used yet. Place all of it across these weeks, one piece per open slot, newest and strongest first. Read the CONFIRMED FACTS and the SHOOTS STILL BEING WORKED ON list.\n' + (readFacts(slug) || '').slice(0, 2500);
