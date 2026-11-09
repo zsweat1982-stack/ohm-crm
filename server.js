@@ -4406,7 +4406,8 @@ app.get('/api/basecamp/callback', async (req, res) => {
     const q = new URLSearchParams({ type: 'web_server', client_id: process.env.BASECAMP_CLIENT_ID || '', client_secret: process.env.BASECAMP_CLIENT_SECRET || '',
       redirect_uri: CRM_URL + '/api/basecamp/callback', code: String(req.query.code || '') });
     const r = await fetch('https://launchpad.37signals.com/authorization/token?' + q, { method: 'POST' });
-    const j = await r.json();
+    const raw = await r.text();
+    let j = {}; try { j = JSON.parse(raw); } catch { throw new Error('Basecamp said: ' + raw.slice(0, 160) + ' (Check BASECAMP_CLIENT_ID and BASECAMP_CLIENT_SECRET in Render. Client ID set: ' + (process.env.BASECAMP_CLIENT_ID ? 'yes' : 'NO') + ', Client Secret set: ' + (process.env.BASECAMP_CLIENT_SECRET ? 'yes' : 'NO') + ')'); }
     if (!r.ok || !j.refresh_token) throw new Error(JSON.stringify(j).slice(0, 200));
     fs.writeFileSync(BC_TOKEN_FILE, JSON.stringify({ access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 1209600) * 1000 }));
     res.send('Basecamp connected. New onboarding submissions will now create a project automatically. You can close this tab.');

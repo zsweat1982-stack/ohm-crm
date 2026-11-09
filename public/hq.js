@@ -82,6 +82,15 @@
   function skeleton() { return '<div class="sk" style="height:210px;margin-bottom:16px"></div><div class="bento"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>'; }
   function tile(l, v, s, icon, cls) { return '<div class="tile rise ' + cls + '"><div class="chipi">' + ico(icon) + '</div><div class="l">' + e(l) + '</div><div class="v">' + e(v) + '</div><div class="s">' + e(s) + '</div></div>'; }
 
+  function crow(c, i) {
+    var h = health(c), w = c.work, p = progress(c);
+    var meter = w && w.linked ? '<div class="mt"><div class="pbar" style="margin:0"><i style="width:' + p + '%"></i></div><span>' + p + '%</span></div>' : '<div class="mt na">Not synced</div>';
+    var stat = w && w.linked ? '<span class="ct1"><b>' + w.open + '</b> open</span>' + (w.overdue ? '<span class="ct1 bad"><b>' + w.overdue + '</b> late</span>' : '') : '';
+    return '<a class="crow" tabindex="0" style="--bc:' + e(c.color || hue(c.name)) + ';animation-delay:' + Math.min(i, 14) * 25 + 'ms" onclick="hqNav(\'hq:client:' + e(c.slug) + '\')" onkeydown="if(event.key===\'Enter\')hqNav(\'hq:client:' + e(c.slug) + '\')">' +
+      avatar(c, 42) + '<div class="nm"><b>' + e(c.name) + '</b><span>' + e((c.services || []).join(' · ') || c.note || '') + '</span></div>' +
+      '<span class="chip st-' + e(c.status) + '">' + e(STATUS[c.status] || c.status) + '</span>' + meter +
+      '<div class="cs">' + stat + '</div><span class="nx">' + (w && w.nextDue ? e(dshort(w.nextDue)) : '') + '</span><span class="chev">' + ico('arrow') + '</span></a>';
+  }
   function home() {
     var d = HQ.data, Pr = state.prospects || [];
     var clients = d.clients.filter(function (c) { return c.status !== 'internal'; });
@@ -91,37 +100,35 @@
     var replies = Pr.filter(function (p) { return typeof needsResponse === 'function' && needsResponse(p); });
     var att = [];
     clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.filter(function (t) { return t.overdue; }).forEach(function (t) {
-      att.push('<div class="item"><div class="bub">' + ico('alert') + '</div><div><b>' + e(t.title) + '</b><div class="m">' + e(c.name) + ' · ' + e(t.who || 'Unassigned') + ' · was due ' + e(dshort(t.due)) + ' · <a href="' + e(t.url) + '" target="_blank" rel="noopener">Open in Basecamp</a></div></div></div>'); }); }); });
-    replies.slice(0, 5).forEach(function (p) { att.push('<div class="item"><div class="bub amber">' + ico('reply') + '</div><div><b>' + e(p.business) + ' replied</b><div class="m">Outreach · <a onclick="navTo(\'replied\')">Open replies</a></div></div></div>'); });
-    if (d.onboardingNoProject) att.push('<div class="item"><div class="bub blue">' + ico('clipboard') + '</div><div><b>' + d.onboardingNoProject + ' onboarding form' + (d.onboardingNoProject > 1 ? 's have' : ' has') + ' no Basecamp project</b><div class="m"><a onclick="hqNav(\'hq:onboarding\')">Review submissions</a></div></div></div>');
+      att.push('<div class="item"><div class="bub">' + ico('alert') + '</div><div><b>' + e(t.title) + '</b><div class="m">' + e(c.name) + ' · ' + e(t.who || 'Unassigned') + ' · was due ' + e(dshort(t.due)) + ' · <a href="' + e(t.url) + '" target="_blank" rel="noopener">Open</a></div></div></div>'); }); }); });
+    replies.slice(0, 4).forEach(function (p) { att.push('<div class="item"><div class="bub amber">' + ico('reply') + '</div><div><b>' + e(p.business) + ' replied</b><div class="m">Outreach · <a onclick="navTo(\'replied\')">Open replies</a></div></div></div>'); });
+    if (d.onboardingNoProject) att.push('<div class="item"><div class="bub blue">' + ico('clipboard') + '</div><div><b>' + d.onboardingNoProject + ' onboarding form' + (d.onboardingNoProject > 1 ? 's have' : ' has') + ' no Basecamp project</b><div class="m"><a onclick="hqNav(\'hq:onboarding\')">Review</a></div></div></div>');
     var noForm = clients.filter(function (c) { return c.status === 'active' && !(c.onboarding && c.onboarding.count); });
     var upcoming = [];
     clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { if (t.due && !t.overdue) upcoming.push({ d: t.due, t: t.title, c: c.name }); }); }); });
     upcoming.sort(function (a, b) { return a.d < b.d ? -1 : 1; });
-    var up = upcoming.slice(0, 6).map(function (u) { return '<div class="item"><div class="bub green">' + ico('clock') + '</div><div><b>' + e(u.t) + '</b><div class="m">' + e(u.c) + ' · due ' + e(dshort(u.d)) + '</div></div></div>'; }).join('');
+    var up = upcoming.slice(0, 5).map(function (u) { return '<div class="item"><div class="bub green">' + ico('clock') + '</div><div><b>' + e(u.t) + '</b><div class="m">' + e(u.c) + ' · ' + e(dshort(u.d)) + '</div></div></div>'; }).join('');
     var sent = Pr.filter(function (p) { return ['sent', 'replied', 'booked', 'won'].indexOf(p.status) > -1; }).length;
     var by = function (s) { return Pr.filter(function (p) { return p.status === s; }).length; };
     var need = att.length;
     var sub = !d.connected ? 'Connect Basecamp and every client\'s work shows up here.' : need ? need + ' thing' + (need > 1 ? 's' : '') + ' need you today.' : 'Nothing is late and nobody is waiting on you.';
     var trackPct = linked ? ontrack / linked * 100 : null, workPct = tot ? done / tot * 100 : null;
-    return '<div class="hero rise"><div><div class="eyebrow">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</div>' +
+    var ks = function (cls, l, v, s) { return '<div class="kc ' + cls + '"><span class="kl">' + e(l) + '</span><b class="kv2">' + e(v) + '</b><span class="ks">' + e(s) + '</span></div>'; };
+    return '<div class="hero2 rise"><div class="hl2"><div class="eyebrow">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</div>' +
       '<h2>' + greeting() + (firstName() ? ', ' + e(firstName()) : '') + '</h2><p>' + e(sub) + '</p><div class="acts">' +
       (d.connected ? '<button class="btn2 red" onclick="hqNav(\'hq:clients\')">' + ico('users') + 'All clients</button>' : '<a class="btn2 red" href="/api/basecamp/connect">' + ico('link') + 'Connect Basecamp</a>') +
       '<a class="btn2 glass" href="/onboarding" target="_blank" rel="noopener">' + ico('clipboard') + 'Client form</a>' +
       '<button class="btn2 glass" onclick="hqRefresh()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button></div></div>' +
-      '<div class="gauges">' + gauge(trackPct, 'Clients on track', '#5fe3a1') + gauge(workPct, 'Work complete', '#7db4ff') + '</div></div>' +
-      '<div class="bento">' +
-      tile('Clients', active, 'active right now', 'users', '') +
-      tile('Late work', d.connected ? late : '-', d.connected ? open + ' open to-dos' : 'connect Basecamp', 'alert', late ? 't-red' : 't-green') +
-      tile('Onboarding', d.onboardingTotal, 'form' + (d.onboardingTotal === 1 ? '' : 's') + ' received' + (noForm.length ? ' · ' + noForm.length + ' clients to go' : ''), 'clipboard', 't-violet') +
-      tile('Replies waiting', replies.length, 'from outreach', 'reply', replies.length ? 't-amber' : 't-green') + '</div>' +
-      '<div class="cols"><div class="panel"><h3>Needs attention' + (need ? '<span class="ct">' + need + '</span>' : '') + '</h3><p class="hint">Late work, replies and loose ends across every client.</p>' +
-      (need ? att.slice(0, 8).join('') : '<div class="empty">' + ico('check') + 'All clear. Nobody is waiting on you.</div>') + '</div>' +
-      '<div class="panel"><h3>Coming up</h3><p class="hint">Next due dates across all clients.</p>' + (up || '<div class="empty">' + ico('clock') + (d.connected ? 'No dated work coming up.' : 'Due dates appear once Basecamp is connected.') + '</div>') + '</div></div>' +
-      '<div class="sec"><div><h3>Clients</h3><p>Ring shows work completed. Color shows health.</p></div><a class="lnk" onclick="hqNav(\'hq:clients\')">See all</a></div>' +
-      '<div class="cl-grid">' + clients.slice(0, 8).map(card).join('') + '</div>' +
-      '<div class="sec" style="margin-top:32px"><div><h3>Outreach</h3><p>Cold email pipeline for new business.</p></div><a class="lnk" onclick="navTo(\'board\')">Open pipeline</a></div>' +
-      '<div class="panel"><div class="strip"><div><b>' + Pr.filter(function (p) { return !p.internal; }).length + '</b><span>Leads</span></div><div><b>' + sent + '</b><span>Contacted</span></div><div><b>' + by('replied') + '</b><span>Replied</span></div><div><b>' + by('booked') + '</b><span>Booked</span></div><div><b>' + by('won') + '</b><span>Won</span></div></div></div>';
+      '<div class="gauges">' + gauge(trackPct, 'On track', '#5fe3a1') + gauge(workPct, 'Work done', '#7db4ff') + '</div></div>' +
+      '<div class="kstrip rise">' + ks('', 'Clients', active, 'active now') + ks(late ? 'bad' : 'good', 'Late work', d.connected ? late : '-', d.connected ? open + ' open to-dos' : 'connect Basecamp') +
+      ks('', 'Onboarding', d.onboardingTotal, noForm.length ? noForm.length + ' clients to go' : 'forms received') + ks(replies.length ? 'warn' : 'good', 'Replies waiting', replies.length, 'from outreach') + '</div>' +
+      '<div class="hgrid"><div class="panel plist"><div class="ph"><h3>Clients</h3><a class="lnk" onclick="hqNav(\'hq:clients\')">Open all</a></div>' +
+      '<div class="crows">' + clients.map(crow).join('') + '</div></div>' +
+      '<div class="side"><div class="panel"><h3>Needs attention' + (need ? '<span class="ct">' + need + '</span>' : '') + '</h3>' +
+      (need ? att.slice(0, 6).join('') : '<div class="empty">' + ico('check') + 'All clear.</div>') + '</div>' +
+      '<div class="panel"><h3>Coming up</h3>' + (up || '<div class="empty">' + ico('clock') + (d.connected ? 'Nothing dated yet.' : 'Appears once Basecamp is connected.') + '</div>') + '</div></div></div>' +
+      '<div class="panel orow"><div class="oh"><h3>Outreach</h3><a class="lnk" onclick="hqNav(\'hq:outreach\')">Open</a></div><div class="strip">' +
+      '<div><b>' + Pr.filter(function (p) { return !p.internal; }).length.toLocaleString() + '</b><span>Leads</span></div><div><b>' + sent + '</b><span>Contacted</span></div><div><b>' + by('replied') + '</b><span>Replied</span></div><div><b>' + by('booked') + '</b><span>Booked</span></div><div><b>' + by('won') + '</b><span>Won</span></div></div></div>';
   }
 
   function clients() {
