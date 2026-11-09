@@ -9,5 +9,5 @@
 - The new office manager: introduction interview.
 - Ana: talking head about Alzheimer's and how the company works.
 - These are talking heads, so they supply real spoken hooks. Alternate them with Wisdom of the Elders (one every two weeks) across the next several weeks, so no two of the same kind land back to back.
-- Which clip is which person: not mapped yet. The "Interviews" folder has 3 long clips (C4372 to C4374) and "New Series" has 9 shorter ones; confirm before the pack names a file. Until then, name the person and the folder only.
+- Zac says the staff interviews are probably in the same "11-2-26 Visit" folder as the New Series files. Which clip is which person: not mapped yet. The "Interviews" folder has 3 long clips (C4372 to C4374) and "New Series" has 9 shorter ones; confirm before the pack names a file. Until then, name the person and the folder only.
 - Staff footage needs a signed release before it posts (add to "verify" on each of these). Alzheimer's content must not give medical advice or imply a cure.
