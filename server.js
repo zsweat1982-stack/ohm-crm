@@ -4219,7 +4219,7 @@ async function autoShotlists() {
     } catch (e) { console.error('[shotlist] auto failed', e.message); }
   }
 }
-setTimeout(autoShotlists, process.env.AUTO_FAST ? 14e3 : 90e3); setInterval(autoShotlists, process.env.AUTO_FAST ? 60e3 : 30 * 60e3);
+setTimeout(autoShotlists, process.env.AUTO_FAST ? 14e3 : 90e3); setInterval(autoShotlists, process.env.AUTO_FAST ? 60e3 : 60 * 60e3);
 
 
 // ---------- Weekly content pack: the brain fills each client's content calendar, one week at a time ----------
@@ -4435,7 +4435,7 @@ async function autoCatchup() {
   }
 }
 setTimeout(autoCatchup, process.env.AUTO_FAST ? 20e3 : 240e3);
-setTimeout(autoPacks, process.env.AUTO_FAST ? 16e3 : 120e3); setInterval(autoPacks, process.env.AUTO_FAST ? 60e3 : 30 * 60e3);
+setTimeout(autoPacks, process.env.AUTO_FAST ? 16e3 : 120e3); setInterval(autoPacks, process.env.AUTO_FAST ? 60e3 : 60 * 60e3);
 
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
