@@ -61,3 +61,19 @@ From Sun and Shield's Q4 research (Oct 11, 2026, Meta Ad Library, window tint, P
 | Fly My Ride North Fulton | 216 | mobile ceramic coating, local | local to us | https://www.facebook.com/ads/library/?id=1962500561143921 |
 
 Use these to see: where the text sits in the first second, how the local callout is shown, how the offer is set on the graphic, and whether the owner is on camera.
+
+## Local competitors checked by eye (second pass, Nov 9, 2026)
+
+Chosen by location first (Alpharetta), then by review count. Source: Meta Ad Library keyword search by page name, Active ads, sorted by impressions. I read the ad text and CTA from the page and looked at the thumbnails in a screenshot. I did not play the videos, so I cannot say whether a person speaks on camera. The Ad Library shows no spend or performance; sorted-by-impressions and start date are proxies only.
+
+| Competitor | Ad (Library ID) | Started | Format | Lead line and visual | CTA button | Link |
+|---|---|---|---|---|---|---|
+| AP3 Paint Protection (839 Google reviews, 5.0; Alpharetta, Marietta, Doraville) | 947126248444982 | Sep 20, 2026 | video 0:15 | "Dream car -- acquired. Now make sure it's protected" then a price list: "Front End PPF Starting at $1,750" | Get quote | https://www.facebook.com/ads/library/?id=947126248444982 |
+| AP3 Paint Protection | 1518708180098417 | Oct 30, 2026 | video 0:08 | Customer quote with five stars as the first line, then "Like a screen protector, but for your new car's paint". Thumbnail: car being worked on, red car | Get quote | https://www.facebook.com/ads/library/?id=1518708180098417 |
+| AP3 Paint Protection | 1372305994698563 | Oct 17, 2026 | static image | "Protect your new vehicle at AP3 Paint Protection in Atlanta!" Image: Rivian with the text "NO MORE ROCK CHIPS." | Get Quote | https://www.facebook.com/ads/library/?id=1372305994698563 |
+| Atlanta Auto Aesthetics (336 reviews, 5.0; Alpharetta, now Kennesaw) | 1120789870905159 | Oct 1, 2026 | video 0:16 | "Your paint takes damage every time you drive." then "Most owners only look into protection after the first chip." Phone and address in the caption. | Learn more | https://www.facebook.com/ads/library/?id=1120789870905159 |
+| Atlanta Auto Aesthetics | 1139518255086198 | Nov 5, 2026 | video 0:24 | "officially expanding to Kennesaw" Grand Opening: "save $300 on Full Front PPF" | Get offer | https://www.facebook.com/ads/library/?id=1139518255086198 |
+| Atlanta Auto Aesthetics | 1701823978026475 | Nov 5, 2026 | video 0:28 | "You invested in the vehicle. Protect the finish." ceramic coating | Get offer | https://www.facebook.com/ads/library/?id=1701823978026475 |
+
+Not checked: Champagne Window Tinting (525 reviews) and Defyne Cars. No Meta Ad Library search was run for them.
+What this adds to the table above: local rivals lead with a customer quote or an ownership line ("You invested in the vehicle"), put the price or the offer in the caption, and use quote-style buttons (Get quote, Get offer). Neither of them runs the Tesla and Rivian certified callout, which is Sun and Shield's open lane. All of these are OBSERVED, not tested.
