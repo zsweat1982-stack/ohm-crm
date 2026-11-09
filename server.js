@@ -4347,11 +4347,39 @@ app.post('/api/hq/packs/:slug/:week/release', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
   try { res.json({ ok: true, tasks: releasePack(String(req.params.slug), String(req.params.week), me.name) }); } catch (e) { res.status(400).json({ error: String(e.message) }); }
 });
+
+// Winners: posts that worked. They feed the next packs as proven formats and become ad creative work for the ads owner.
+const WINNERS_FILE = path.join(DATA_DIR, 'winners.json');
+app.get('/api/hq/winners/:slug', (req, res) => { if (!authedUser(req)) return res.status(401).json({ error: 'auth required' }); res.json({ winners: (readJson(WINNERS_FILE, {})[String(req.params.slug)] || []).slice(0, 30) }); });
+app.post('/api/hq/winners/:slug', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''), c = loadClients().find(x => x.slug === slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  const b = req.body || {}, t = (k, n) => String(b[k] || '').replace(/—|–/g, ',').trim().slice(0, n);
+  const w = { id: 'w_' + crypto.randomBytes(4).toString('hex'), at: new Date().toISOString(), by: me.name, platform: t('platform', 40), post: t('post', 300), why: t('why', 400), concept: t('concept', 200), angle: t('angle', 200) };
+  if (!w.post) return res.status(400).json({ error: 'Say which post it was (a link or a short description).' });
+  const all = readJson(WINNERS_FILE, {}); all[slug] = [w].concat(all[slug] || []).slice(0, 60); fs.writeFileSync(WINNERS_FILE, JSON.stringify(all, null, 2));
+  try { fs.mkdirSync(WORKING_LIVE, { recursive: true }); fs.writeFileSync(path.join(WORKING_LIVE, slug + '.md'), readWorking(slug).trimEnd() + `\n- WINNER marked ${w.at.slice(0, 10)} by ${w.by} (${w.platform || 'platform not given'}): ${w.post}. Why it worked: ${w.why || 'not given'}. Concept: ${w.concept || 'not given'}. Angle: ${w.angle || 'not given'}.\n`); } catch {}
+  const owner = ownerFor(c, 'ads'), fd = fridayDue(); let task = null;
+  if (owner) { const tasks = loadTasks(); task = { id: 't_' + crypto.randomBytes(5).toString('hex'), title: `Add winner to the campaign creative: ${c.name}`, client: slug, lane: 'ads', owner: owner.id, due: fd.due, due_time: fd.due_time, status: 'open', created_at: w.at, created_by: 'winners', note: `Winning post: ${w.post}\nWhy it worked: ${w.why}\nConcept: ${w.concept}\nAngle: ${w.angle}\nAdd it to the concept, angle and creatives for the campaigns. Do not boost the post.`, source: { type: 'winner', slug, id: w.id } }; tasks.push(task); saveTasks(tasks); }
+  res.json({ ok: true, winner: w, task: !!task });
+});
+// Every Monday each ads owner gets one "what worked last week" check per client.
+function weeklyReviewTasks() {
+  const cur = mondayOf(etNow()), tasks = loadTasks(); let n = 0;
+  for (const c of loadClients().filter(x => ['active', 'seasonal'].includes(x.status))) {
+    if (tasks.some(t => t.source && t.source.type === 'review' && t.source.slug === c.slug && t.source.week === cur)) continue;
+    const owner = ownerFor(c, 'ads'); if (!owner) continue; const fd = fridayDue();
+    tasks.push({ id: 't_' + crypto.randomBytes(5).toString('hex'), title: `What worked last week: ${c.name}. Mark any winners.`, client: c.slug, lane: 'ads', owner: owner.id, due: fd.due, due_time: fd.due_time, status: 'open', created_at: new Date().toISOString(), created_by: 'review', note: 'Open the client page, Weekly pack tab, Winners. Add any post that clearly worked. Winners go into the next packs and into the campaign creative.', source: { type: 'review', slug: c.slug, week: cur } }); n++;
+  }
+  if (n) { saveTasks(tasks); console.log('[review] tasks', n); }
+}
+
 // Weekly rhythm. Monday 6 AM Eastern: the pack for the following week is released and each person sees what they are making. Everything is due that Friday at 5:00 PM.
 // The pack is written from Thursday on, so it is ready by Monday. Set AUTO_IDEAS=0 in Render to turn this off.
 async function autoPacks() {
   if (!AUTO_ON()) return;
   const et = etNow(), dow = et.getDay(), hr = et.getHours(), M = upcomingMonday(), T = addDaysStr(M, 7);
+  if (dow === 1 && hr >= 6) { try { weeklyReviewTasks(); } catch (e) { console.error('[review] failed', e.message); } }
   const eligible = loadClients().filter(x => ['active', 'seasonal', 'onboarding'].includes(x.status) && ((x.cadence || {}).days && x.cadence.days.length || (loadPlans().clients[x.slug] || []).length));
   for (const c of eligible) {
     try {

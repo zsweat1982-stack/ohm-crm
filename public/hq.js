@@ -578,6 +578,16 @@
       return (i + 1) + '. ' + r.date + ' ' + r.type + (r.time ? ' (' + r.time + ')' : '') + (r.trigger ? ' [' + r.trigger + ']' : '') + '\nIdea: ' + r.idea + '\nHook: ' + r.hook + '\nShots: ' + r.shots.join('; ') + '\nOn-screen: ' + r.onscreen + (r.design ? '\nDesign: ' + r.design : '') + '\nCaption: ' + r.caption.hook + '\n' + r.caption.body + '\n' + r.caption.cta + (r.verify.length ? '\nVERIFY: ' + r.verify.join('; ') : '');
     }).join('\n\n');
   }
+  function winnersPanel(c) {
+    var ws = (HQ.winners && HQ.winners[c.slug]) || [];
+    return '<div class="panel"><h3>Winners</h3><p class="hint" style="margin-top:0">Posts that clearly worked. They become proven formats in the next packs and a task for the ads owner to add them to the campaign concept, angle and creatives. Nothing is boosted.</p>' +
+      (ws.length ? ws.slice(0, 6).map(function (w) { return '<div class="kv"><span><b>' + e(w.post) + '</b> ' + (w.platform ? '(' + e(w.platform) + ')' : '') + (w.why ? '<br><span class="hint" style="margin:0">' + e(w.why) + '</span>' : '') + '</span><span class="hint" style="margin:0">' + e(dshort(w.at.slice(0, 10))) + '</span></div>'; }).join('') : '<p class="hint">None marked yet.</p>') +
+      '<details class="sm" style="margin-top:10px"><summary>Mark a winner</summary><div class="ed"><label>Which post (link or short description)</label><input id="wn_p"><label>Platform</label><input id="wn_pl" placeholder="Instagram, Facebook, TikTok"><label>Why it worked (numbers if you have them)</label><input id="wn_w"><label>Concept</label><input id="wn_c"><label>Angle</label><input id="wn_a"><button class="btn2 red" style="margin-top:10px" onclick="hqWinner(\'' + e(c.slug) + '\')">Save winner</button></div></details></div>';
+  }
+  window.hqWinner = async function (slug) {
+    var v = function (id) { return (document.getElementById(id) || {}).value || ''; };
+    try { var r = await fetch('/api/hq/winners/' + slug, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ post: v('wn_p'), platform: v('wn_pl'), why: v('wn_w'), concept: v('wn_c'), angle: v('wn_a') }) }); var j = await r.json(); if (!r.ok) throw new Error(j.error || 'Could not save'); HQ.winners[slug] = null; HQ.winners[slug] = (await api('/api/hq/winners/' + slug)).winners; toast(j.task ? 'Saved, and a task was added for the ads owner' : 'Saved'); show(navKey); } catch (x) { toast(String(x.message || x)); }
+  };
   function promoPanel(c, promos) {
     var admin = HQ.me && HQ.me.role === 'admin';
     var rows = (promos || []).map(function (p, i) { return '<div class="kv"><span><b>' + e(p.name) + '</b> ' + e(dshort(p.start)) + (p.end && p.end !== p.start ? ' to ' + e(dshort(p.end)) : '') + (p.details ? '<br><small style="color:var(--mut)">' + e(p.details) + '</small>' : '') + '</span><span style="white-space:nowrap">' + (p.confirmed ? '<span class="chip st-active">Client confirmed</span>' : '<span class="chip need">Not confirmed</span>') + (admin ? ' <a class="lnk" onclick="hqPromoDel(\'' + e(c.slug) + '\',' + i + ')">Remove</a>' : '') + '</span></div>'; }).join('');
@@ -611,7 +621,7 @@
         (r.basis ? '<div class="pkl"><b>Why:</b> ' + e(r.basis) + '</div>' : '') + (r.gates.length ? '<div class="pkl"><b>Gates:</b> ' + e(r.gates.join('; ')) + '</div>' : '') + (r.verify.length ? '<div class="vf">VERIFY: ' + e(r.verify.join('; ')) + '</div>' : '') +
         (r.missing ? '<div class="vf">The AI skipped this slot. Rewrite the week.</div>' : '') + '</div></div>';
     }).join('') + (pack.notes ? '<p class="hint">' + e(pack.notes) + '</p>' : '') + '<div class="shfoot"><button class="btn2 line" data-copy="' + e(packText(c, pack)) + '" onclick="navigator.clipboard.writeText(this.getAttribute(\'data-copy\'));toast(\'Pack copied\')">Copy the whole week</button></div>';
-    return '<div class="two"><div class="panel"><h3>Weekly pack</h3><p class="hint" style="margin-top:0">Written from this client\'s brain, delivered one week at a time. Click a hook or a caption to copy it.</p>' + warn + bar + meta + stale + rel + body + '</div><div>' + promoPanel(c, data.promos) + '</div></div>';
+    return '<div class="two"><div class="panel"><h3>Weekly pack</h3><p class="hint" style="margin-top:0">Written from this client\'s brain, delivered one week at a time. Click a hook or a caption to copy it.</p>' + warn + bar + meta + stale + rel + body + '</div><div style="display:grid;gap:16px">' + promoPanel(c, data.promos) + winnersPanel(c) + '</div></div>';
   }
   window.hqPackWeek = async function (slug, w) { HQ.packWeek[slug] = w; await loadHols(w); show(navKey); };
   async function loadHols(w) { if (HQ.hols[w]) return; try { var to = new Date(w + 'T12:00:00'); to.setDate(to.getDate() + 6); var t = to.getFullYear() + '-' + ('0' + (to.getMonth() + 1)).slice(-2) + '-' + ('0' + to.getDate()).slice(-2); HQ.hols[w] = (await api('/api/hq/holidays?from=' + w + '&to=' + t)).holidays; } catch (x) { HQ.hols[w] = []; } }
@@ -696,6 +706,7 @@
     var tab = HQ.ctab;
     if (HQ.ctabSlug !== slug) { HQ.ctabSlug = slug; }
     if (tab === 'pack') {
+      HQ.winners = HQ.winners || {}; if (HQ.winners[slug] == null) { try { HQ.winners[slug] = (await api('/api/hq/winners/' + slug)).winners; } catch (x) { HQ.winners[slug] = []; } }
       var w = HQ.packWeek[slug] || defaultWeek(); await loadHols(w);
       if (HQ.packs[slug] == null) { try { HQ.packs[slug] = await api('/api/hq/packs/' + slug); } catch (x) { HQ.packs[slug] = { packs: [], promos: [] }; } }
     }
