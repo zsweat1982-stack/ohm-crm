@@ -2297,7 +2297,11 @@ app.post('/api/login', (req, res) => {
   const key = (req.ip || 'x') + '|' + email;
   if (loginLimited(key)) return res.status(429).send('Too many attempts. Wait 15 minutes and try again.');
   if (email) {
-    const u = loadUsers().find(x => x.email === email && x.active !== false);
+    let u = loadUsers().find(x => x.email === email && x.active !== false);
+    // Recovery: the first admin account that has never had its own password set will also accept the shared team password.
+    if (u && !checkPw(u, password) && APP_PASSWORD && password === APP_PASSWORD && u.must_change && u.role === 'admin' && u.email === 'zac@openheartmediaco.com') {
+      const all = loadUsers(); const t = all.find(x => x.id === u.id); Object.assign(t, hashPw(APP_PASSWORD)); saveUsers(all); u = t;
+    }
     if (u && checkPw(u, password)) {
       u.last_login = new Date().toISOString(); try { saveUsers(loadUsers().map(x => x.id === u.id ? u : x)); } catch {}
       res.setHeader('Set-Cookie', `ohm_sess=${signSession(u.id, 30)}; ${cookieOpts(req)}; Max-Age=${60 * 60 * 24 * 30}`);
@@ -3589,7 +3593,7 @@ app.get('/api/me/gmail/connect', (req, res) => {
   if (!GOOGLE_CLIENT_ID) return res.status(400).send('Google is not set up on this service yet (GOOGLE_CLIENT_ID).');
   const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   u.searchParams.set('client_id', GOOGLE_CLIENT_ID); u.searchParams.set('redirect_uri', GMAIL_REDIRECT);
-  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly');
+  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly');
   u.searchParams.set('access_type', 'offline'); u.searchParams.set('prompt', 'consent');
   u.searchParams.set('state', signGmailState(me.id)); if (me.email) u.searchParams.set('login_hint', me.email);
   res.redirect(u.toString());
@@ -3658,9 +3662,40 @@ app.get('/api/me/mail', async (req, res) => {
   if (me.legacy) return res.json({ connected: false, legacy: true });
   try { res.json({ ...(await mailFor(me.id)), configured: !!GOOGLE_CLIENT_ID }); } catch (e) { res.json({ connected: !!gUsers()[me.id], error: e.message.slice(0, 160), configured: !!GOOGLE_CLIENT_ID }); }
 });
+
+const calCache = new Map();
+app.get('/api/me/calendar', async (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  if (me.legacy) return res.json({ connected: false, legacy: true });
+  const hit = calCache.get(me.id); if (hit && Date.now() - hit.at < 180e3) return res.json(hit.data);
+  try {
+    const tok = await userGmailToken(me.id);
+    if (!tok) return res.json({ connected: false, configured: !!GOOGLE_CLIENT_ID });
+    const auth = { Authorization: 'Bearer ' + tok };
+    const cl = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader', { headers: auth });
+    if (cl.status === 403 || cl.status === 401) return res.json({ connected: true, needsCalendar: true });
+    if (!cl.ok) throw new Error('Calendar list failed ' + cl.status);
+    const cals = ((await cl.json()).items || []).filter(c => c.primary || /ohm|open heart/i.test(c.summary || '') || c.selected && /meeting|film|schedule/i.test(c.summary || ''));
+    const now = new Date(), end = new Date(now.getTime() + 14 * 864e5);
+    const events = [];
+    for (const c of cals.slice(0, 6)) {
+      const u = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.id)}/events`);
+      u.searchParams.set('timeMin', new Date(now.getTime() - 3 * 36e5).toISOString()); u.searchParams.set('timeMax', end.toISOString());
+      u.searchParams.set('singleEvents', 'true'); u.searchParams.set('orderBy', 'startTime'); u.searchParams.set('maxResults', '25');
+      const r = await fetch(u, { headers: auth }); if (!r.ok) continue;
+      for (const ev of ((await r.json()).items || [])) {
+        if (ev.status === 'cancelled') continue;
+        events.push({ id: ev.id + c.id, title: ev.summary || '(no title)', start: ev.start.dateTime || ev.start.date, end: ev.end && (ev.end.dateTime || ev.end.date), allDay: !ev.start.dateTime, where: (ev.location || '').slice(0, 80), link: ev.htmlLink, cal: c.primary ? 'Mine' : (c.summary || '').trim() });
+      }
+    }
+    events.sort((a, b) => new Date(a.start) - new Date(b.start));
+    const seen = new Set(), uniq = events.filter(e => { const k = e.title + e.start; if (seen.has(k)) return false; seen.add(k); return true; });
+    const data = { connected: true, events: uniq.slice(0, 40) }; calCache.set(me.id, { at: Date.now(), data }); res.json(data);
+  } catch (e) { res.json({ connected: true, error: e.message.slice(0, 140) }); }
+});
 app.post('/api/me/gmail/disconnect', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Not signed in.' });
-  const all = gUsers(); delete all[me.id]; saveGUsers(all); mailCache.delete(me.id); res.json({ ok: true });
+  const all = gUsers(); delete all[me.id]; saveGUsers(all); mailCache.delete(me.id); calCache.delete(me.id); res.json({ ok: true });
 });
 
 const STOP_RE = /^\s*(stop|unsubscribe|remove me|take me off|opt out|no thanks,? ?stop)\b/i;

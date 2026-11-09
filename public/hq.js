@@ -1,6 +1,6 @@
 /* Open Heart Media CRM: Home, Clients, Onboarding pages. Loaded after the outreach script. */
 (function () {
-  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false };
+  var HQ = { data: null, onb: null, loading: false, me: null, mail: null, mailLoading: false, cal: null, calLoading: false };
   var COLORS = ['#2f6fd0', '#e22a24', '#17935f', '#6552d1', '#c98a0b', '#0f7c8c', '#c2185b', '#455a9c'];
   // One icon family: 24px grid, 1.8 stroke, round caps.
   var P = {
@@ -95,31 +95,69 @@
       '<div class="sbig">' + e(big) + '</div><div class="ssub">' + e(sub) + '</div>' +
       (rows && rows.length ? '<div class="srows">' + rows.slice(0, 3).map(function (r) { return '<div class="sr"><i class="' + (r[1] || '') + '"></i><span>' + e(r[0]) + '</span></div>'; }).join('') + '</div>' : '') + '</a>';
   }
+  async function loadCal() {
+    if (!HQ.me || HQ.me.legacy || HQ.calLoading || HQ.cal) return;
+    HQ.calLoading = true;
+    try { HQ.cal = await api('/api/me/calendar'); } catch (er) { HQ.cal = { connected: false, error: er.message }; }
+    HQ.calLoading = false;
+  }
+  function dayLabel(d) {
+    var t = new Date(); t.setHours(0, 0, 0, 0); var x = new Date(d); x.setHours(0, 0, 0, 0); var diff = Math.round((x - t) / 864e5);
+    if (diff === 0) return 'Today'; if (diff === 1) return 'Tomorrow';
+    return x.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+  function agenda() {
+    var c = HQ.cal, me = HQ.me, head = '<div class="ph"><h3>' + ico('clock') + ' Coming up</h3><a class="lnk" href="https://calendar.google.com" target="_blank" rel="noopener">Open calendar</a></div>';
+    if (!me || me.legacy) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Sign in with your own email to see your calendar.</div></div>';
+    if (!c) return '<div class="panel agenda">' + head + '<div class="sk" style="height:200px"></div></div>';
+    if (!c.connected) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('clock') + 'Connect your Google account to see meetings and shoots here.<br><br><a class="btn2 red" href="/api/me/gmail/connect">Connect Google</a></div></div>';
+    if (c.needsCalendar) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + 'Calendar access was not granted. Disconnect and reconnect Google on the Mail page to add it.</div></div>';
+    if (c.error) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('alert') + e(c.error) + '</div></div>';
+    var ev = c.events || [];
+    if (!ev.length) return '<div class="panel agenda">' + head + '<div class="empty">' + ico('check') + 'Nothing on the calendar for the next two weeks.</div></div>';
+    var groups = {}, order = [];
+    ev.forEach(function (x) { var k = new Date(x.start).toDateString(); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
+    return '<div class="panel agenda">' + head + order.slice(0, 5).map(function (k) {
+      return '<div class="day"><div class="dl">' + e(dayLabel(groups[k][0].start)) + '</div>' + groups[k].slice(0, 6).map(function (x) {
+        var tm = x.allDay ? 'All day' : new Date(x.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        return '<a class="ev2" href="' + e(x.link) + '" target="_blank" rel="noopener" style="--ec:' + (/film/i.test(x.cal) ? '#e22a24' : /meeting/i.test(x.cal) ? '#2f6fd0' : '#13233f') + '"><span class="tm">' + e(tm) + '</span><div><b>' + e(x.title) + '</b>' + (x.where ? '<span class="wh">' + e(x.where) + '</span>' : '') + '</div><em>' + e(x.cal) + '</em></a>';
+      }).join('') + '</div>';
+    }).join('') + '</div>';
+  }
+  function stat(title, icon, big, sub, go, tone) {
+    return '<a class="st ' + (tone || '') + '" tabindex="0" onclick="' + go + '" onkeydown="if(event.key===\'Enter\'){' + go + '}"><span class="si">' + ico(icon) + '</span><div><div class="sv">' + e(big) + '</div><div class="sl">' + e(title) + '</div><div class="ss">' + e(sub) + '</div></div><span class="sa">' + ico('arrow') + '</span></a>';
+  }
   function home() {
-    var d = HQ.data, Pr = state.prospects || [], me = HQ.me;
+    var d = HQ.data, Pr = state.prospects || [], me = HQ.me, fn = firstName();
     var clients = d.clients.filter(function (c) { return c.status !== 'internal'; });
     var activeC = clients.filter(function (c) { return ['active', 'onboarding', 'ads_off', 'seasonal', 'ending'].indexOf(c.status) > -1; });
-    var cnt = function (k) { return clients.filter(function (c) { return (c.kind || 'retainer') === k; }).length; };
-    var tasks = myTasks(d), late = [], open = 0;
-    tasks.all.forEach(function (x) { open++; if (x.t.overdue) late.push(x); });
-    var mine = tasks.mine, mineLate = mine.filter(function (x) { return x.t.overdue; });
+    var tasks = myTasks(d), late = tasks.all.filter(function (x) { return x.t.overdue; }), mine = tasks.mine, mineLate = mine.filter(function (x) { return x.t.overdue; });
     var replies = Pr.filter(function (p) { return typeof needsResponse === 'function' && needsResponse(p); });
-    var sent = Pr.filter(function (p) { return ['sent', 'replied', 'booked', 'won'].indexOf(p.status) > -1; }).length;
-    var noForm = clients.filter(function (c) { return c.status === 'active' && !(c.onboarding && c.onboarding.count); });
-    var fn = firstName();
-    var sub = !d.connected ? 'Connect Basecamp to see everyone\'s work.' : (mine.length || late.length) ? ((fn && mine.length ? mine.length + ' open for you' : '') + (late.length ? (fn && mine.length ? ' · ' : '') + late.length + ' late across clients' : '')) : 'All clear today.';
-    var tiles = [];
-    if (fn && d.connected) tiles.push(sc('My work', 'check', mine.length, mineLate.length ? mineLate.length + ' late' : 'open to-dos', mine.slice().sort(function (a, b) { return (a.t.due || 'z') < (b.t.due || 'z') ? -1 : 1; }).map(function (x) { return [x.t.title, x.t.overdue ? 'bad' : '']; }), "hqNav('hq:work')", mineLate.length ? 'bad' : 'ok'));
-    if (HQ.me && !HQ.me.legacy) { var mm = HQ.mail; tiles.push(sc('Client mail', 'mail', mm && mm.connected ? (mm.unread || 0) : '', mm && mm.connected ? 'unread from clients' : (mm ? 'connect your Gmail' : 'checking...'), mm && mm.connected ? (mm.matched || []).slice(0, 3).map(function (x) { return [x.client.name + ': ' + x.subject, x.unread ? 'bad' : '']; }) : [], "hqNav('hq:mail')", mm && mm.connected && mm.unread ? 'warn' : '')); }
-    tiles.push(sc('Clients', 'users', activeC.length, 'active now', [[cnt('retainer') + ' retainer'], [cnt('website') + ' website'], [(cnt('returning') + cnt('proposal')) + ' returning or pending']], "hqNav('hq:clients')"));
-    tiles.push(sc('Late work', 'alert', d.connected ? late.length : '-', d.connected ? open + ' open across clients' : 'connect Basecamp', late.map(function (x) { return [x.c.name + ': ' + x.t.title, 'bad']; }), "hqNav('hq:work')", late.length ? 'bad' : 'ok'));
-    tiles.push(sc('Outreach', 'kanban', replies.length, replies.length === 1 ? 'reply waiting' : 'replies waiting', [[sent.toLocaleString() + ' contacted'], [Pr.filter(function (p) { return p.status === 'booked'; }).length + ' booked'], [Pr.filter(function (p) { return !p.internal; }).length.toLocaleString() + ' leads']], "hqNav('hq:outreach')", replies.length ? 'warn' : ''));
-    tiles.push(sc('Onboarding', 'clipboard', d.onboardingTotal, d.onboardingTotal === 1 ? 'form received' : 'forms received', [['New clients fill this in at the start']], "hqNav('hq:onboarding')"));
-    if (me && me.role === 'admin') tiles.push(sc('Team', 'users', '', 'logins and roles', [['Add people', ''], ['Reset passwords', '']], "hqNav('hq:team')"));
-    return '<div class="hd rise"><div><div class="eyebrow2">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</div><h2>' + greeting() + (fn ? ', ' + e(fn) : '') + '</h2><p>' + e(sub) + '</p></div>' +
-      '<div class="hacts">' + (d.connected ? '' : '<a class="btn2 red" href="/api/basecamp/connect">' + ico('link') + 'Connect Basecamp</a>') + '<button class="btn2 line" onclick="hqRefresh()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button></div></div>' +
-      '<div class="sgrid">' + tiles.join('') + '</div>';
+    var mm = HQ.mail;
+    var att = [];
+    late.slice(0, 5).forEach(function (x) { att.push('<div class="item"><div class="bub">' + ico('alert') + '</div><div><b>' + e(x.t.title) + '</b><div class="m">' + e(x.c.name) + ' · ' + e(x.t.who || 'Unassigned') + ' · due ' + e(dshort(x.t.due)) + ' · <a href="' + e(x.t.url) + '" target="_blank" rel="noopener">Open</a></div></div></div>'); });
+    replies.slice(0, 3).forEach(function (p) { att.push('<div class="item"><div class="bub amber">' + ico('reply') + '</div><div><b>' + e(p.business) + ' replied</b><div class="m">Outreach · <a onclick="navTo(\'replied\')">Open</a></div></div></div>'); });
+    if (mm && mm.connected && mm.unread) att.push('<div class="item"><div class="bub blue">' + ico('mail') + '</div><div><b>' + mm.unread + ' unread from clients</b><div class="m"><a onclick="hqNav(\'hq:mail\')">Open mail</a></div></div></div>');
+    if (d.onboardingNoProject) att.push('<div class="item"><div class="bub blue">' + ico('clipboard') + '</div><div><b>' + d.onboardingNoProject + ' new onboarding form' + (d.onboardingNoProject > 1 ? 's' : '') + '</b><div class="m"><a onclick="hqNav(\'hq:onboarding\')">Review</a></div></div></div>');
+    var sub = !d.connected ? 'Connect Basecamp to see everyone\'s work.' : (fn && mine.length ? mine.length + ' to-do' + (mine.length > 1 ? 's' : '') + ' assigned to you' + (mineLate.length ? ', ' + mineLate.length + ' late' : '') : late.length ? late.length + ' late across clients' : 'You are all caught up.');
+    var strip = clients.map(function (c) {
+      return '<a class="lg-t" tabindex="0" style="--bc:' + e(brand(c)) + '" onclick="hqNav(\'hq:client:' + e(c.slug) + '\')" title="' + e(c.name) + '">' + avatar(c, 54) + '<span>' + e(c.name) + '</span></a>';
+    }).join('');
+    return '<div class="hero3 rise"><div class="hmain"><div class="eyebrow3">' + new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</div>' +
+      '<h2>' + greeting() + (fn ? ', ' + e(fn) : '') + '</h2><p>' + e(sub) + '</p></div><div class="hbtn">' +
+      (d.connected ? '' : '<a class="btn2 red" href="/api/basecamp/connect">' + ico('link') + 'Connect Basecamp</a>') +
+      '<button class="btn2 glass" onclick="hqRefresh()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button></div></div>' +
+      '<div class="stats">' +
+      stat(fn ? 'My work' : 'Open work', 'check', fn ? mine.length : tasks.all.length, mineLate.length ? mineLate.length + ' late' : 'open to-dos', "hqNav('hq:work')", mineLate.length ? 'bad' : '') +
+      stat('Late', 'alert', d.connected ? late.length : '-', 'across all clients', "hqNav('hq:work')", late.length ? 'bad' : 'ok') +
+      stat('Client mail', 'mail', mm && mm.connected ? (mm.unread || 0) : '-', mm && mm.connected ? 'unread' : 'not connected', "hqNav('hq:mail')", mm && mm.connected && mm.unread ? 'warn' : '') +
+      stat('Clients', 'users', activeC.length, 'active now', "hqNav('hq:clients')") +
+      stat('Outreach', 'kanban', replies.length, replies.length === 1 ? 'reply waiting' : 'replies waiting', "hqNav('hq:outreach')", replies.length ? 'warn' : '') + '</div>' +
+      '<div class="hcols">' + agenda() + '<div class="panel"><h3>Needs attention' + (att.length ? '<span class="ct">' + att.length + '</span>' : '') + '</h3>' +
+      (att.length ? att.join('') : '<div class="empty">' + ico('check') + 'All clear. Nothing needs you.</div>') + '</div></div>' +
+      '<div class="sec" style="margin-top:26px"><div><h3>Your clients</h3></div><a class="lnk" onclick="hqNav(\'hq:clients\')">See all</a></div><div class="lgrid">' + strip + '</div>';
   }
+
   function work() {
     var d = HQ.data, fn = (firstName() || '').toLowerCase(), f = HQ.workTab || (fn ? 'mine' : 'all'), rows = [];
     d.clients.forEach(function (c) { if (c.work && c.work.linked) c.work.lists.forEach(function (l) { l.open.forEach(function (t) { rows.push({ t: t, c: c, l: l.name }); }); }); });
@@ -310,7 +348,7 @@
       (blocks || '<div class="panel"><div class="empty">' + ico('inbox') + 'No client email in the last 14 days' + (isAdmin ? '. Link a sender below, or add email addresses on each client page.' : '.') + '</div></div>') + unm;
   }
   window.hqMailRefresh = async function () { HQ.mail = null; show('hq:mail'); };
-  window.hqMailOff = async function () { if (!confirm('Disconnect your Gmail from the CRM?')) return; try { await api('/api/me/gmail/disconnect', 'POST', {}); HQ.mail = null; show('hq:mail'); } catch (er) { toast(er.message); } };
+  window.hqMailOff = async function () { if (!confirm('Disconnect your Gmail from the CRM?')) return; try { await api('/api/me/gmail/disconnect', 'POST', {}); HQ.mail = null; HQ.cal = null; show('hq:mail'); } catch (er) { toast(er.message); } };
   window.hqLinkDomain = async function (i, domain) {
     var slug = (document.getElementById('um' + i) || {}).value; if (!slug) { toast('Choose a client first'); return; }
     var c = HQ.data.clients.filter(function (x) { return x.slug === slug; })[0] || {};
@@ -332,7 +370,7 @@
     var el = root();
     if (!HQ.data) { el.innerHTML = skeleton(); await fetchHq(false); }
     if (!HQ.data) { el.innerHTML = '<div class="empty">Could not load: ' + e(HQ.err || 'error') + '</div>'; return; }
-    if (key === 'hq:home') { el.innerHTML = home(); if (!HQ.mail && HQ.me && !HQ.me.legacy && !HQ.mailLoading) loadMail().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); }
+    if (key === 'hq:home') { el.innerHTML = home(); if (HQ.me && !HQ.me.legacy) { if (!HQ.mail && !HQ.mailLoading) loadMail().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); if (!HQ.cal && !HQ.calLoading) loadCal().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); } }
     else if (key === 'hq:clients') el.innerHTML = clients();
     else if (key === 'hq:onboarding') el.innerHTML = onboarding();
     else if (key === 'hq:mail') { el.innerHTML = mail(); if (!HQ.mail) { await loadMail(); if (navKey === 'hq:mail') el.innerHTML = mail(); } }
