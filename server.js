@@ -3889,6 +3889,18 @@ app.get('/api/hq/copy/:slug', (req, res) => {
   const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, '');
   let md = ''; try { md = brainCopy(fs.readFileSync(path.join(BRAIN_DIR, slug + '.md'), 'utf8')); } catch {}
   try { const ex = fs.readFileSync(path.join(__dirname, 'data', 'copy-extra', slug + '.md'), 'utf8').trim(); if (ex && !/^## Headline ideas/m.test(md)) md = '## Headline ideas, ready to use\n\n' + ex + (md ? '\n\n' + md : ''); } catch {}
+  // The research bank (Reddit pain points, reviews, searches, hook bank, graphic formats) shows for every client.
+  // Skip the Reddit block when the brain already shows "What customers say", so nothing prints twice.
+  try {
+    const rs = readResearch(slug);
+    if (rs) {
+      const secs = rs.split(/^(?=## )/m).filter(s => /^## \(/.test(s));
+      const titleOf = s => (/^##\s*\([a-z]\)\s*(.+)$/m.exec(s) || [, ''])[1].trim();
+      const have = /What customers say/i.test(md);
+      const out = secs.filter(s => !(have && /^## \(a\)/.test(s))).map(s => '## Research: ' + titleOf(s) + '\n\n' + s.replace(/^## .*\n/, '').replace(/^#{2,3}\s+/gm, '#### ').trim());
+      if (out.length) md = (md ? md + '\n\n' : '') + out.join('\n\n');
+    }
+  } catch {}
   res.json({ md });
 });
 app.get('/api/hq/guidelines', (req, res) => {
