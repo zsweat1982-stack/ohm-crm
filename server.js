@@ -2183,12 +2183,27 @@ async function sendMail(p, subject, body, { kind = 'outreach', attachments = nul
 
 // ---------- API ----------
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 1);   // Render sits behind one proxy; without this every visitor shares one IP for rate limiting
+// Security headers on every response. HSTS only over https so local development still works.
+// No Content-Security-Policy yet: the pages use inline handlers, and a half-right CSP would break them.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (String(req.headers['x-forwarded-proto'] || '').includes('https')) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ---------- Universal team login (one shared password, cookie session) ----------
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'ohm-default-secret';
+if (process.env.APP_PASSWORD && !process.env.AUTH_SECRET) console.warn('[security] AUTH_SECRET is not set, so the shared-password cookie uses a public default. Set AUTH_SECRET on Render, or set DISABLE_SHARED_PASSWORD=1 once everyone has their own login.');
+// Once every person has their own login, set DISABLE_SHARED_PASSWORD=1 on Render. The shared password then stops working entirely.
+const SHARED_PW_OFF = process.env.DISABLE_SHARED_PASSWORD === '1';
 const AUTH_TOKEN = crypto.createHmac('sha256', AUTH_SECRET).update('ohm-team-access-v1').digest('hex');
 
 // ---------- Individual logins ----------
@@ -2228,13 +2243,13 @@ function authedUser(req) {
   if (req.user) return req.user;
   const u = readSession(getCookie(req, 'ohm_sess'));
   if (u) { req.user = { id: u.id, name: u.name, email: u.email, role: u.role, must_change: !!u.must_change }; return req.user; }
-  if (getCookie(req, 'ohm_auth') === AUTH_TOKEN) { req.user = { id: 'legacy', name: 'Team', email: '', role: 'member', legacy: true }; return req.user; }
+  if (!SHARED_PW_OFF && getCookie(req, 'ohm_auth') === AUTH_TOKEN) { req.user = { id: 'legacy', name: 'Team', email: '', role: 'member', legacy: true }; return req.user; }
   return null;
 }
 const loginHits = new Map();
-function loginLimited(key) {
+function loginLimited(key, max) {
   const now = Date.now(), win = 15 * 60e3, hits = (loginHits.get(key) || []).filter(t => now - t < win);
-  if (hits.length >= 8) { loginHits.set(key, hits); return true; }
+  if (hits.length >= (max || 8)) { loginHits.set(key, hits); return true; }
   hits.push(now); loginHits.set(key, hits); return false;
 }
 // Prospect-facing routes + login stay open; everything else needs the cookie (when APP_PASSWORD set).
@@ -2298,7 +2313,7 @@ app.post('/api/login', (req, res) => {
   const email = String((req.body && req.body.email) || '').trim().toLowerCase().slice(0, 254);
   const password = String((req.body && req.body.password) || '').slice(0, 200);
   const key = (req.ip || 'x') + '|' + email;
-  if (loginLimited(key)) return res.status(429).send('Too many attempts. Wait 15 minutes and try again.');
+  if (loginLimited('ip|' + (req.ip || 'x'), 40) || loginLimited(key)) return res.status(429).send('Too many attempts. Wait 15 minutes and try again.');
   if (email) {
     let u = loadUsers().find(x => x.email === email && x.active !== false);
     // Recovery: the first admin account that has never had its own password set will also accept the shared team password.
@@ -2312,7 +2327,7 @@ app.post('/api/login', (req, res) => {
     }
     return res.status(401).send(renderLogin(true));
   }
-  if (APP_PASSWORD && password === APP_PASSWORD) {
+  if (APP_PASSWORD && !SHARED_PW_OFF && password === APP_PASSWORD) {
     res.setHeader('Set-Cookie', `ohm_auth=${AUTH_TOKEN}; ${cookieOpts(req)}; Max-Age=${60 * 60 * 24 * 30}`);
     return res.redirect('/');
   }
@@ -2321,7 +2336,7 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => { const o = cookieOpts(req); res.setHeader('Set-Cookie', [`ohm_auth=; ${o}; Max-Age=0`, `ohm_sess=; ${o}; Max-Age=0`]); res.json({ ok: true }); });
 
 app.get('/api/me', (req, res) => { const u = authedUser(req); if (!u) return res.status(401).json({ error: 'auth required' }); const full = u.id && u.id !== 'legacy' ? (loadUsers().find(x => x.id === u.id) || {}) : {};
-  res.json({ id: u.id, name: u.name, email: u.email, title: full.title || '', role: u.role, must_change: !!u.must_change, legacy: !!u.legacy }); });
+  res.json({ id: u.id, name: u.name, email: u.email, title: full.title || '', role: u.role, must_change: !!u.must_change, legacy: !!u.legacy, pipeline: hasPipeline(u) }); });
 app.post('/api/me/password', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(401).json({ error: 'Sign in with your own email to change a password.' });
   const { current, next } = req.body || {};
@@ -2339,7 +2354,7 @@ ${u && u.legacy ? '<p>You are signed in with the shared team password. Ask Zac f
 <script>var f=document.getElementById('f');if(f)f.onsubmit=async function(e){e.preventDefault();var r=await fetch('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current:cur.value,next:nw.value})});var j=await r.json();document.getElementById('m').textContent=r.ok?'Saved. Taking you to the CRM...':(j.error||'Could not save.');if(r.ok)setTimeout(function(){location.href='/'},900)}</script>`);
 });
 function requireAdmin(req, res) { const u = authedUser(req); if (u && u.role === 'admin') return u; res.status(403).json({ error: 'Admins only.' }); return null; }
-const pubUser = u => ({ id: u.id, name: u.name, email: u.email, title: u.title || '', role: u.role, active: u.active !== false, must_change: !!u.must_change, last_login: u.last_login || '' });
+const pubUser = u => ({ id: u.id, name: u.name, email: u.email, title: u.title || '', role: u.role, active: u.active !== false, must_change: !!u.must_change, last_login: u.last_login || '', pipeline: hasPipeline({ id: u.id }) });
 app.get('/api/admin/users', (req, res) => { if (!requireAdmin(req, res)) return; res.json({ users: loadUsers().map(pubUser) }); });
 app.post('/api/admin/users', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -2373,6 +2388,37 @@ app.post('/api/admin/users/:id/role', (req, res) => {
   if (me.id === req.params.id) return res.status(400).json({ error: 'Ask another admin to change your role.' });
   const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
   u.role = (req.body && req.body.role) === 'admin' ? 'admin' : 'member'; saveUsers(users); res.json({ ok: true });
+});
+
+// ---------- Sales pipeline lock ----------
+// Only these five people may see prospects, outreach, email sending, audits or outreach metrics.
+// Enforced here on the server, so hiding a tab in the browser is not what protects the data.
+// An admin can change the list per person on the Team page (users.json "pipeline": true/false);
+// until a person has an explicit setting, this default list decides.
+const PIPELINE_DEFAULT = new Set(['zac@openheartmediaco.com', 'lisa@openheartmediaco.com', 'michelle@openheartmediaco.com', 'brad@openheartmediaco.com', 'griffin@openheartmediaco.com']);
+function hasPipeline(u) {
+  if (!u || u.legacy || !u.id || u.id === 'legacy') return false;   // the old shared password never sees the pipeline
+  const full = loadUsers().find(x => x.id === u.id); if (!full || full.active === false) return false;
+  if (typeof full.pipeline === 'boolean') return full.pipeline;
+  return PIPELINE_DEFAULT.has(String(full.email || '').toLowerCase());
+}
+const PIPELINE_PATHS = ['/api/prospects', '/api/generate-all', '/api/send-approved', '/api/prescan', '/api/run-followups', '/api/mailchimp', '/api/autosend-status', '/api/autosend-pause', '/api/run-autosend', '/api/reseed', '/api/metrics', '/api/audit', '/api/audit-pdf-preview', '/api/gmail/connect', '/api/gmail/status', '/api/gmail/check'];
+app.use((req, res, next) => {
+  if (!APP_PASSWORD) return next();
+  if (!PIPELINE_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
+  if (PUBLIC_PATHS.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
+  if (hasPipeline(authedUser(req))) return next();
+  return res.status(403).json({ error: 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.' });
+});
+app.get('/api/conversions/status', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const url = process.env.CONVERSION_CRM_URL || '';
+  res.json({ live: /^https:\/\//.test(url), url: /^https:\/\//.test(url) ? url.replace(/\/$/, '') + '/app' : '' });
+});
+app.post('/api/admin/users/:id/pipeline', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
+  u.pipeline = !!(req.body && req.body.pipeline); saveUsers(users); res.json({ ok: true, pipeline: u.pipeline });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

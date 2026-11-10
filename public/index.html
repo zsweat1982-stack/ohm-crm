@@ -296,7 +296,9 @@ const NAV = [
     ['hq:clients',    '\u2726', 'Clients',     null],
     ['hq:onboarding', '\u2709', 'Onboarding',  null],
     ['hq:outreach',   '\u25A6', 'Outreach',    null],
+    ['hq:conversions','sliders', 'Conversions', null],
     ['hq:how',        'book',    'How We Work', null],
+    ['hq:manual',     'book',    'Users Manual', null],
     ['hq:team',       'team',    'Team',        null],
   ]],
   ['Outreach', [
@@ -319,10 +321,13 @@ const NAV = [
   ]],
 ];
 let navKey = 'board';
+// Only Lisa, Michelle, Brad, Griffin and Zac get the sales pipeline. The server enforces it (403);
+// this flag just stops the page from asking and from showing a tab that would be empty.
+window.pipelineOK = null;
 function renderNav(){
   const live = state.prospects.filter(p => !p.internal && p.status !== 'test');
   document.getElementById('sbnav').innerHTML = NAV.filter(([sec]) => sec==='Workspace').map(([sec, items]) =>
-    `<div class="sb-sec">${sec}</div>` + items.map(([k, ic, label, fn]) => {
+    `<div class="sb-sec">${sec}</div>` + items.filter(([k]) => !(k==='hq:outreach' && window.pipelineOK===false)).map(([k, ic, label, fn]) => {
       const n = fn ? live.filter(fn).length : null;
       return `<button class="nv${(navKey===k || (k==='hq:outreach' && !String(navKey).startsWith('hq:')))?' on':''}" onclick="navTo('${k}')">
         <span class="ic">${(window.hqIcon&&hqIcon(ic))||ic}</span><span class="t">${label}</span>
@@ -366,6 +371,8 @@ function fillOwnerFilter(){
   el.value = want.includes(cur)?cur:'all';
 }
 async function load() {
+  if (window.pipelineOK === null) { try { window.pipelineOK = !!(await api('/api/me')).pipeline; } catch (e) { window.pipelineOK = false; } }
+  if (!window.pipelineOK) { renderNav(); if(window.hqRerender) hqRerender(); return; }
   state = await api('/api/prospects');
   fillOwnerFilter();
   renderStats(); renderNav(); render(); loadMetrics(); loadAutosend(); if(window.hqRerender) hqRerender();

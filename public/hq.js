@@ -201,7 +201,7 @@
       stat('Late', 'alert', d.connected ? late.length : '-', 'across all clients', "hqNav('hq:work')", late.length ? 'bad' : 'ok') +
       stat('Client mail', 'mail', mm && mm.connected ? (mm.unread || 0) : '-', mm && mm.connected ? 'unread' : 'not connected', "hqNav('hq:mail')", mm && mm.connected && mm.unread ? 'warn' : '') +
       stat('Clients', 'users', activeC.length, 'active now', "hqNav('hq:clients')") +
-      stat('Outreach', 'kanban', replies.length, replies.length === 1 ? 'reply waiting' : 'replies waiting', "hqNav('hq:outreach')", replies.length ? 'warn' : '') + '</div>' +
+      (me && me.pipeline ? stat('Outreach', 'kanban', replies.length, replies.length === 1 ? 'reply waiting' : 'replies waiting', "hqNav('hq:outreach')", replies.length ? 'warn' : '') : '') + '</div>' +
       '<div class="hcols">' + agenda() + '<div class="panel"><h3>Needs attention' + (att.length ? '<span class="ct">' + att.length + '</span>' : '') + '</h3>' +
       (att.length ? att.join('') : '<div class="empty">' + ico('check') + 'All clear. Nothing needs you.</div>') + '</div></div>' +
       '<div class="sec" style="margin-top:26px"><div><h3>Your clients</h3></div><a class="lnk" onclick="hqNav(\'hq:clients\')">See all</a></div><div class="lgrid">' + strip + '</div>';
@@ -340,6 +340,14 @@
   function ocard(k, i) {
     var o = OUT_INFO[k]; return '<button class="oc ' + o[3] + '" style="animation-delay:' + i * 30 + 'ms" onclick="navTo(\'' + k + '\')"><div class="top2"><div class="ci">' + ico(o[2]) + '</div><span class="arrow">' + ico('arrow') + '</span></div><div class="n">' + outCount(k).toLocaleString() + '</div><div class="lb">' + e(o[0]) + '</div><div class="ds">' + e(o[1]) + '</div></button>';
   }
+  function conversions(cv) {
+    var live = cv && cv.live, rows = [['Visiting Nurse (VNPHC)', 'Forms'], ['Matchett Homes', 'Forms'], ['Sun & Shield', 'Forms'], ['iFab', 'Forms']];
+    var steps = ['Put the capture script on the client site so every form saves the ad click ID.', 'Set the client site as an allowed origin and test one form.', 'Confirm the client\'s Google Ads has an offline "Booked Job" conversion action (import type).', 'Add the Meta pixel ID and access token for the client.', 'Ask the client each month for booked jobs and job values.', 'Mark booked jobs in the dashboard. Upload the Google file and let Meta events send.'];
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Conversions</h3><p>Real leads from ads, sent back to Google and Meta so they optimize for booked jobs. Primary conversions are forms and calls of 60 seconds or more.</p></div>' + (live ? '<a class="btn2 red" href="' + e(cv.url) + '" target="_blank" rel="noopener">Open the dashboard</a>' : '') + '</div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>' + ico(live ? 'check' : 'alert') + (live ? ' Live' : ' Built and tested, not live yet') + '</h3><p class="hint">' + (live ? 'The dashboard has a tab per client with leads, outcomes and the Google file.' : 'The dashboard and capture script are built and pass their tests. It goes live after the hosting accounts are connected. Until then this page is the setup checklist.') + '</p></div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>Version 1 clients</h3>' + rows.map(function (r) { return '<div class="kv"><span>' + e(r[0]) + '</span><b>' + e(r[1]) + '</b></div>'; }).join('') + '</div>' +
+      '<div class="panel"><h3>Setup for each client</h3><ol style="line-height:1.8;margin:10px 0 0 18px">' + steps.map(function (s) { return '<li>' + e(s) + '</li>'; }).join('') + '</ol></div>';
+  }
   function outreach() {
     var g = function (title, sub, keys) { return '<div class="sec"><div><h3>' + title + '</h3><p>' + sub + '</p></div></div><div class="og">' + keys.map(ocard).join('') + '</div>'; };
     var f = function (k, l) { return '<button onclick="navTo(\'' + k + '\')"><b>' + outCount(k).toLocaleString() + '</b><span>' + l + '</span></button>'; };
@@ -356,7 +364,7 @@
     var rows = r.users.map(function (u) {
       return '<tr><td><div class="nm">' + e(u.name) + '</div><div class="em">' + e(u.title || 'No job role set') + ' · ' + e(u.email) + '</div></td><td><span class="chip st-' + (u.role === 'admin' ? 'internal' : 'active') + '">' + (u.role === 'admin' ? 'Admin' : 'Member') + '</span>' + (u.active ? '' : ' <span class="chip st-ending">Off</span>') + (u.must_change ? ' <span class="chip need">Needs new password</span>' : '') + '</td>' +
         '<td class="em">' + (u.last_login ? e(new Date(u.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : 'Never') + '</td><td style="text-align:right;white-space:nowrap">' +
-        '<button class="btn2 line mini" onclick="hqTitle(\'' + e(u.id) + '\')">Set job role</button> <button class="btn2 line mini" onclick="hqReset(\'' + e(u.id) + '\')">Reset password</button> ' +
+        '<button class="btn2 line mini" onclick="hqTitle(\'' + e(u.id) + '\')">Set job role</button> <button class="btn2 line mini" onclick="hqReset(\'' + e(u.id) + '\')">Reset password</button> <button class="btn2 line mini" onclick="hqPipe(\'' + e(u.id) + '\',' + (u.pipeline ? 'false' : 'true') + ')">' + (u.pipeline ? 'Pipeline: on' : 'Pipeline: off') + '</button> ' +
         (me.id !== u.id ? '<button class="btn2 line mini" onclick="hqActive(\'' + e(u.id) + '\',' + (u.active ? 'false' : 'true') + ')">' + (u.active ? 'Turn off' : 'Turn on') + '</button>' : '') + '</td></tr>';
     }).join('');
     var ln = []; try { ln = (await api('/api/lanes')).lanes; } catch (x) {}
@@ -382,9 +390,9 @@
     var have = {}; (existing || []).forEach(function (u) { have[u.email] = 1; });
     var rows = ROSTER.filter(function (r) { return !have[r[1]]; });
     if (!rows.length) return '';
-    return '<div class="panel" style="margin-bottom:16px"><h3>Add the whole team</h3><p class="hint">Everyone from Basecamp, with their job role. Only Brad, Griffin and Michelle are ticked for now. Tick others when you are ready, and tick Admin for people who should manage logins.</p>' +
+    return '<div class="panel" style="margin-bottom:16px"><h3>Add the whole team</h3><p class="hint">Everyone from Basecamp, with their job role. Everyone is ticked. Untick anyone who should wait, and tick Admin for people who should manage logins.</p>' +
       '<table class="ttab"><thead><tr><th></th><th>Person</th><th>Job role</th><th>Admin</th></tr></thead><tbody>' + rows.map(function (r, i) {
-        return '<tr><td><input type="checkbox" id="rt_on' + i + '"' + (/^(brad|griffin|michelle)@/.test(r[1]) ? ' checked' : '') + '></td><td><div class="nm">' + e(r[0]) + '</div><div class="em">' + e(r[1]) + '</div></td><td class="em" style="display:table-cell">' + e(r[2]) + '</td><td><input type="checkbox" id="rt_ad' + i + '"' + (r[3] ? ' checked' : '') + '></td></tr>';
+        return '<tr><td><input type="checkbox" id="rt_on' + i + '"' + ' checked' + '></td><td><div class="nm">' + e(r[0]) + '</div><div class="em">' + e(r[1]) + '</div></td><td class="em" style="display:table-cell">' + e(r[2]) + '</td><td><input type="checkbox" id="rt_ad' + i + '"' + (r[3] ? ' checked' : '') + '></td></tr>';
       }).join('') + '</tbody></table><div style="margin-top:14px"><button class="btn2 red" onclick="hqAddTeam()">Add selected</button></div></div>';
   }
   window.hqAddTeam = async function () {
@@ -424,6 +432,7 @@
     if (t === null) return; try { await api('/api/admin/users/' + id + '/title', 'POST', { title: t }); show('hq:team'); } catch (er) { toast(er.message); }
   };
   window.hqLane = async function (lane, email) { if (!email) return; try { await api('/api/admin/lanes', 'POST', { lane: lane, email: email }); toast('Saved'); } catch (er) { toast(er.message); show('hq:team'); } };
+  window.hqPipe = async function (id, on) { if (!confirm(on ? 'Let this person see the sales pipeline (prospects and outreach)?' : 'Hide the sales pipeline from this person?')) return; try { await api('/api/admin/users/' + id + '/pipeline', 'POST', { pipeline: on }); show('hq:team'); } catch (er) { toast(er.message); } };
   window.hqActive = async function (id, on) { try { await api('/api/admin/users/' + id + '/active', 'POST', { active: on }); show('hq:team'); } catch (er) { toast(er.message); } };
 
 
@@ -798,13 +807,13 @@
   // Phone bottom bar
   function mnav() {
     var el = document.getElementById('mnav'); if (!el) { el = document.createElement('nav'); el.id = 'mnav'; el.setAttribute('aria-label', 'Main'); document.body.appendChild(el); }
-    var items = [['hq:home', 'home', 'Home'], ['hq:work', 'check', 'Work'], ['hq:mail', 'mail', 'Mail'], ['hq:clients', 'users', 'Clients'], ['hq:outreach', 'kanban', 'Outreach']];
+    var items = [['hq:home', 'home', 'Home'], ['hq:work', 'check', 'Work'], ['hq:mail', 'mail', 'Mail'], ['hq:clients', 'users', 'Clients']]; if (window.pipelineOK !== false) items.push(['hq:outreach', 'kanban', 'Outreach']);
     el.innerHTML = items.map(function (it) { return '<button class="' + ((navKey === it[0] || (it[0] === 'hq:outreach' && String(navKey).indexOf('hq:') !== 0)) ? 'on' : '') + '" onclick="navTo(\'' + it[0] + '\')">' + ico(it[1]) + '<span>' + it[2] + '</span></button>'; }).join('');
   }
 
   async function show(key) {
     document.body.classList.add('hqmode');
-    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work' };
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
     document.getElementById('viewTitle').textContent = titles[key] || 'Client';
     var el = root();
@@ -817,7 +826,9 @@
     else if (key === 'hq:how') { if (!HQ.how) { try { HQ.how = await (await fetch('/how.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.how = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.how + '</div>'; }
     else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.wb) { try { HQ.wb = await api('/api/hq/week-board'); } catch (x) { HQ.wb = { weeks: [] }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
-    else if (key === 'hq:outreach') el.innerHTML = outreach();
+    else if (key === 'hq:manual') { if (!HQ.manual) { try { HQ.manual = await (await fetch('/manual.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.manual = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.manual + '</div>'; }
+    else if (key === 'hq:conversions') { var cv = {}; try { cv = await api('/api/conversions/status'); } catch (x) {} el.innerHTML = conversions(cv); }
+    else if (key === 'hq:outreach') el.innerHTML = (HQ.me && HQ.me.pipeline) ? outreach() : '<div class="sec"><div><h3 style="font-size:28px">Outreach</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.</div></div>';
     else if (key === 'hq:team') el.innerHTML = await team();
     else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } await loadClientData(key.slice(10)); el.innerHTML = clientPage(key.slice(10)); }
     window.scrollTo(0, 0); mnav();
