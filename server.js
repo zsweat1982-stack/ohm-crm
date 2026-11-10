@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import compression from 'compression';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -2184,6 +2185,8 @@ async function sendMail(p, subject, body, { kind = 'outreach', attachments = nul
 // ---------- API ----------
 const app = express();
 app.disable('x-powered-by');
+// gzip everything that is text. The pages and API answers are large and were being sent uncompressed.
+app.use(compression({ threshold: 1024 }));
 app.set('trust proxy', 1);   // Render sits behind one proxy; without this every visitor shares one IP for rate limiting
 // Security headers on every response. HSTS only over https so local development still works.
 // No Content-Security-Policy yet: the pages use inline handlers, and a half-right CSP would break them.
@@ -2261,7 +2264,7 @@ function loginLimited(key, max) {
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding']
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm']
 // '/api/audit' was public so the landing page could run a scan in front of a visitor. Nothing
 // public triggers an audit any more: leads come in through /api/qualify and the team runs the
 // audit themselves, so the endpoint now sits behind the team login like everything else.;
@@ -2459,7 +2462,7 @@ app.patch('/api/queue/:id', (req, res) => {
   } else if (p.status === 'approved' && approvalProblem(p)) p.status = 'waiting';   // an edit that breaks the approval drops it back
   saveQueue(q); res.json({ post: p });
 });
-app.delete('/api/queue/:id', (req, res) => { if (!zacOnly(req, res)) return; saveQueue(loadQueue().filter(x => x.id !== req.params.id)); res.json({ ok: true }); });
+app.delete('/api/queue/:id', (req, res) => { if (!zacOnly(req, res)) return; try { fs.rmSync(qDir(req.params.id), { recursive: true, force: true }); } catch {} saveQueue(loadQueue().filter(x => x.id !== req.params.id)); res.json({ ok: true }); });
 // Approved posts only, as a CSV for Sprout's Bulk Post Import (Professional plan). One file per client,
 // because the profiles are picked in Sprout's Import Posts window, not in the file. Columns are Sprout's own,
 // case sensitive: date, time_24hr, message_text, link_url, public_image_url, tags. Rules from Sprout's help article:
@@ -2473,8 +2476,8 @@ app.get('/api/queue/export.csv', (req, res) => {
   const approved = all.filter(p => p.status === 'approved' && !approvalProblem(p));
   const skipped = [];
   const ok = approved.filter(p => {
-    if (p.media && isVideo(p.media)) { skipped.push('video'); return false; }
-    if (p.media && !isImgUrl(p.media)) { skipped.push('image link'); return false; }
+    if ((p.files || []).some(f => !Q_IMG.test(f.name)) || (p.media && isVideo(p.media))) { skipped.push('video'); return false; }
+    if (!(p.files || []).length && p.media && !isImgUrl(p.media)) { skipped.push('image link'); return false; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date) || !/^\d{2}:\d{2}$/.test(p.time)) { skipped.push('date or time'); return false; }
     return true;
   }).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
@@ -2485,13 +2488,59 @@ app.get('/api/queue/export.csv', (req, res) => {
     last = t; const d = new Date(t * 60000).toISOString();
     const msg = [p.caption, p.cta && !p.caption.includes(p.cta) ? p.cta : ''].filter(Boolean).join('\n\n');
     const link = (msg.match(/https?:\/\/[^\s)]+/) || [''])[0];
-    return [d.slice(5, 7) + '/' + d.slice(8, 10) + '/' + d.slice(0, 4), d.slice(11, 16), msg, link, p.media || '', ''];
+    const img = (p.files || []).find(f => Q_IMG.test(f.name)), pub = img ? String(process.env.CRM_URL || (req.protocol + '://' + req.get('host'))).replace(/\/$/, '') + '/qm/' + img.token + (img.name.match(/\.[a-z0-9]+$/i) || [''])[0].toLowerCase() : (p.media || '');
+    return [d.slice(5, 7) + '/' + d.slice(8, 10) + '/' + d.slice(0, 4), d.slice(11, 16), msg, link, pub, ''];
   });
   const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', 'attachment; filename="sprout-' + client.replace(/[^a-z0-9-]/g, '') + '.csv"');
   res.setHeader('X-Held-Back', String(all.length - ok.length)); res.setHeader('X-Skipped', skipped.join(',')); res.setHeader('X-Nudged', String(nudged));
   res.send('﻿' + [['date', 'time_24hr', 'message_text', 'link_url', 'public_image_url', 'tags']].concat(rows).map(r => r.map(cell).join(',')).join('\n'));
 });
+// ---- Media for queued posts: videos and graphics kept here so the whole package is in one place ----
+// Stored on the data disk, cleared 7 days after the post date. Images of approved posts get an unguessable public link
+// so Sprout's bulk import can read them. Videos are never public.
+const QMEDIA_DIR = path.join(DATA_DIR, 'queue_media');
+const Q_EXT = /\.(jpe?g|png|gif|webp|mp4|mov|m4v|webm)$/i, Q_IMG = /\.(jpe?g|png|gif|webp)$/i;
+const qDir = id => path.join(QMEDIA_DIR, String(id).replace(/[^a-z0-9_]/gi, ''));
+app.post('/api/queue/:id/media', express.raw({ type: '*/*', limit: '250mb' }), (req, res) => {
+  if (!zacOnly(req, res)) return;
+  const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' });
+  let name = ''; try { name = decodeURIComponent(String(req.headers['x-filename'] || '')); } catch {}
+  name = path.basename(name).replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
+  if (!Q_EXT.test(name)) return res.status(400).json({ error: 'Add a picture or a video (jpg, png, gif, webp, mp4, mov).' });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'That file was empty.' });
+  p.files = p.files || []; if (p.files.length >= 12 && !p.files.some(f => f.name === name)) return res.status(400).json({ error: 'Twelve files per post is the limit.' });
+  try {
+    fs.mkdirSync(qDir(p.id), { recursive: true }); fs.writeFileSync(path.join(qDir(p.id), name), req.body);
+    p.files = p.files.filter(f => f.name !== name); p.files.push({ name, size: req.body.length, token: crypto.randomBytes(12).toString('hex'), at: new Date().toISOString() });
+    saveQueue(q); res.json({ ok: true, files: p.files });
+  } catch (e) { res.status(500).json({ error: 'Could not save the file: ' + String(e.message || e).slice(0, 100) }); }
+});
+app.get('/api/queue/:id/media/:file', (req, res) => {
+  if (!zacOnly(req, res)) return;
+  const p = loadQueue().find(x => x.id === req.params.id), f = p && (p.files || []).find(x => x.name === req.params.file); if (!f) return res.status(404).json({ error: 'Not found.' });
+  res.download(path.join(qDir(p.id), f.name), f.name);
+});
+app.delete('/api/queue/:id/media/:file', (req, res) => {
+  if (!zacOnly(req, res)) return;
+  const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' });
+  const f = (p.files || []).find(x => x.name === req.params.file); if (f) { try { fs.unlinkSync(path.join(qDir(p.id), f.name)); } catch {} p.files = p.files.filter(x => x !== f); saveQueue(q); }
+  res.json({ ok: true });
+});
+// Public image link for an APPROVED post only. The token is random and the link dies when the post is deleted or cleared.
+app.get('/qm/:token', (req, res) => {
+  const t = String(req.params.token || '').replace(/\.[a-z0-9]+$/i, '');
+  for (const p of loadQueue()) { const f = (p.files || []).find(x => x.token === t); if (f) { if (p.status !== 'approved' || !Q_IMG.test(f.name)) break; res.set('Cache-Control', 'public, max-age=3600'); return res.sendFile(path.join(qDir(p.id), f.name)); } }
+  res.status(404).end();
+});
+function queueCleanup() {
+  try {
+    const q = loadQueue(), cut = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10); let n = 0;
+    for (const p of q) if ((p.files || []).length && ((p.date && p.date < cut) || (p.sent_at && p.sent_at.slice(0, 10) < cut))) { try { fs.rmSync(qDir(p.id), { recursive: true, force: true }); } catch {} p.files = []; n++; }
+    if (n) { saveQueue(q); console.log('[queue] cleared media for', n, 'old posts'); }
+  } catch (e) { console.error('[queue] cleanup failed -', e.message); }
+}
+setInterval(queueCleanup, 6 * 60 * 60 * 1000); setTimeout(queueCleanup, 60 * 1000);
 app.post('/api/queue/:id/sent', (req, res) => { if (!zacOnly(req, res)) return; const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' }); p.sent_at = new Date().toISOString(); saveQueue(q); res.json({ ok: true }); });
 // ---------- Winners for ads: one simple list across clients ----------
 app.get('/api/hq/winners-all', (req, res) => {

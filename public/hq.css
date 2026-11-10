@@ -457,3 +457,7 @@ body.hqout .top .sp{display:block}
 @media(max-width:700px){.pk{grid-template-columns:1fr}.pkd{display:flex;gap:8px;align-items:baseline;justify-content:flex-start;padding:8px 12px}}
 
 .cb{white-space:nowrap}.cb input[type=checkbox],input[type=checkbox],input[type=radio]{width:16px !important;height:16px;min-width:16px;flex:none;padding:0 !important;margin:0}
+
+/* copy buttons: black text on white, always readable */
+.btn2.cpy,.btn2.cpy:hover{background:#fff;color:#0b1220;border-color:var(--hair2);box-shadow:none}
+.btn2.line,.btn2.line:hover{color:#0b1220}

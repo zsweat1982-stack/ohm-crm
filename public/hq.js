@@ -51,7 +51,21 @@
   var STATUS = { active: 'Active', ending: 'Ending', seasonal: 'Seasonal', ads_off: 'Ads off', onboarding: 'Onboarding', internal: 'Ours', returning: 'Returning', proposal: 'Proposal' };
   var KIND = { retainer: 'Retainer', website: 'Website', returning: 'Returning', proposal: 'Pending' };
   var clientTab = 'all';
-  function root() { return document.getElementById('hq'); }
+  // Scroll memory. Many code paths set the page's innerHTML directly (background syncs, saves, mail loading). Each used to
+  // drop you at the top. We remember the scroll position and put it back after any re-render of the page you are on.
+  var lastY = 0, quietUntil = 0, patched = null;
+  window.addEventListener('scroll', function () { if (Date.now() >= quietUntil) lastY = window.pageYOffset || document.documentElement.scrollTop || 0; }, { passive: true });
+  // Where the page is scrolled right now. Inside the short window after a re-render the browser may have clamped it, so trust the remembered value then.
+  function curY() { return Date.now() < quietUntil ? lastY : (window.pageYOffset || document.documentElement.scrollTop || 0); }
+  function root() {
+    var el = document.getElementById('hq');
+    if (el && patched !== el) {
+      patched = el;
+      var d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+      Object.defineProperty(el, 'innerHTML', { configurable: true, get: function () { return d.get.call(el); }, set: function (v) { var y = curY(); lastY = y; quietUntil = Date.now() + 120; d.set.call(el, v); window.scrollTo(0, y); setTimeout(function () { window.scrollTo(0, y); }, 60); } });
+    }
+    return el;
+  }
 
   function health(c) {
     if (!c.work) return { k: '', t: c.syncing ? 'Syncing' : 'Not synced', col: '#bcc5d3' };
@@ -87,7 +101,7 @@
 
   async function fetchHq(force) {
     if (HQ.loading) return; HQ.loading = true;
-    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); if (HQ.data.clients.some(function (c) { return c.syncing; }) && (HQ.syncTries = (HQ.syncTries || 0) + 1) <= 30) setTimeout(function () { HQ.data = null; fetchHq(false).then(function () { if (document.body.classList.contains('hqmode')) show(navKey); }); }, 7000); else HQ.syncTries = 0; HQ.onb = (await api('/api/onboarding')).responses || []; try { HQ.me = await api('/api/me'); } catch (x) {} try { HQ.tasks = (await api('/api/tasks')).tasks || []; } catch (x) { HQ.tasks = []; } }
+    try { if (force) await fetch('/api/hq/refresh'); HQ.data = await api('/api/hq'); if (HQ.data.clients.some(function (c) { return c.syncing; }) && (HQ.syncTries = (HQ.syncTries || 0) + 1) <= 30) setTimeout(function () { HQ.data = null; fetchHq(false).then(function () { if (document.body.classList.contains('hqmode')) show(navKey); }); }, 7000); else HQ.syncTries = 0; var side = await Promise.all([api('/api/onboarding').catch(function () { return {}; }), api('/api/me').catch(function () { return null; }), api('/api/tasks').catch(function () { return { tasks: [] }; })]); HQ.onb = side[0].responses || []; if (side[1]) HQ.me = side[1]; HQ.tasks = side[2].tasks || []; }
     catch (err) { HQ.err = err.message; }
     HQ.loading = false;
   }
@@ -372,7 +386,7 @@
       return '<div class="panel" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><div class="em">' + e(b.client) + ' · keyword: ' + e(b.keyword) + '</div><div class="nm" style="font-size:17px;margin:4px 0">' + e(b.title) + '</div></div><span class="chip st-' + (b.status === 'published' ? 'active' : 'internal') + '">' + (b.status === 'published' ? 'Published' : 'Ready') + '</span></div>' +
         '<div class="em" style="margin:4px 0">Meta: ' + e(b.meta) + '</div>' + (b.verify && b.verify.length ? '<div class="note2" style="margin:8px 0"><b>Check before publishing:</b> ' + e(b.verify.join(' · ')) + '</div>' : '') +
         '<details class="sm"><summary>Read the post</summary><div style="white-space:pre-wrap;font-size:14px;line-height:1.6;margin-top:8px">' + String(b.body || '').split('\n').map(function (ln) { return /^#+\s/.test(ln) ? '<b style="display:block;margin-top:12px">' + e(ln.replace(/^#+\s*/, '')) + '</b>' : e(ln); }).join('\n') + '</div></details>' +
-        '<div style="margin-top:10px"><button class="btn2 red mini cpy" data-copy="' + e(full) + '">Copy title + post</button> <button class="btn2 line mini cpy" data-copy="' + e(b.title) + '">Copy title</button> <button class="btn2 line mini cpy" data-copy="' + e(b.meta) + '">Copy meta</button> <button class="btn2 line mini" onclick="hqBlogSt(\'' + e(b.id) + '\',\'' + (b.status === 'published' ? 'ready' : 'published') + '\')">' + (b.status === 'published' ? 'Mark ready' : 'Mark published') + '</button></div></div>';
+        '<div style="margin-top:10px"><button class="btn2 line mini cpy" data-copy="' + e(full) + '">Copy title + post</button> <button class="btn2 line mini cpy" data-copy="' + e(b.title) + '">Copy title</button> <button class="btn2 line mini cpy" data-copy="' + e(b.meta) + '">Copy meta</button> <button class="btn2 line mini" onclick="hqBlogSt(\'' + e(b.id) + '\',\'' + (b.status === 'published' ? 'ready' : 'published') + '\')">' + (b.status === 'published' ? 'Mark ready' : 'Mark published') + '</button></div></div>';
     }).join('');
     return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Blogs</h3><p>Two a month per client. Written from each client\'s brain and research, ready to copy into their site. Frank publishes.</p></div></div>' + busy +
       '<div class="panel" style="margin-bottom:16px"><h3>Write one</h3><div class="frm" style="margin-top:12px"><div><label>Client</label><select id="bl_c">' + opts + '</select></div><div><label>Topic (optional)</label><input id="bl_t" placeholder="Leave blank and it picks from the research"></div></div><div style="margin-top:12px"><button class="btn2 red" onclick="hqBlogWrite()">Write a blog post</button>' + (admin ? ' <button class="btn2 line" onclick="hqBlogAll()">Write one for every client</button>' : '') + '</div></div>' + (cards || '<div class="panel"><div class="empty">No posts yet.</div></div>');
@@ -398,6 +412,19 @@
     return '<div class="panel" style="margin-bottom:16px"><h3>Send to Sprout</h3><p class="hint" style="margin-top:0">Sprout takes one file per client. In Sprout: Publishing, Calendar, the three dots at the top right, <b>Bulk Post Import</b>. Pick that client\'s profiles, drop the file in, choose <b>mm/dd/yyyy</b>, and tick <b>Schedule posts as Drafts</b> so you can look before anything goes live. Videos are not supported by Sprout import, so videos and posts without a public image link are left out of the file and stay here.</p>' +
       (ks.length ? ks.map(function (k) { return '<a class="btn2 red mini" style="margin:4px 6px 0 0" href="/api/queue/export.csv?client=' + encodeURIComponent(k) + '">' + e(cname(k)) + ' (' + by[k].length + ')</a>'; }).join('') : '<div class="em">Nothing is approved yet.</div>') + '</div>';
   }
+  function qFiles(p) {
+    var fl = (p.files || []).map(function (f) { return '<div class="em" style="display:flex;gap:8px;align-items:center"><a href="/api/queue/' + e(p.id) + '/media/' + encodeURIComponent(f.name) + '" download>' + e(f.name) + '</a> <span>' + Math.max(1, Math.round(f.size / 1048576 * 10) / 10) + ' MB</span> <a class="lnk" onclick="hqQFileDel(\'' + e(p.id) + '\',\'' + e(f.name) + '\')">remove</a></div>'; }).join('');
+    return '<div style="margin-top:8px">' + fl + '<label class="btn2 line mini" style="margin-top:6px;cursor:pointer">Add video or graphic<input type="file" multiple accept="image/*,video/*" style="display:none" onchange="hqQUp(\'' + e(p.id) + '\',this)"></label></div>';
+  }
+  window.hqQUp = async function (id, inp) {
+    var files = Array.prototype.slice.call(inp.files || []);
+    for (var i = 0; i < files.length; i++) {
+      toast('Uploading ' + files[i].name + '...');
+      try { var r = await fetch('/api/queue/' + id + '/media', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'x-filename': encodeURIComponent(files[i].name) }, body: files[i] }); var j = await r.json().catch(function () { return {}; }); if (!r.ok) throw new Error(j.error || 'Upload failed'); } catch (x) { toast(String(x.message || x)); }
+    }
+    show('hq:queue');
+  };
+  window.hqQFileDel = async function (id, name) { if (!confirm('Remove this file?')) return; try { await api('/api/queue/' + id + '/media/' + encodeURIComponent(name), 'DELETE'); } catch (x) { toast(x.message); } show('hq:queue'); };
   var QSTAT = { approved: ['Approved', 'ok'], waiting: ['Waiting', 'warn'], held: ['Held', 'bad'] };
   async function queuePage() {
     if (!HQ.me || !HQ.me.queue) return '<div class="sec"><div><h3 style="font-size:28px">Posting Queue</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The posting queue is private to Zac.</div></div>';
@@ -412,7 +439,7 @@
       if (p.status !== 'approved') { if (!p.caption) why = 'No caption yet.'; else if (rule && rule.captionBy && p.caption_by !== rule.captionBy) why = 'Waiting on ' + rule.captionBy + '\'s caption.'; else if (rule) why = 'Waiting on ' + rule.approvers.join(' or ') + '.'; else why = 'Waiting on you.'; }
       var appr = rule ? '<select onchange="hqQ(\'' + p.id + '\',{approved_by:this.value})"><option value="">Approved by...</option>' + rule.approvers.map(function (a) { return '<option' + (p.approved_by === a ? ' selected' : '') + '>' + e(a) + '</option>'; }).join('') + '</select>' : '';
       var cap = rule && rule.captionBy ? '<label style="font-size:12px"><input type="checkbox"' + (p.caption_by === rule.captionBy ? ' checked' : '') + ' onchange="hqQ(\'' + p.id + '\',{caption_by:this.checked?\'' + rule.captionBy + '\':\'\'})"> ' + e(rule.captionBy) + ' wrote it</label>' : '';
-      return '<tr><td><div class="nm">' + e(cname(p.client)) + '</div><div class="em">' + e(p.platforms || '') + '</div></td><td class="em">' + e(p.date) + '<br>' + e(p.time) + '</td><td style="max-width:360px"><div style="white-space:pre-wrap;font-size:13px">' + e(p.caption || '(no caption)') + '</div>' + (p.cta ? '<div class="em">CTA: ' + e(p.cta) + '</div>' : '') + (p.media ? '<div class="em">Media: ' + e(p.media) + '</div>' : '') + '</td>' +
+      return '<tr><td><div class="nm">' + e(cname(p.client)) + '</div><div class="em">' + e(p.platforms || '') + '</div></td><td class="em">' + e(p.date) + '<br>' + e(p.time) + '</td><td style="max-width:360px"><div style="white-space:pre-wrap;font-size:13px">' + e(p.caption || '(no caption)') + '</div>' + qFiles(p) + '' + (p.cta ? '<div class="em">CTA: ' + e(p.cta) + '</div>' : '') + (p.media ? '<div class="em">Media: ' + e(p.media) + '</div>' : '') + '</td>' +
         '<td><span class="chip st-' + (st[1] === 'ok' ? 'active' : 'internal') + '">' + st[0] + '</span><div class="em">' + e(why) + '</div>' + cap + appr + '</td><td style="text-align:right;white-space:nowrap"><button class="btn2 line mini cpy" data-copy="' + e([p.caption, p.cta && (p.caption || '').indexOf(p.cta) < 0 ? p.cta : ''].filter(Boolean).join('\n\n')) + '">Copy caption</button> <button class="btn2 line mini" onclick="hqQ(\'' + p.id + '\',{status:\'approved\'})">Approve</button> <button class="btn2 line mini" onclick="hqQ(\'' + p.id + '\',{status:\'held\'})">Hold</button> <button class="btn2 line mini" onclick="hqQDel(\'' + p.id + '\')">Delete</button></td></tr>';
     }).join('');
     return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Posting Queue</h3><p>Only posts marked Approved go in the file for Sprout. Everything else stays here with the reason it is waiting. Private to you.</p></div></div>' + sproutBox(posts, cname) +
@@ -900,7 +927,7 @@
   var lastShown = '';
   async function show(key) {
     // Re-rendering the page you are already on (a refresh, a save, a background sync) must not throw you back to the top.
-    var sameKey = lastShown === key, keepY = sameKey ? (window.pageYOffset || document.documentElement.scrollTop || 0) : 0; lastShown = key;
+    var sameKey = lastShown === key, keepY = sameKey ? curY() : 0; lastY = keepY; if (!sameKey) { quietUntil = 0; window.scrollTo(0, 0); } lastShown = key;
     document.body.classList.add('hqmode');
     var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue', 'hq:ads': 'Winners for Ads', 'hq:blogs': 'Blogs' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
@@ -923,7 +950,7 @@
     else if (key === 'hq:outreach') el.innerHTML = (HQ.me && HQ.me.pipeline) ? outreach() : '<div class="sec"><div><h3 style="font-size:28px">Outreach</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.</div></div>';
     else if (key === 'hq:team') el.innerHTML = await team();
     else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } await loadClientData(key.slice(10)); el.innerHTML = clientPage(key.slice(10)); }
-    window.scrollTo(0, sameKey ? keepY : 0); mnav();
+    lastY = sameKey ? keepY : 0; window.scrollTo(0, lastY); mnav();
   }
   window.hqNav = function (key) {
     if (String(key).indexOf('hq:') !== 0) { document.body.classList.remove('hqmode', 'hqout'); document.body.classList.add('outdetail'); navKey = key; mnav(); if (typeof renderNav === 'function') renderNav(); return false; }
