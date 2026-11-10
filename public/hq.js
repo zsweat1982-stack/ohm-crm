@@ -340,6 +340,58 @@
   function ocard(k, i) {
     var o = OUT_INFO[k]; return '<button class="oc ' + o[3] + '" style="animation-delay:' + i * 30 + 'ms" onclick="navTo(\'' + k + '\')"><div class="top2"><div class="ci">' + ico(o[2]) + '</div><span class="arrow">' + ico('arrow') + '</span></div><div class="n">' + outCount(k).toLocaleString() + '</div><div class="lb">' + e(o[0]) + '</div><div class="ds">' + e(o[1]) + '</div></button>';
   }
+  // ---- Winners for Ads: three taps for Ariel ----
+  var WHY = ['Most views', 'Most saves', 'Most shares', 'Most comments', 'Got leads'];
+  async function adsPage() {
+    var r; try { r = await api('/api/hq/winners-all'); } catch (x) { return '<div class="panel"><div class="empty">' + e(x.message) + '</div></div>'; }
+    var opts = r.clients.map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
+    var lab = { new: 'New', in_ads: 'In ads', not_a_fit: 'Not a fit' };
+    var cards = r.winners.map(function (w) {
+      return '<div class="panel" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><div class="nm">' + e(w.client) + ' <span class="em">' + e(w.platform || '') + '</span></div><div style="margin:6px 0;word-break:break-word">' + e(w.post) + '</div>' + (w.why ? '<div class="em">Why: ' + e(w.why) + '</div>' : '') + '</div><div style="white-space:nowrap"><span class="chip st-' + (w.ad_status === 'in_ads' ? 'active' : 'internal') + '">' + lab[w.ad_status] + '</span></div></div>' +
+        '<div style="margin-top:10px"><button class="btn2 red mini" onclick="hqAdSt(\'' + e(w.slug) + '\',\'' + e(w.id) + '\',\'in_ads\')">Using in ads</button> <button class="btn2 line mini" onclick="hqAdSt(\'' + e(w.slug) + '\',\'' + e(w.id) + '\',\'not_a_fit\')">Not a fit</button> <button class="btn2 line mini cpy" data-copy="' + e(w.post) + '">Copy link</button></div></div>';
+    }).join('');
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Winners for Ads</h3><p>Mark a post that did well. It becomes a proven format in the next packs and a task for the ads owner. Nothing is boosted.</p></div></div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>Mark a winner</h3><div class="frm" style="margin-top:12px"><div><label>Client</label><select id="wa_c">' + opts + '</select></div><div><label>Platform</label><select id="wa_p"><option>Instagram</option><option>Facebook</option><option>TikTok</option><option>LinkedIn</option><option>YouTube</option></select></div><div style="grid-column:1/-1"><label>Link to the post</label><input id="wa_l" placeholder="Paste the link"></div><div style="grid-column:1/-1"><label>Why it won (tap one)</label><div id="wa_w" style="display:flex;gap:8px;flex-wrap:wrap">' + WHY.map(function (x, i) { return '<button type="button" class="btn2 line mini" id="wy' + i + '" onclick="hqWhy(' + i + ')">' + x + '</button>'; }).join('') + '</div></div></div><div style="margin-top:12px"><button class="btn2 red" onclick="hqWinAll()">Mark winner</button></div></div>' +
+      (cards || '<div class="panel"><div class="empty">No winners marked yet.</div></div>');
+  }
+  var WHYSEL = '';
+  window.hqWhy = function (i) { WHYSEL = WHY[i]; WHY.forEach(function (x, k) { var b = document.getElementById('wy' + k); if (b) b.className = 'btn2 ' + (k === i ? 'red' : 'line') + ' mini'; }); };
+  window.hqWinAll = async function () {
+    var v = function (id) { return (document.getElementById(id) || {}).value || ''; }, slug = v('wa_c');
+    try { var r = await fetch('/api/hq/winners/' + slug, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ post: v('wa_l'), platform: v('wa_p'), why: WHYSEL }) }); var j = await r.json(); if (!r.ok) throw new Error(j.error || 'Could not save'); WHYSEL = ''; toast(j.task ? 'Saved. A task went to the ads owner.' : 'Saved'); show('hq:ads'); } catch (x) { toast(String(x.message || x)); }
+  };
+  window.hqAdSt = async function (slug, id, st) { try { await api('/api/hq/winners/' + slug + '/' + id + '/ad', 'POST', { status: st }); } catch (x) { toast(x.message); } show('hq:ads'); };
+
+  // ---- Blogs: written, copy and paste ready ----
+  async function blogsPage() {
+    var r; try { r = await api('/api/hq/blogs'); } catch (x) { return '<div class="panel"><div class="empty">' + e(x.message) + '</div></div>'; }
+    var admin = HQ.me && HQ.me.role === 'admin', opts = r.clients.map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
+    var busy = r.busy && r.busy.running ? '<div class="note2" style="margin-bottom:12px">Writing one post for every client: ' + r.busy.done + ' of ' + r.busy.total + ' done. Refresh in a minute.</div>' : '';
+    var cards = r.blogs.map(function (b) {
+      var full = b.title + '\n\n' + b.body + (b.cta ? '\n\n' + b.cta : '');
+      return '<div class="panel" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><div class="em">' + e(b.client) + ' · keyword: ' + e(b.keyword) + '</div><div class="nm" style="font-size:17px;margin:4px 0">' + e(b.title) + '</div></div><span class="chip st-' + (b.status === 'published' ? 'active' : 'internal') + '">' + (b.status === 'published' ? 'Published' : 'Ready') + '</span></div>' +
+        '<div class="em" style="margin:4px 0">Meta: ' + e(b.meta) + '</div>' + (b.verify && b.verify.length ? '<div class="note2" style="margin:8px 0"><b>Check before publishing:</b> ' + e(b.verify.join(' · ')) + '</div>' : '') +
+        '<details class="sm"><summary>Read the post</summary><div style="white-space:pre-wrap;font-size:14px;line-height:1.6;margin-top:8px">' + e(b.body) + '</div></details>' +
+        '<div style="margin-top:10px"><button class="btn2 red mini cpy" data-copy="' + e(full) + '">Copy title + post</button> <button class="btn2 line mini cpy" data-copy="' + e(b.title) + '">Copy title</button> <button class="btn2 line mini cpy" data-copy="' + e(b.meta) + '">Copy meta</button> <button class="btn2 line mini" onclick="hqBlogSt(\'' + e(b.id) + '\',\'' + (b.status === 'published' ? 'ready' : 'published') + '\')">' + (b.status === 'published' ? 'Mark ready' : 'Mark published') + '</button></div></div>';
+    }).join('');
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Blogs</h3><p>Two a month per client. Written from each client\'s brain and research, ready to copy into their site. Frank publishes.</p></div></div>' + busy +
+      '<div class="panel" style="margin-bottom:16px"><h3>Write one</h3><div class="frm" style="margin-top:12px"><div><label>Client</label><select id="bl_c">' + opts + '</select></div><div><label>Topic (optional)</label><input id="bl_t" placeholder="Leave blank and it picks from the research"></div></div><div style="margin-top:12px"><button class="btn2 red" onclick="hqBlogWrite()">Write a blog post</button>' + (admin ? ' <button class="btn2 line" onclick="hqBlogAll()">Write one for every client</button>' : '') + '</div></div>' + (cards || '<div class="panel"><div class="empty">No posts yet.</div></div>');
+  }
+  window.hqBlogWrite = async function () { var v = function (id) { return (document.getElementById(id) || {}).value || ''; }; toast('Writing. This takes about a minute.'); try { await api('/api/hq/blogs/' + v('bl_c') + '/write', 'POST', { topic: v('bl_t') }); } catch (x) { toast(x.message); return; } show('hq:blogs'); };
+  window.hqBlogAll = async function () { if (!confirm('Write one post for every active client? It runs in the background.')) return; try { await api('/api/hq/blogs/write-all', 'POST', {}); toast('Started'); } catch (x) { toast(x.message); } show('hq:blogs'); };
+  window.hqBlogSt = async function (id, st) { try { await api('/api/hq/blogs/' + id + '/status', 'POST', { status: st }); } catch (x) { toast(x.message); } show('hq:blogs'); };
+
+  // ---- Announcements on Home ----
+  async function loadAnn() { try { HQ.ann = await api('/api/announcements'); } catch (x) { HQ.ann = { items: [] }; } }
+  function annBox() {
+    var a = HQ.ann || { items: [] }, admin = a.admin, items = a.items || [];
+    var list = items.map(function (x) { return '<div class="item" style="display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;border-radius:12px;background:' + (x.level === 'alert' ? '#fde8e7' : '#eef3fb') + '"><div><b>' + (x.level === 'alert' ? 'Alert' : 'Reminder') + ':</b> ' + e(x.text) + (admin ? '<div class="em">To ' + (x.to === 'all' ? 'everyone' : (x.to || []).length + ' people') + ' · ' + x.dismissed_count + ' dismissed</div>' : '') + '</div>' + (admin ? '<button class="btn2 line mini" onclick="hqAnnDel(\'' + e(x.id) + '\')">Remove</button>' : '<button class="btn2 line mini" onclick="hqAnnDone(\'' + e(x.id) + '\')">Done</button>') + '</div>'; }).join('');
+    var form = admin ? '<details class="sm" style="margin-bottom:12px"><summary>Send an alert or reminder to the team</summary><div class="ed"><label>Message</label><input id="an_t" maxlength="500"><label>Type</label><select id="an_l"><option value="reminder">Reminder</option><option value="alert">Alert</option></select><label>Hide after (optional)</label><input id="an_e" type="date"><button class="btn2 red" style="margin-top:8px" onclick="hqAnnSend()">Send to everyone</button></div></details>' : '';
+    return (list || form) ? '<div style="margin-bottom:16px">' + list + form + '</div>' : '';
+  }
+  window.hqAnnSend = async function () { var v = function (id) { return (document.getElementById(id) || {}).value || ''; }; try { await api('/api/announcements', 'POST', { text: v('an_t'), level: v('an_l'), expires: v('an_e'), to: 'all' }); toast('Sent'); } catch (x) { toast(x.message); return; } await loadAnn(); show('hq:home'); };
+  window.hqAnnDone = async function (id) { try { await api('/api/announcements/' + id + '/dismiss', 'POST', {}); } catch (x) {} await loadAnn(); show('hq:home'); };
+  window.hqAnnDel = async function (id) { if (!confirm('Remove this for everyone?')) return; try { await api('/api/announcements/' + id, 'DELETE'); } catch (x) {} await loadAnn(); show('hq:home'); };
   var QSTAT = { approved: ['Approved', 'ok'], waiting: ['Waiting', 'warn'], held: ['Held', 'bad'] };
   async function queuePage() {
     if (!HQ.me || !HQ.me.queue) return '<div class="sec"><div><h3 style="font-size:28px">Posting Queue</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The posting queue is private to Zac.</div></div>';
@@ -841,19 +893,21 @@
 
   async function show(key) {
     document.body.classList.add('hqmode');
-    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue' };
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue', 'hq:ads': 'Winners for Ads', 'hq:blogs': 'Blogs' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
     document.getElementById('viewTitle').textContent = titles[key] || 'Client';
     var el = root();
     if (!HQ.data) { el.innerHTML = skeleton(); await fetchHq(false); }
     if (!HQ.data) { el.innerHTML = '<div class="empty">Could not load: ' + e(HQ.err || 'error') + '</div>'; return; }
-    if (key === 'hq:home') { el.innerHTML = home(); if (HQ.me && !HQ.me.legacy) { if (!HQ.mail && !HQ.mailLoading) loadMail().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); if (!HQ.cal && !HQ.calLoading) loadCal().then(function () { if (navKey === 'hq:home') el.innerHTML = home(); }); } }
+    if (key === 'hq:home') { if (!HQ.ann) await loadAnn(); el.innerHTML = annBox() + home(); if (HQ.me && !HQ.me.legacy) { if (!HQ.mail && !HQ.mailLoading) loadMail().then(function () { if (navKey === 'hq:home') el.innerHTML = annBox() + home(); }); if (!HQ.cal && !HQ.calLoading) loadCal().then(function () { if (navKey === 'hq:home') el.innerHTML = annBox() + home(); }); } }
     else if (key === 'hq:clients') el.innerHTML = clients();
     else if (key === 'hq:onboarding') el.innerHTML = onboarding();
     else if (key === 'hq:mail') { el.innerHTML = mail(); if (!HQ.mail) { await loadMail(); if (navKey === 'hq:mail') el.innerHTML = mail(); } }
     else if (key === 'hq:how') { if (!HQ.how) { try { HQ.how = await (await fetch('/how.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.how = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.how + '</div>'; }
     else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.wb) { try { HQ.wb = await api('/api/hq/week-board'); } catch (x) { HQ.wb = { weeks: [] }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
+    else if (key === 'hq:ads') { el.innerHTML = await adsPage(); }
+    else if (key === 'hq:blogs') { el.innerHTML = await blogsPage(); }
     else if (key === 'hq:queue') { el.innerHTML = await queuePage(); }
     else if (key === 'hq:manual') { if (!HQ.manual) { try { HQ.manual = await (await fetch('/manual.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.manual = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.manual + '</div>'; }
     else if (key === 'hq:conversions') { var cv = {}; try { cv = await api('/api/conversions/status'); } catch (x) {} el.innerHTML = conversions(cv); }

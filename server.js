@@ -2471,6 +2471,80 @@ app.get('/api/queue/export.csv', (req, res) => {
   res.send(rows.map(r => r.map(cell).join(',')).join('\n'));
 });
 app.post('/api/queue/:id/sent', (req, res) => { if (!zacOnly(req, res)) return; const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' }); p.sent_at = new Date().toISOString(); saveQueue(q); res.json({ ok: true }); });
+// ---------- Winners for ads: one simple list across clients ----------
+app.get('/api/hq/winners-all', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const all = readJson(WINNERS_FILE, {}), names = Object.fromEntries(loadClients().map(c => [c.slug, c.name])), out = [];
+  for (const [slug, list] of Object.entries(all)) for (const w of list) out.push({ ...w, slug, client: names[slug] || slug, ad_status: w.ad_status || 'new' });
+  out.sort((a, b) => (a.at < b.at ? 1 : -1)); res.json({ winners: out.slice(0, 120), clients: loadClients().filter(c => ['active', 'seasonal'].includes(c.status)).map(c => ({ slug: c.slug, name: c.name })) });
+});
+app.post('/api/hq/winners/:slug/:id/ad', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  const st = String((req.body && req.body.status) || ''); if (!['new', 'in_ads', 'not_a_fit'].includes(st)) return res.status(400).json({ error: 'Bad status.' });
+  const all = readJson(WINNERS_FILE, {}), w = (all[req.params.slug] || []).find(x => x.id === req.params.id); if (!w) return res.status(404).json({ error: 'Not found.' });
+  w.ad_status = st; w.ad_by = me.name; w.ad_at = new Date().toISOString(); fs.writeFileSync(WINNERS_FILE, JSON.stringify(all, null, 2)); res.json({ ok: true });
+});
+
+// ---------- Blogs for every client (written, copy and paste ready for Frank) ----------
+const BLOGS_FILE = path.join(DATA_DIR, 'blogs.json');
+const loadBlogs = () => readJson(BLOGS_FILE, []);
+const saveBlogs = b => fs.writeFileSync(BLOGS_FILE, JSON.stringify(b, null, 2));
+async function writeBlog(slug, topicHint) {
+  const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
+  const ctx = clientContext(slug, c), prior = loadBlogs().filter(b => b.slug === slug).map(b => b.title).slice(-30);
+  const system = 'You write blog posts for a small business website. Copy rules: American spelling, no em dashes or en dashes, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer), numbers beat adjectives, front-load the point, plain and specific. Never invent statistics, awards, prices, guarantees, licenses or customer names; use only facts in the client brain, or say nothing. Pick one topic of the form industry problem (what a real customer searches when something goes wrong or they are deciding), not service plus city. Return ONLY JSON: {"title":"","keyword":"","meta":"","body":"","cta":"","facts_to_verify":[""]}. "meta" is 150 characters or fewer. "body" is 700 to 900 words as plain text: an opening that answers the question in two sentences, then 4 to 6 sections each starting with a line "## Heading", short paragraphs, one clear call to action at the end. "cta" is one sentence with the client\'s real action. "facts_to_verify" lists any claim a human must confirm before publishing.';
+  const user = 'CLIENT: ' + c.name + '\n' + (c.services && c.services.length ? 'SERVICES: ' + c.services.join(', ') + '\n' : '') + (topicHint ? 'TOPIC REQUESTED: ' + topicHint + '\n' : '') + 'ALREADY WRITTEN (do not repeat): ' + (prior.join(' | ') || 'none') + '\n\nCLIENT BRAIN AND RESEARCH:\n' + ctx.brain + '\n\nFRAMEWORKS:\n' + ctx.frameworks;
+  const j = await aiJson(system, user, 4500);
+  const clean = v => String(v || '').replace(/—|–/g, ',').trim();
+  const b = { id: 'b_' + crypto.randomBytes(5).toString('hex'), slug, title: clean(j.title).slice(0, 160), keyword: clean(j.keyword).slice(0, 80), meta: clean(j.meta).slice(0, 170), body: clean(j.body).slice(0, 12000), cta: clean(j.cta).slice(0, 300), verify: (j.facts_to_verify || []).map(clean).slice(0, 10), status: 'ready', created_at: new Date().toISOString() };
+  if (!b.title || !b.body) throw new Error('The AI returned an empty post. Try again.');
+  const all = loadBlogs(); all.push(b); saveBlogs(all); return b;
+}
+app.get('/api/hq/blogs', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const names = Object.fromEntries(loadClients().map(c => [c.slug, c.name]));
+  res.json({ blogs: loadBlogs().map(b => ({ ...b, client: names[b.slug] || b.slug })).sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 200), clients: loadClients().filter(c => ['active', 'seasonal'].includes(c.status)).map(c => ({ slug: c.slug, name: c.name })), busy: blogJob });
+});
+let blogJob = null;
+app.post('/api/hq/blogs/:slug/write', async (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
+  try { const b = await writeBlog(String(req.params.slug).replace(/[^a-z0-9-]/g, ''), String((req.body && req.body.topic) || '').slice(0, 200)); res.json({ blog: b }); } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+// Admin: one post for every active client, one after another in the background.
+app.post('/api/hq/blogs/write-all', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (blogJob && blogJob.running) return res.json({ ok: true, already: true });
+  const slugs = loadClients().filter(c => ['active', 'seasonal'].includes(c.status) && !['nabs'].includes(c.slug)).map(c => c.slug);
+  blogJob = { running: true, total: slugs.length, done: 0, failed: [] };
+  (async () => { for (const sl of slugs) { try { await writeBlog(sl, ''); } catch (e) { blogJob.failed.push(sl + ': ' + String(e.message || e).slice(0, 120)); } blogJob.done++; } blogJob.running = false; })();
+  res.json({ ok: true, total: slugs.length });
+});
+app.post('/api/hq/blogs/:id/status', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const st = String((req.body && req.body.status) || ''); if (!['ready', 'published'].includes(st)) return res.status(400).json({ error: 'Bad status.' });
+  const all = loadBlogs(), b = all.find(x => x.id === req.params.id); if (!b) return res.status(404).json({ error: 'Not found.' });
+  b.status = st; if (st === 'published') b.published_at = new Date().toISOString(); saveBlogs(all); res.json({ ok: true });
+});
+
+// ---------- Announcements: admin pushes alerts and reminders to Home ----------
+const ANN_FILE = path.join(DATA_DIR, 'announcements.json');
+const loadAnn = () => readJson(ANN_FILE, []);
+const saveAnn = a => fs.writeFileSync(ANN_FILE, JSON.stringify(a, null, 2));
+app.get('/api/announcements', (req, res) => {
+  const u = authedUser(req); if (!u || u.legacy) return res.json({ items: [] });
+  const now = new Date().toISOString().slice(0, 10), items = loadAnn().filter(a => !a.expires || a.expires >= now);
+  if (u.role === 'admin') return res.json({ admin: true, items: items.map(a => ({ ...a, dismissed_count: Object.keys(a.dismissed || {}).length })), users: loadUsers().filter(x => x.active !== false).map(x => ({ id: x.id, name: x.name })) });
+  res.json({ items: items.filter(a => (a.to === 'all' || (Array.isArray(a.to) && a.to.includes(u.id))) && !(a.dismissed || {})[u.id]).map(a => ({ id: a.id, text: a.text, level: a.level, at: a.at })) });
+});
+app.post('/api/announcements', (req, res) => {
+  const me = requireAdmin(req, res); if (!me) return;
+  const b = req.body || {}, text = String(b.text || '').replace(/—|–/g, ',').trim().slice(0, 500); if (!text) return res.status(400).json({ error: 'Write the message.' });
+  const to = b.to === 'all' || !Array.isArray(b.to) ? 'all' : b.to.map(String).slice(0, 50);
+  const a = { id: 'a_' + crypto.randomBytes(4).toString('hex'), text, to, level: b.level === 'alert' ? 'alert' : 'reminder', expires: /^\d{4}-\d{2}-\d{2}$/.test(b.expires || '') ? b.expires : '', at: new Date().toISOString(), by: me.name, dismissed: {} };
+  const all = loadAnn(); all.unshift(a); saveAnn(all.slice(0, 200)); res.json({ ok: true, id: a.id });
+});
+app.post('/api/announcements/:id/dismiss', (req, res) => { const u = authedUser(req); if (!u || u.legacy) return res.status(400).json({ error: 'Sign in with your own login.' }); const all = loadAnn(), a = all.find(x => x.id === req.params.id); if (a) { a.dismissed = a.dismissed || {}; a.dismissed[u.id] = new Date().toISOString(); saveAnn(all); } res.json({ ok: true }); });
+app.delete('/api/announcements/:id', (req, res) => { if (!requireAdmin(req, res)) return; saveAnn(loadAnn().filter(x => x.id !== req.params.id)); res.json({ ok: true }); });
 app.get('/api/conversions/status', (req, res) => {
   if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
   const url = process.env.CONVERSION_CRM_URL || '';
