@@ -4401,10 +4401,11 @@ Rules:
 - Use the five awareness levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and tag each hook with one.
 - Anything the archive is missing (see ARCHIVE) should get priority in b-roll and photos.
 - "mustgets" are shots a specific calendar post or open item needs, with the post or item it is for. If none are known, use the brain's open items to verify.
+- CLIP BUDGET (strict). Over-filming is the team's biggest time sink, so every item states exactly how much to shoot. A talking-head script is 1 take (2 at most). A b-roll shot is 2 to 4 clips of 4 to 8 seconds each, never more than 4. A photo shot is 1 to 3 photos. A must-get is 1 to 3 clips. The whole shoot totals at most 40 clips, 25 photos and 6 takes. Write the exact number in "clips", "count" or "takes". Say in "notes" to stop shooting when the list is done and not to film extras. Prefer fewer, better clips.
 - Copy rules: no em dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer), numbers beat adjectives, front-load the point.
 Return ONLY JSON, no prose, in this shape:
-{"hooks":[{"hook":"","body":["",""],"cta":"","onscreen":"","mimic":"","level":1,"why":"","verify":[""]}],"broll":[{"shot":"","why":""}],"photos":[{"shot":"","label":"TEAM|HEADSHOT|JOBSITE|PRODUCT|EVENT|LOCATION"}],"mustgets":[{"shot":"","for":""}],"notes":""}
-Counts: 6 hooks, 8 b-roll, 5 photos, 3 mustgets.`;
+{"hooks":[{"hook":"","body":["",""],"cta":"","onscreen":"","mimic":"","level":1,"takes":1,"why":"","verify":[""]}],"broll":[{"shot":"","why":"","clips":3}],"photos":[{"shot":"","label":"TEAM|HEADSHOT|JOBSITE|PRODUCT|EVENT|LOCATION","count":2}],"mustgets":[{"shot":"","for":"","clips":2}],"notes":""}
+Counts: 4 hooks, 6 b-roll, 4 photos, 3 mustgets.`;
 
 function archiveSummary(slug) {
   for (const [k, v] of contentCache) if (k.endsWith(':' + slug) && v.data && v.data.weeks) {
@@ -4433,9 +4434,11 @@ async function makeShotlist(slug, dateStr, who) {
   const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',').trim();
   const arr = (v, f) => (Array.isArray(v) ? v : []).slice(0, 12).map(f);
   const item = { id: 'sl_' + crypto.randomBytes(4).toString('hex'), name: `${c.code || c.slug.toUpperCase()}_SHOTLIST_${dateStr.replace(/-/g, '')}`, date: dateStr, at: new Date().toISOString(), by: who || 'auto',
-    hooks: arr(out.hooks, h => ({ hook: clean(h.hook), body: (Array.isArray(h.body) ? h.body : []).map(clean).filter(Boolean).slice(0, 5), cta: clean(h.cta), onscreen: clean(h.onscreen), mimic: clean(h.mimic), level: Number(h.level) || 0, why: clean(h.why), verify: (Array.isArray(h.verify) ? h.verify : []).map(clean).filter(Boolean) })),
-    broll: arr(out.broll, b => ({ shot: clean(b.shot), why: clean(b.why) })), photos: arr(out.photos, p => ({ shot: clean(p.shot), label: clean(p.label) })),
-    mustgets: arr(out.mustgets, m => ({ shot: clean(m.shot), for: clean(m.for) })), notes: clean(out.notes), basis: { working: !!readWorking(slug), archive: archiveSummary(slug).startsWith('Recent') } };
+    hooks: arr(out.hooks, h => ({ hook: clean(h.hook), body: (Array.isArray(h.body) ? h.body : []).map(clean).filter(Boolean).slice(0, 5), cta: clean(h.cta), onscreen: clean(h.onscreen), mimic: clean(h.mimic), level: Number(h.level) || 0, takes: Math.min(2, Math.max(1, Number(h.takes) || 1)), why: clean(h.why), verify: (Array.isArray(h.verify) ? h.verify : []).map(clean).filter(Boolean) })),
+    broll: arr(out.broll, b => ({ shot: clean(b.shot), why: clean(b.why), clips: Math.min(4, Math.max(1, Number(b.clips) || 3)) })), photos: arr(out.photos, p => ({ shot: clean(p.shot), label: clean(p.label), count: Math.min(3, Math.max(1, Number(p.count) || 1)) })),
+    mustgets: arr(out.mustgets, m => ({ shot: clean(m.shot), for: clean(m.for), clips: Math.min(3, Math.max(1, Number(m.clips) || 2)) })), notes: clean(out.notes), basis: { working: !!readWorking(slug), archive: archiveSummary(slug).startsWith('Recent') } };
+  // Totals are counted here, not trusted from the model.
+  item.totals = { clips: item.broll.reduce((a, b) => a + b.clips, 0) + item.mustgets.reduce((a, m) => a + m.clips, 0), photos: item.photos.reduce((a, p) => a + p.count, 0), takes: item.hooks.reduce((a, h) => a + h.takes, 0) };
   const all = loadShotlists(); all[slug] = [item].concat((all[slug] || []).filter(x => x.date !== dateStr)).slice(0, 8);
   fs.writeFileSync(SHOTLISTS_FILE, JSON.stringify(all, null, 2));
   return item;
@@ -4546,6 +4549,7 @@ Rules:
 - Follow the FORMAT AND TEXT-ON-SCREEN RULES for this client exactly.
 - Captions: work in one or two target keywords naturally, main keyword in the first line. Set "hashtags" to at most 5 tags per post (Instagram and Facebook), local and service tags first, then working tags from the list. Never invent a trending claim.
 - If the slots come from the team's plan, keep each slot's date and type. (Topic may change only as described above.) If a topic says "Chris picks the clip" or "Pull from footage", the client picks existing footage: do not invent a topic. Write a hook frame and a caption with fill-in blanks marked VERIFY, and say what to look for in the archive.
+- CLIPS. Every post says how many clips or photos to film in "clips": Reel 4 to 8 clips of 2 to 6 seconds, Talking head or Testimonial 1 take plus at most 2 b-roll clips, Carousel at most 5 photos, Graphic 0 or 1. Use archive footage first (clips 0 if nothing new is needed) and never ask for more than the post needs. The week total should be as small as it can be.
 - Production reality: Reels are edits of footage (archive pull or the shoot) with the hook as on-screen text. Graphics are one designed frame. Carousels are 5 cards or fewer and at most 1 per week unless the client's schedule says otherwise. If the client does not film, every Reel needs an archive pull list and a stills fallback. Use the schedule note below for the client's real mix.
 - Each post has: a one-breath hook (18 words or fewer, one person, one moment, one checkable detail), a shot list or archive pull list, on-screen text, and a caption with a hook, a body and a CTA. The CTA is one clear action.
 - For Graphic and Carousel posts choose a design from this list: ${DESIGNS.join(', ')}. Vary the designs across the week.
@@ -4554,7 +4558,7 @@ Rules:
 - PROMOS (listed in the request) are triggers. Post about a promo only if it is marked CLIENT CONFIRMED, using the exact name, dates and terms given, with its real deadline. Start teasing 7 days before it begins. A promo marked NOT CONFIRMED must not be posted: put it in "notes" as waiting on the client. Never invent a discount, price or deadline.
 - Copy rules: no em dashes or en dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer, "it's not just X, it's Y"), numbers beat adjectives, front-load the point, sound unmistakably like this brand.
 Return ONLY JSON in this shape, one row per slot, in date order:
-{"theme":"","rows":[{"date":"YYYY-MM-DD","type":"Reel|Graphic|Carousel|Talking head|Testimonial","platforms":"","time":"","level":1,"idea":"","hook":"","shots":[""],"onscreen":"","design":"","caption":{"hook":"","body":"","cta":""},"basis":"","gates":[""],"verify":[""],"editing":"","trigger":"holiday name or promo name, or empty","keywords":[""],"hashtags":["#tag"],"uses":"footage used","changed":false,"change_reason":""}],"notes":""}`;
+{"theme":"","rows":[{"date":"YYYY-MM-DD","type":"Reel|Graphic|Carousel|Talking head|Testimonial","platforms":"","time":"","level":1,"clips":0,"idea":"","hook":"","shots":[""],"onscreen":"","design":"","caption":{"hook":"","body":"","cta":""},"basis":"","gates":[""],"verify":[""],"editing":"","trigger":"holiday name or promo name, or empty","keywords":[""],"hashtags":["#tag"],"uses":"footage used","changed":false,"change_reason":""}],"notes":""}`;
 async function makePack(slug, monday, who, uid, opts) {
   opts = opts || {};
   const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
@@ -4579,7 +4583,7 @@ async function makePack(slug, monday, who, uid, opts) {
   const byDate = new Map((Array.isArray(out.rows) ? out.rows : []).map(r => [String(r.date || '').slice(0, 10), r]));
   const rows = dates.map(d => {
     const r = byDate.get(d) || {}, pr = planBy.get(d); const t = pr ? pr.type : (/carousel/i.test(r.type) ? 'Carousel' : /graphic/i.test(r.type) ? 'Graphic' : 'Reel');
-    return { date: d, type: t, platforms: clean(r.platforms), time: clean(r.time), level: Number(r.level) || 0, idea: clean(r.idea), hook: clean(r.hook), shots: strs(r.shots), onscreen: clean(r.onscreen),
+    return { date: d, type: t, platforms: clean(r.platforms), time: clean(r.time), level: Number(r.level) || 0, clips: Math.min(10, Math.max(0, Number(r.clips) || 0)), idea: clean(r.idea), hook: clean(r.hook), shots: strs(r.shots), onscreen: clean(r.onscreen),
       design: (t === 'Graphic' || t === 'Carousel') ? clean(r.design) : '', topic: pr ? pr.topic : '', planned: !!pr, caption: { hook: clean(r.caption && r.caption.hook), body: clean(r.caption && r.caption.body), cta: clean(r.caption && r.caption.cta) },
       basis: clean(r.basis), gates: strs(r.gates), verify: strs(r.verify), editing: clean(r.editing), trigger: clean(r.trigger), uses: clean(r.uses), keywords: strs(r.keywords).slice(0, 3), hashtags: cleanTags(r.hashtags), changed: !!r.changed && !(pr && pr.flag), change_reason: clean(r.change_reason), missing: !byDate.has(d) };
   });
