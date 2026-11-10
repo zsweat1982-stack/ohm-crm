@@ -2336,7 +2336,7 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => { const o = cookieOpts(req); res.setHeader('Set-Cookie', [`ohm_auth=; ${o}; Max-Age=0`, `ohm_sess=; ${o}; Max-Age=0`]); res.json({ ok: true }); });
 
 app.get('/api/me', (req, res) => { const u = authedUser(req); if (!u) return res.status(401).json({ error: 'auth required' }); const full = u.id && u.id !== 'legacy' ? (loadUsers().find(x => x.id === u.id) || {}) : {};
-  res.json({ id: u.id, name: u.name, email: u.email, title: full.title || '', role: u.role, must_change: !!u.must_change, legacy: !!u.legacy, pipeline: hasPipeline(u) }); });
+  res.json({ id: u.id, name: u.name, email: u.email, title: full.title || '', role: u.role, must_change: !!u.must_change, legacy: !!u.legacy, pipeline: hasPipeline(u), queue: !u.legacy && String(u.email || '').toLowerCase() === 'zac@openheartmediaco.com' }); });
 app.post('/api/me/password', (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(401).json({ error: 'Sign in with your own email to change a password.' });
   const { current, next } = req.body || {};
@@ -2410,6 +2410,67 @@ app.use((req, res, next) => {
   if (hasPipeline(authedUser(req))) return next();
   return res.status(403).json({ error: 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.' });
 });
+// ---------- Posting queue (Zac only) ----------
+// One list of every post that is waiting to go to Sprout. Locked to Zac's own login on the server:
+// no other admin, and not the old shared password. Only posts marked Approved ever reach the export.
+const QUEUE_FILE = path.join(DATA_DIR, 'post_queue.json');
+const QUEUE_OWNER = 'zac@openheartmediaco.com';
+// Who has to approve, per client. Everyone not listed here is approved by Zac alone.
+const QUEUE_RULES = {
+  urc:   { approvers: ['Carrie'], captionBy: 'Griffin', note: 'Griffin writes the caption first, then Carrie approves.' },
+  nitro: { approvers: ['Drew', 'Brian Rosenberg'], note: 'Client approval needed.' },
+  bkvf:  { approvers: ['Meg', 'Bryan', 'Rob', 'Haley'], note: 'Client approval needed.' },
+  cisga: { approvers: ['Adrienne', 'Jamie'], note: 'Client approval needed.' },
+};
+function zacOnly(req, res) {
+  const u = authedUser(req);
+  if (u && !u.legacy && String(u.email || '').toLowerCase() === QUEUE_OWNER) return u;
+  res.status(403).json({ error: 'The posting queue is private to Zac.' }); return null;
+}
+const loadQueue = () => readJson(QUEUE_FILE, []);
+const saveQueue = q => fs.writeFileSync(QUEUE_FILE, JSON.stringify(q, null, 2));
+const qClean = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+// Returns an error string when a post is not allowed to be Approved yet.
+function approvalProblem(p) {
+  const r = QUEUE_RULES[p.client];
+  if (!p.caption) return 'Add the caption first.';
+  if (!r) return '';
+  if (r.captionBy && p.caption_by !== r.captionBy) return r.captionBy + ' has to write this caption first.';
+  if (!p.approved_by || !r.approvers.includes(p.approved_by)) return 'Needs approval from ' + r.approvers.join(' or ') + '.';
+  return '';
+}
+app.get('/api/queue', (req, res) => { if (!zacOnly(req, res)) return; res.json({ posts: loadQueue(), rules: QUEUE_RULES, clients: loadClients().filter(c => c.status !== 'proposal').map(c => ({ slug: c.slug, name: c.name })) }); });
+app.post('/api/queue', (req, res) => {
+  if (!zacOnly(req, res)) return;
+  const b = req.body || {};
+  const p = { id: 'q_' + crypto.randomBytes(5).toString('hex'), client: qClean(b.client, 60), platforms: qClean(b.platforms, 120), date: qClean(b.date, 10), time: qClean(b.time, 8), caption: qClean(b.caption, 5000), cta: qClean(b.cta, 300), media: qClean(b.media, 500), notes: qClean(b.notes, 500), caption_by: qClean(b.caption_by, 40), approved_by: '', status: 'waiting', created_at: new Date().toISOString() };
+  if (!p.client) return res.status(400).json({ error: 'Pick a client.' });
+  const q = loadQueue(); q.push(p); saveQueue(q); res.json({ post: p });
+});
+app.patch('/api/queue/:id', (req, res) => {
+  if (!zacOnly(req, res)) return;
+  const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  for (const [k, n] of [['platforms', 120], ['date', 10], ['time', 8], ['caption', 5000], ['cta', 300], ['media', 500], ['notes', 500], ['caption_by', 40], ['approved_by', 40]]) if (b[k] !== undefined) p[k] = qClean(b[k], n);
+  if (b.status !== undefined) {
+    if (!['waiting', 'approved', 'held'].includes(b.status)) return res.status(400).json({ error: 'Bad status.' });
+    if (b.status === 'approved') { const why = approvalProblem(p); if (why) return res.status(400).json({ error: why }); }
+    p.status = b.status;
+  } else if (p.status === 'approved' && approvalProblem(p)) p.status = 'waiting';   // an edit that breaks the approval drops it back
+  saveQueue(q); res.json({ post: p });
+});
+app.delete('/api/queue/:id', (req, res) => { if (!zacOnly(req, res)) return; saveQueue(loadQueue().filter(x => x.id !== req.params.id)); res.json({ ok: true }); });
+// Approved posts only, as a CSV for Sprout's bulk upload. Anything not approved is counted but never written.
+app.get('/api/queue/export.csv', (req, res) => {
+  if (!zacOnly(req, res)) return;
+  const q = loadQueue(), ok = q.filter(p => p.status === 'approved' && !approvalProblem(p) && !p.sent_at && (!req.query.client || p.client === req.query.client));
+  const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = [['Client', 'Platforms', 'Date', 'Time', 'Message', 'Media']].concat(ok.map(p => [p.client, p.platforms, p.date, p.time, [p.caption, p.cta && !p.caption.includes(p.cta) ? p.cta : ''].filter(Boolean).join('\n\n'), p.media]));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', 'attachment; filename="sprout-approved-posts.csv"');
+  res.setHeader('X-Held-Back', String(q.filter(p => !p.sent_at).length - ok.length));
+  res.send(rows.map(r => r.map(cell).join(',')).join('\n'));
+});
+app.post('/api/queue/:id/sent', (req, res) => { if (!zacOnly(req, res)) return; const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' }); p.sent_at = new Date().toISOString(); saveQueue(q); res.json({ ok: true }); });
 app.get('/api/conversions/status', (req, res) => {
   if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
   const url = process.env.CONVERSION_CRM_URL || '';

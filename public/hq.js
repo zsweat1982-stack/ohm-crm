@@ -340,6 +340,34 @@
   function ocard(k, i) {
     var o = OUT_INFO[k]; return '<button class="oc ' + o[3] + '" style="animation-delay:' + i * 30 + 'ms" onclick="navTo(\'' + k + '\')"><div class="top2"><div class="ci">' + ico(o[2]) + '</div><span class="arrow">' + ico('arrow') + '</span></div><div class="n">' + outCount(k).toLocaleString() + '</div><div class="lb">' + e(o[0]) + '</div><div class="ds">' + e(o[1]) + '</div></button>';
   }
+  var QSTAT = { approved: ['Approved', 'ok'], waiting: ['Waiting', 'warn'], held: ['Held', 'bad'] };
+  async function queuePage() {
+    if (!HQ.me || !HQ.me.queue) return '<div class="sec"><div><h3 style="font-size:28px">Posting Queue</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The posting queue is private to Zac.</div></div>';
+    var r; try { r = await api('/api/queue'); } catch (x) { return '<div class="panel"><div class="empty">' + e(x.message) + '</div></div>'; }
+    HQ.queue = r;
+    var posts = r.posts.filter(function (p) { return !p.sent_at; }).sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
+    var nA = posts.filter(function (p) { return p.status === 'approved'; }).length;
+    var opts = r.clients.map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
+    var cname = function (s) { var c = r.clients.filter(function (x) { return x.slug === s; })[0]; return c ? c.name : s; };
+    var rows = posts.map(function (p) {
+      var rule = r.rules[p.client], st = QSTAT[p.status] || QSTAT.waiting, why = '';
+      if (p.status !== 'approved') { if (!p.caption) why = 'No caption yet.'; else if (rule && rule.captionBy && p.caption_by !== rule.captionBy) why = 'Waiting on ' + rule.captionBy + '\'s caption.'; else if (rule) why = 'Waiting on ' + rule.approvers.join(' or ') + '.'; else why = 'Waiting on you.'; }
+      var appr = rule ? '<select onchange="hqQ(\'' + p.id + '\',{approved_by:this.value})"><option value="">Approved by...</option>' + rule.approvers.map(function (a) { return '<option' + (p.approved_by === a ? ' selected' : '') + '>' + e(a) + '</option>'; }).join('') + '</select>' : '';
+      var cap = rule && rule.captionBy ? '<label style="font-size:12px"><input type="checkbox"' + (p.caption_by === rule.captionBy ? ' checked' : '') + ' onchange="hqQ(\'' + p.id + '\',{caption_by:this.checked?\'' + rule.captionBy + '\':\'\'})"> ' + e(rule.captionBy) + ' wrote it</label>' : '';
+      return '<tr><td><div class="nm">' + e(cname(p.client)) + '</div><div class="em">' + e(p.platforms || '') + '</div></td><td class="em">' + e(p.date) + '<br>' + e(p.time) + '</td><td style="max-width:360px"><div style="white-space:pre-wrap;font-size:13px">' + e(p.caption || '(no caption)') + '</div>' + (p.cta ? '<div class="em">CTA: ' + e(p.cta) + '</div>' : '') + (p.media ? '<div class="em">Media: ' + e(p.media) + '</div>' : '') + '</td>' +
+        '<td><span class="chip st-' + (st[1] === 'ok' ? 'active' : 'internal') + '">' + st[0] + '</span><div class="em">' + e(why) + '</div>' + cap + appr + '</td><td style="text-align:right;white-space:nowrap"><button class="btn2 line mini" onclick="hqQ(\'' + p.id + '\',{status:\'approved\'})">Approve</button> <button class="btn2 line mini" onclick="hqQ(\'' + p.id + '\',{status:\'held\'})">Hold</button> <button class="btn2 line mini" onclick="hqQDel(\'' + p.id + '\')">Delete</button></td></tr>';
+    }).join('');
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Posting Queue</h3><p>Only posts marked Approved go in the file for Sprout. Everything else stays here with the reason it is waiting. Private to you.</p></div><a class="btn2 red" href="/api/queue/export.csv">Download approved (' + nA + ')</a></div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>Add a post</h3><div class="frm" style="margin-top:12px"><div><label>Client</label><select id="qc">' + opts + '</select></div><div><label>Platforms</label><input id="qp" placeholder="Instagram, Facebook, LinkedIn"></div><div><label>Date</label><input id="qd" type="date"></div><div><label>Time</label><input id="qt" type="time"></div><div style="grid-column:1/-1"><label>Caption</label><textarea id="qk" rows="4"></textarea></div><div><label>CTA</label><input id="qa"></div><div><label>Media (file name or link)</label><input id="qm"></div></div><div style="margin-top:12px"><button class="btn2 red" onclick="hqQAdd()">Add to queue</button></div></div>' +
+      '<div class="panel"><table class="ttab"><thead><tr><th>Client</th><th>When</th><th>Post</th><th>Approval</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="em">Nothing in the queue.</td></tr>') + '</tbody></table></div>';
+  }
+  window.hqQ = async function (id, body) { try { await api('/api/queue/' + id, 'PATCH', body); } catch (er) { toast(er.message); } show('hq:queue'); };
+  window.hqQDel = async function (id) { if (!confirm('Delete this post from the queue?')) return; try { await api('/api/queue/' + id, 'DELETE'); } catch (er) { toast(er.message); } show('hq:queue'); };
+  window.hqQAdd = async function () {
+    var g = function (i) { return (document.getElementById(i) || {}).value || ''; };
+    try { await api('/api/queue', 'POST', { client: g('qc'), platforms: g('qp'), date: g('qd'), time: g('qt'), caption: g('qk'), cta: g('qa'), media: g('qm') }); toast('Added'); } catch (er) { toast(er.message); return; }
+    show('hq:queue');
+  };
   function conversions(cv) {
     var live = cv && cv.live, rows = [['Visiting Nurse (VNPHC)', 'Forms first'], ['Matchett Homes', 'Forms first'], ['Sun & Shield', 'Forms first'], ['iFab', 'Forms first'], ['ABLS (America\'s Best Lighting)', 'Forms first'], ['NABS', 'Forms first'], ['Open Heart Media (our own ads)', 'Forms first']];
     var steps = ['Put the capture script on the client site so every form saves the ad click ID.', 'Set the client site as an allowed origin and test one form.', 'Confirm the client\'s Google Ads has an offline "Booked Job" conversion action (import type).', 'Add the Meta pixel ID and access token for the client.', 'Ask the client each month for booked jobs and job values.', 'Mark booked jobs in the dashboard. Upload the Google file and let Meta events send.'];
@@ -813,7 +841,7 @@
 
   async function show(key) {
     document.body.classList.add('hqmode');
-    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions' };
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
     document.getElementById('viewTitle').textContent = titles[key] || 'Client';
     var el = root();
@@ -826,6 +854,7 @@
     else if (key === 'hq:how') { if (!HQ.how) { try { HQ.how = await (await fetch('/how.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.how = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.how + '</div>'; }
     else if (key === 'hq:content') { if (HQ.me && !HQ.me.legacy) { if (!HQ.cal) await loadCal(); el.innerHTML = contentWeek(); if (!HQ.wb) { try { HQ.wb = await api('/api/hq/week-board'); } catch (x) { HQ.wb = { weeks: [] }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } if (!HQ.cw) { try { HQ.cw = await api('/api/hq/content-week'); } catch (x) { HQ.cw = { connected: false }; } if (navKey === 'hq:content') el.innerHTML = contentWeek(); } } else el.innerHTML = contentWeek(); }
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
+    else if (key === 'hq:queue') { el.innerHTML = await queuePage(); }
     else if (key === 'hq:manual') { if (!HQ.manual) { try { HQ.manual = await (await fetch('/manual.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.manual = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.manual + '</div>'; }
     else if (key === 'hq:conversions') { var cv = {}; try { cv = await api('/api/conversions/status'); } catch (x) {} el.innerHTML = conversions(cv); }
     else if (key === 'hq:outreach') el.innerHTML = (HQ.me && HQ.me.pipeline) ? outreach() : '<div class="sec"><div><h3 style="font-size:28px">Outreach</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.</div></div>';
