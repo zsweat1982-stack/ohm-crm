@@ -2460,15 +2460,37 @@ app.patch('/api/queue/:id', (req, res) => {
   saveQueue(q); res.json({ post: p });
 });
 app.delete('/api/queue/:id', (req, res) => { if (!zacOnly(req, res)) return; saveQueue(loadQueue().filter(x => x.id !== req.params.id)); res.json({ ok: true }); });
-// Approved posts only, as a CSV for Sprout's bulk upload. Anything not approved is counted but never written.
+// Approved posts only, as a CSV for Sprout's Bulk Post Import (Professional plan). One file per client,
+// because the profiles are picked in Sprout's Import Posts window, not in the file. Columns are Sprout's own,
+// case sensitive: date, time_24hr, message_text, link_url, public_image_url, tags. Rules from Sprout's help article:
+// rows in date order, at least 10 minutes apart, no videos, images must be a public https link.
 app.get('/api/queue/export.csv', (req, res) => {
   if (!zacOnly(req, res)) return;
-  const q = loadQueue(), ok = q.filter(p => p.status === 'approved' && !approvalProblem(p) && !p.sent_at && (!req.query.client || p.client === req.query.client));
+  const client = String(req.query.client || '');
+  if (!client) return res.status(400).json({ error: 'Pick one client. Sprout takes one file per set of profiles.' });
+  const isVideo = m => /\.(mp4|mov|m4v|avi|webm)(\?|$)/i.test(m), isImgUrl = m => /^https:\/\/\S+$/i.test(m);
+  const all = loadQueue().filter(p => p.client === client && !p.sent_at);
+  const approved = all.filter(p => p.status === 'approved' && !approvalProblem(p));
+  const skipped = [];
+  const ok = approved.filter(p => {
+    if (p.media && isVideo(p.media)) { skipped.push('video'); return false; }
+    if (p.media && !isImgUrl(p.media)) { skipped.push('image link'); return false; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date) || !/^\d{2}:\d{2}$/.test(p.time)) { skipped.push('date or time'); return false; }
+    return true;
+  }).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  let last = 0, nudged = 0;
+  const rows = ok.map(p => {
+    let t = Date.parse(p.date + 'T' + p.time + ':00Z') / 60000;
+    if (t < last + 10) { t = last + 10; nudged++; }
+    last = t; const d = new Date(t * 60000).toISOString();
+    const msg = [p.caption, p.cta && !p.caption.includes(p.cta) ? p.cta : ''].filter(Boolean).join('\n\n');
+    const link = (msg.match(/https?:\/\/[^\s)]+/) || [''])[0];
+    return [d.slice(5, 7) + '/' + d.slice(8, 10) + '/' + d.slice(0, 4), d.slice(11, 16), msg, link, p.media || '', ''];
+  });
   const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const rows = [['Client', 'Platforms', 'Date', 'Time', 'Message', 'Media']].concat(ok.map(p => [p.client, p.platforms, p.date, p.time, [p.caption, p.cta && !p.caption.includes(p.cta) ? p.cta : ''].filter(Boolean).join('\n\n'), p.media]));
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', 'attachment; filename="sprout-approved-posts.csv"');
-  res.setHeader('X-Held-Back', String(q.filter(p => !p.sent_at).length - ok.length));
-  res.send(rows.map(r => r.map(cell).join(',')).join('\n'));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', 'attachment; filename="sprout-' + client.replace(/[^a-z0-9-]/g, '') + '.csv"');
+  res.setHeader('X-Held-Back', String(all.length - ok.length)); res.setHeader('X-Skipped', skipped.join(',')); res.setHeader('X-Nudged', String(nudged));
+  res.send('﻿' + [['date', 'time_24hr', 'message_text', 'link_url', 'public_image_url', 'tags']].concat(rows).map(r => r.map(cell).join(',')).join('\n'));
 });
 app.post('/api/queue/:id/sent', (req, res) => { if (!zacOnly(req, res)) return; const q = loadQueue(), p = q.find(x => x.id === req.params.id); if (!p) return res.status(404).json({ error: 'Not found.' }); p.sent_at = new Date().toISOString(); saveQueue(q); res.json({ ok: true }); });
 // ---------- Winners for ads: one simple list across clients ----------
