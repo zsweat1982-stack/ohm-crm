@@ -4431,7 +4431,8 @@ function archiveSummary(slug) {
 }
 async function aiJson(system, user, maxTokens) {
   if (process.env.FAKE_AI === '1') return JSON.parse(process.env.FAKE_AI_JSON || '{}');
-  let r; try { r = await anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: maxTokens || 4000, system, messages: [{ role: 'user', content: user }] }); } catch (e) { const m = String((e && e.message) || e); throw new Error(/credit balance|billing/i.test(m) ? 'The Anthropic account is out of credits. Add credits and try again.' : /api[_ ]?key|authentication|401/i.test(m) ? 'The Anthropic key on the server is missing or wrong.' : 'The AI request failed: ' + m.slice(0, 140)); }
+  const askAI = (mt, extra) => anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: mt, system, messages: [{ role: 'user', content: user + (extra || '') }] });
+  let r; try { r = await askAI(maxTokens || 4000); if (r.stop_reason === 'max_tokens' || !(((r.content || []).find(b => b && b.type === 'text')?.text) || '').includes('}')) { console.error('[ai] hit the token limit, retrying bigger', maxTokens); r = await askAI(Math.min(16000, (maxTokens || 4000) * 2), '\n\nReturn only the JSON object. Keep every field tight.'); } } catch (e) { const m = String((e && e.message) || e); throw new Error(/credit balance|billing/i.test(m) ? 'The Anthropic account is out of credits. Add credits and try again.' : /api[_ ]?key|authentication|401/i.test(m) ? 'The Anthropic key on the server is missing or wrong.' : 'The AI request failed: ' + m.slice(0, 140)); }
   let t = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < 0) throw new Error('The AI did not return a usable answer (' + (r.stop_reason || 'no reason') + '). Try again in a minute.');
   return JSON.parse(t.slice(a, b + 1));
