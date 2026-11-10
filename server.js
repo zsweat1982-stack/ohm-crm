@@ -4459,6 +4459,48 @@ app.post('/api/hq/shotlists/:slug', (req, res) => {
   const d = String((req.body && req.body.date) || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Pick the shoot date.' });
   const slug = String(req.params.slug); res.json({ job: startJob(async () => { const l = await makeShotlist(slug, d, me.name); try { createShotTask(slug, l, me.name); } catch {} return l; }) });
 });
+// Shot list as a phone-friendly PDF for the field team (big type, tick boxes, hard caps up top).
+function buildShotlistPDF(clientName, l) {
+  return new Promise((resolve) => {
+    const doc = new PDFDocument({ size: 'LETTER', margin: 44, bufferPages: true });
+    const chunks = []; doc.on('data', c => chunks.push(c)); doc.on('end', () => resolve(Buffer.concat(chunks)));
+    const NAVY = '#0f1a30', RED = '#df3131', BODY = '#2b3550', MUT = '#6b7790', LINE = '#dde2ec', W = 612 - 88;
+    const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',');
+    const room = (n) => { if (doc.y + n > 792 - 60) doc.addPage(); };
+    const head = (t) => { room(60); doc.moveDown(0.8); doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text(t.toUpperCase(), { characterSpacing: 1 }); doc.moveTo(44, doc.y + 2).lineTo(44 + W, doc.y + 2).strokeColor(LINE).stroke(); doc.moveDown(0.5); };
+    const item = (title, sub, meta) => {
+      room(54); const y0 = doc.y;
+      doc.rect(44, y0 + 3, 13, 13).strokeColor(NAVY).lineWidth(1.2).stroke();
+      doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(13).text(clean(title) + (meta ? '   [' + meta + ']' : ''), 68, y0, { width: W - 24 });
+      (Array.isArray(sub) ? sub : [sub]).filter(Boolean).forEach(t => doc.fillColor(BODY).font('Helvetica').fontSize(11).text(clean(t), 68, doc.y + 1, { width: W - 24 }));
+      doc.x = 44; doc.moveDown(0.6);
+    };
+    doc.rect(0, 0, 612, 96).fill(NAVY);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(20).text(clean(clientName) + ' shoot list', 44, 28, { width: W });
+    doc.fillColor('#c9d2e6').font('Helvetica').fontSize(11).text(clean(l.name) + '  |  Shoot date ' + l.date, 44, 58);
+    doc.y = 112; doc.x = 44;
+    const t = l.totals || {};
+    doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(13).text('Shoot total: ' + (t.clips || 0) + ' clips, ' + (t.photos || 0) + ' photos, ' + (t.takes || 0) + ' talking head takes. Never go over.', 44, doc.y, { width: W });
+    doc.fillColor(MUT).font('Helvetica').fontSize(10).text('The shots are direction. Swap any of them if you find something better in the moment, but keep inside the counts.', 44, doc.y + 2, { width: W });
+    if (l.hooks && l.hooks.length) { head('Talking head scripts to film'); l.hooks.forEach((h, i) => item((i + 1) + '. Hook: ' + h.hook, [(h.body || []).length ? 'Body: ' + h.body.join(' / ') : '', h.cta ? 'CTA: ' + h.cta : '', h.onscreen ? 'Text on screen: ' + h.onscreen : ''], (h.takes || 1) + ' take' + ((h.takes || 1) > 1 ? 's' : ''))); }
+    if ((l.testimonials || []).length) { head('Testimonials to ask for'); l.testimonials.forEach(x => item(x.who, (x.questions || []).map(q => '- ' + q), '1 take')); }
+    if (l.broll && l.broll.length) { head('B-roll to get'); l.broll.forEach(b => item(b.shot, b.why, (b.clips || 3) + ' clips' + (b.kind ? ', ' + b.kind : ''))); }
+    if ((l.drone || []).length) { head('Drone'); l.drone.forEach(d => item(d.shot, '', d.clips + ' clips')); }
+    if (l.photos && l.photos.length) { head('Photos to get'); l.photos.forEach(p => item(p.shot, p.label, (p.count || 1) + ' photo' + ((p.count || 1) > 1 ? 's' : ''))); }
+    if (l.mustgets && l.mustgets.length) { head('Must-gets'); l.mustgets.forEach(m => item(m.shot, m.for ? 'For: ' + m.for : '', (m.clips || 2) + ' clips')); }
+    if (l.vibe && (l.vibe.pep || (l.vibe.client_moments || []).length)) { head('On set'); if (l.vibe.pep) doc.fillColor(BODY).font('Helvetica').fontSize(11).text(clean(l.vibe.pep), 44, doc.y, { width: W }); (l.vibe.client_moments || []).forEach(m => { doc.moveDown(0.3); doc.fillColor(BODY).fontSize(11).text('- ' + clean(m), 44, doc.y, { width: W }); }); }
+    if (l.notes) { doc.moveDown(0.8); doc.fillColor(MUT).font('Helvetica-Oblique').fontSize(10).text(clean(l.notes), 44, doc.y, { width: W }); }
+    const n = doc.bufferedPageRange().count; for (let i = 0; i < n; i++) { doc.switchToPage(i); doc.page.margins.bottom = 0; doc.fillColor(MUT).font('Helvetica').fontSize(9).text('Open Heart Media  |  ' + clean(l.name) + '  |  page ' + (i + 1) + ' of ' + n, 44, 792 - 36, { width: W, align: 'center', lineBreak: false }); }
+    doc.end();
+  });
+}
+app.get('/api/hq/shotlists/:slug/:id/pdf', async (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''), c = loadClients().find(x => x.slug === slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  const l = (loadShotlists()[slug] || []).find(x => x.id === req.params.id); if (!l) return res.status(404).json({ error: 'No such shot list.' });
+  try { const buf = await buildShotlistPDF(c.name, l); res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="' + String(l.name).replace(/[^A-Za-z0-9_-]/g, '') + '.pdf"', 'Cache-Control': 'no-store' }); res.send(buf); }
+  catch (e) { console.error('[shotlist pdf]', e); res.status(500).json({ error: 'Could not build the PDF.' }); }
+});
 function createShotTask(slug, list, who) {
   const c = loadClients().find(x => x.slug === slug), owner = c && ownerFor(c, 'field'); if (!owner) throw new Error('Nobody is set for the Field team.');
   const tasks = loadTasks(); if (tasks.some(t => t.source && t.source.type === 'shotlist' && t.source.id === list.id)) return owner.name;
