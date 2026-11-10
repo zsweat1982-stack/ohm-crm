@@ -4506,6 +4506,23 @@ function buildShotlistPDF(clientName, l) {
     doc.end();
   });
 }
+// Team chat: one shared room for everyone who is signed in. Small, on the data disk, newest 500 kept.
+const CHAT_FILE = path.join(DATA_DIR, 'chat.json');
+function loadChat() { try { const a = JSON.parse(fs.readFileSync(CHAT_FILE, 'utf8')); return Array.isArray(a) ? a : []; } catch { return []; } }
+app.get('/api/hq/chat', (req, res) => {
+  const me = authedUser(req); if (!me) return res.status(401).json({ error: 'auth required' });
+  const since = Number(req.query.since) || 0, all = loadChat();
+  res.json({ me: me.id || '', messages: all.filter(m => m.t > since).slice(-200) });
+});
+app.post('/api/hq/chat', (req, res) => {
+  const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login to chat.' });
+  if (loginLimited('chat:' + me.id, 40)) return res.status(429).json({ error: 'Slow down for a minute.' });
+  const text = (typeof (req.body || {}).text === 'string' ? req.body.text : '').replace(/—|–/g, ',').trim().slice(0, 1000);
+  if (!text) return res.status(400).json({ error: 'Type a message first.' });
+  const all = loadChat(), m = { id: 'c_' + crypto.randomBytes(4).toString('hex'), t: Date.now(), by: me.id, name: me.name || 'Someone', text };
+  all.push(m); try { fs.writeFileSync(CHAT_FILE, JSON.stringify(all.slice(-500))); } catch (e) { return res.status(500).json({ error: 'Could not save that message.' }); }
+  res.json({ ok: true, message: m });
+});
 // Daily posting sheet for the person scheduling: every client's post for one day, grouped by client, with the suggested time and the full caption.
 function buildDailySheetPDF(dateStr, groups) {
   return new Promise((resolve) => {

@@ -377,6 +377,22 @@
   window.hqAdSt = async function (slug, id, st) { try { await api('/api/hq/winners/' + slug + '/' + id + '/ad', 'POST', { status: st }); } catch (x) { toast(x.message); } show('hq:ads'); };
 
   // ---- Blogs: written, copy and paste ready ----
+  // ---- Team chat: everyone signed in, refreshes every 4 seconds while open ----
+  var chatT = null, chatLast = 0, chatMsgs = [];
+  function chatHtml() {
+    var me = (HQ.me && HQ.me.id) || '';
+    var list = chatMsgs.map(function (m) { var mine = m.by === me; return '<div style="display:flex;justify-content:' + (mine ? 'flex-end' : 'flex-start') + ';margin:6px 0"><div style="max-width:78%;background:' + (mine ? '#13233f' : '#eef1f7') + ';color:' + (mine ? '#fff' : '#13233f') + ';padding:8px 12px;border-radius:12px"><div style="font-size:11px;opacity:.7">' + e(m.name) + ' &middot; ' + new Date(m.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + '</div><div style="white-space:pre-wrap;word-break:break-word">' + e(m.text) + '</div></div></div>'; }).join('');
+    return list || '<div class="empty">No messages yet. Say hi.</div>';
+  }
+  async function chatPoll(first) {
+    try { var r = await api('/api/hq/chat?since=' + (first ? 0 : chatLast)); if (first) chatMsgs = []; (r.messages || []).forEach(function (m) { if (!chatMsgs.some(function (x) { return x.id === m.id; })) chatMsgs.push(m); if (m.t > chatLast) chatLast = m.t; }); var box = document.getElementById('chatBox'); if (box) { var atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40; box.innerHTML = chatHtml(); if (atEnd || first) box.scrollTop = box.scrollHeight; } } catch (x) {}
+  }
+  window.hqChatSend = async function () { var i = document.getElementById('chatIn'); if (!i || !i.value.trim()) return; var v = i.value; i.value = ''; try { await api('/api/hq/chat', 'POST', { text: v }); await chatPoll(false); } catch (x) { i.value = v; toast(x.message); } };
+  async function chatPage() {
+    clearInterval(chatT); chatLast = 0; chatMsgs = [];
+    setTimeout(function () { chatPoll(true); chatT = setInterval(function () { if (navKey !== 'hq:chat') { clearInterval(chatT); return; } chatPoll(false); }, 4000); }, 50);
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Team Chat</h3><p>Everyone signed in to the dashboard can see this. Keep client passwords out of it.</p></div></div><div class="panel"><div id="chatBox" style="height:52vh;overflow:auto;padding:4px"></div><div style="display:flex;gap:8px;margin-top:10px"><input id="chatIn" maxlength="1000" placeholder="Write a message" style="flex:1;padding:10px;border:1px solid #dde2ec;border-radius:10px;font-size:16px" onkeydown="if(event.key===\'Enter\'){hqChatSend()}"><button class="btn" onclick="hqChatSend()">Send</button></div></div>';
+  }
   async function blogsPage() {
     var r; try { r = await api('/api/hq/blogs'); } catch (x) { return '<div class="panel"><div class="empty">' + e(x.message) + '</div></div>'; }
     var admin = HQ.me && HQ.me.role === 'admin', opts = r.clients.map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
@@ -935,7 +951,7 @@
     // Re-rendering the page you are already on (a refresh, a save, a background sync) must not throw you back to the top.
     var sameKey = lastShown === key, keepY = sameKey ? curY() : 0; lastY = keepY; if (!sameKey) { quietUntil = 0; window.scrollTo(0, 0); } lastShown = key;
     document.body.classList.add('hqmode');
-    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue', 'hq:ads': 'Winners for Ads', 'hq:blogs': 'Blogs' };
+    var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue', 'hq:ads': 'Winners for Ads', 'hq:blogs': 'Blogs', 'hq:chat': 'Team Chat' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
     document.getElementById('viewTitle').textContent = titles[key] || 'Client';
     var el = root();
@@ -950,6 +966,7 @@
     else if (key === 'hq:work') { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } el.innerHTML = work(); }
     else if (key === 'hq:ads') { el.innerHTML = await adsPage(); }
     else if (key === 'hq:blogs') { el.innerHTML = await blogsPage(); }
+    else if (key === 'hq:chat') { el.innerHTML = await chatPage(); }
     else if (key === 'hq:queue') { el.innerHTML = await queuePage(); }
     else if (key === 'hq:manual') { if (!HQ.manual) { try { HQ.manual = await (await fetch('/manual.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.manual = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.manual + '</div>'; }
     else if (key === 'hq:conversions') { var cv = {}; try { cv = await api('/api/conversions/status'); } catch (x) {} el.innerHTML = conversions(cv); }
