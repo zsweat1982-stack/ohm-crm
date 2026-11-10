@@ -3899,16 +3899,17 @@ async function mailFor(uid) {
       msgs.push({ id, threadId, mid: (h['message-id'] || '').trim(), addr, name, subject: h.subject || '(no subject)', snippet: d.snippet || '', date: Number(d.internalDate) || 0, unread: (d.labelIds || []).includes('UNREAD') });
     }));
   }
-  const own = /@openheartmediaco\.com$/i; const matched = [], unm = new Map();
+  const own = /@openheartmediaco\.com$/i; const matched = [], unm = new Map(), team = [];
   for (const x of msgs) {
     const dom = x.addr.split('@')[1] || ''; if (!dom) continue;
     let c = byAddr.get(x.addr) || byDom.get(dom); if (!c) for (const [k, v] of byDom) if (dom.endsWith('.' + k)) { c = v; break; }
     if (c) { matched.push({ id: x.id, thread: x.threadId, mid: x.mid, name: x.name, addr: x.addr, subject: x.subject, snippet: x.snippet.slice(0, 160), date: x.date, unread: x.unread, client: { slug: c.slug, name: c.name } }); continue; }
-    if (own.test(x.addr) || FREEMAIL.test(dom) || AUTOMATED.test(x.addr)) continue;
+    if (own.test(x.addr)) { if (!AUTOMATED.test(x.addr)) team.push({ id: x.id, thread: x.threadId, name: x.name, addr: x.addr, subject: x.subject, snippet: x.snippet.slice(0, 160), date: x.date, unread: x.unread }); continue; }
+    if (FREEMAIL.test(dom) || AUTOMATED.test(x.addr)) continue;
     const u = unm.get(dom) || { domain: dom, count: 0, example: x.subject, from: x.name }; u.count++; unm.set(dom, u);
   }
-  matched.sort((a, b) => b.date - a.date);
-  const data = { connected: true, account: (gUsers()[uid] || {}).account || '', matched: matched.slice(0, 60), unread: matched.filter(m => m.unread).length,
+  matched.sort((a, b) => b.date - a.date); team.sort((a, b) => b.date - a.date);
+  const data = { connected: true, team: team.slice(0, 25), team_unread: team.filter(t => t.unread).length, account: (gUsers()[uid] || {}).account || '', matched: matched.slice(0, 60), unread: matched.filter(m => m.unread).length,
     unmatched: [...unm.values()].sort((a, b) => b.count - a.count).slice(0, 12) };
   mailCache.set(uid, { at: Date.now(), data }); return data;
 }

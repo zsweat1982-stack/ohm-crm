@@ -574,6 +574,7 @@
         return '<a class="mrow" href="https://mail.google.com/mail/u/' + encodeURIComponent(m.account || 0) + '/#inbox/' + e(x.thread) + '" target="_blank" rel="noopener"><i class="' + (x.unread ? 'un' : '') + '"></i><div><b>' + e(x.name) + '</b><span class="sj">' + e(x.subject) + '</span><span class="sn">' + e(x.snippet) + '</span></div><em>' + e(ago2(x.date)) + '</em></a>';
       }).join('') + '</div>';
     }).join('');
+    var teamBox = (m.team || []).length ? '<div class="panel" style="margin-bottom:14px"><h3>Team email<span class="ct">' + (m.team_unread || 0) + '</span></h3><p class="hint" style="margin-top:0">Internal email from @openheartmediaco.com. Kept apart from client mail and not counted in the client unread number.</p>' + m.team.slice(0, 10).map(function (x) { return '<a class="mrow" href="https://mail.google.com/mail/u/' + encodeURIComponent(m.account || 0) + '/#inbox/' + e(x.thread) + '" target="_blank" rel="noopener"><i class="' + (x.unread ? 'un' : '') + '"></i><div><b>' + e(x.name) + '</b><span class="sj">' + e(x.subject) + '</span></div></a>'; }).join('') + '</div>' : '';
     var clientsList = (HQ.data && HQ.data.clients || []).filter(function (c) { return c.status !== 'internal'; });
     var isAdmin = me.role === 'admin';
     var unm = (m.unmatched || []).length ? '<div class="panel"><h3>Who are these?</h3><p class="hint">Senders from your inbox that are not linked to a client yet. Link a company to a client and its email shows up above.</p>' + m.unmatched.map(function (u, i) {
@@ -581,7 +582,7 @@
     }).join('') + '</div>' : '';
     return head + '<div class="mhead"><span>Connected as <b>' + e(m.account || me.email) + '</b> · ' + (m.unread || 0) + ' unread from clients</span><span><a class="lnk" onclick="hqMailRefresh()">Refresh</a> · <a class="lnk" onclick="hqMailOff()">Disconnect</a></span></div>' +
       (m.error ? '<div class="banner">' + ico('alert') + '<div>' + e(m.error) + '</div></div>' : '') +
-      (blocks || '<div class="panel"><div class="empty">' + ico('inbox') + 'No client email in the last 14 days' + (isAdmin ? '. Link a sender below, or add email addresses on each client page.' : '.') + '</div></div>') + unm;
+      teamBox + (blocks || '<div class="panel"><div class="empty">' + ico('inbox') + 'No client email in the last 14 days' + (isAdmin ? '. Link a sender below, or add email addresses on each client page.' : '.') + '</div></div>') + unm;
   }
   window.hqMailRefresh = async function () { HQ.mail = null; show('hq:mail'); };
   window.hqMailOff = async function () { if (!confirm('Disconnect your Gmail from the CRM?')) return; try { await api('/api/me/gmail/disconnect', 'POST', {}); HQ.mail = null; HQ.cal = null; show('hq:mail'); } catch (er) { toast(er.message); } };
