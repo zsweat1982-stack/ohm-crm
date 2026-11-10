@@ -4506,6 +4506,54 @@ function buildShotlistPDF(clientName, l) {
     doc.end();
   });
 }
+// Daily posting sheet for the person scheduling: every client's post for one day, grouped by client, with the suggested time and the full caption.
+function buildDailySheetPDF(dateStr, groups) {
+  return new Promise((resolve) => {
+    const doc = new PDFDocument({ size: 'LETTER', margin: 44, bufferPages: true });
+    const chunks = []; doc.on('data', c => chunks.push(c)); doc.on('end', () => resolve(Buffer.concat(chunks)));
+    const NAVY = '#0f1a30', RED = '#df3131', BODY = '#2b3550', MUT = '#6b7790', W = 612 - 88;
+    const clean = (x) => String(x == null ? '' : x).replace(/—|–/g, ',');
+    const room = (n) => { if (doc.y + n > 792 - 60) doc.addPage(); };
+    const nice = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(22).text('Posting sheet: ' + nice);
+    doc.fillColor(MUT).font('Helvetica').fontSize(10).text('Grouped by client. Times are the suggested best time from each pack; in Sprout, check the composer "Best times to post" for that profile and schedule, never post now.');
+    if (!groups.length) { doc.moveDown(1).fillColor(BODY).fontSize(12).text('No posts are planned for this day in any weekly pack.'); }
+    for (const g of groups) {
+      room(120); doc.moveDown(0.9);
+      doc.fillColor(RED).font('Helvetica-Bold').fontSize(13).text(clean(g.client).toUpperCase(), { characterSpacing: 1 });
+      doc.moveTo(44, doc.y + 2).lineTo(44 + W, doc.y + 2).strokeColor('#dde2ec').lineWidth(1).stroke(); doc.moveDown(0.5);
+      for (const r of g.rows) {
+        room(150);
+        doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(12).text(clean((r.time || 'Time: check Sprout best times') + '   |   ' + (r.type || '') + '   |   ' + (r.platforms || '')), 44, doc.y, { width: W });
+        if (r.idea) doc.fillColor(MUT).font('Helvetica').fontSize(10).text(clean('Content: ' + r.idea), { width: W });
+        const cap = r.caption || {}, parts = [cap.hook, cap.body, cap.cta].map(clean).filter(Boolean);
+        doc.moveDown(0.2).fillColor(BODY).font('Helvetica').fontSize(11);
+        parts.forEach(p => doc.text(p, { width: W, paragraphGap: 4 }));
+        const tags = Array.isArray(r.hashtags) ? r.hashtags.join(' ') : String(r.hashtags || '');
+        if (tags.trim()) doc.fillColor(MUT).fontSize(10).text(clean(tags), { width: W });
+        if (r.verify && r.verify.length) doc.fillColor(RED).fontSize(10).text('VERIFY before posting: ' + clean(r.verify.join('; ')), { width: W });
+        if (!r.released) doc.fillColor(RED).fontSize(9).text('Pack not released yet. Confirm Zac approved this post.', { width: W });
+        doc.moveDown(0.7);
+      }
+    }
+    doc.end();
+  });
+}
+app.get('/api/hq/daily/:date/pdf', async (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const d = String(req.params.date); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: 'Use a date like 2026-11-12.' });
+  try {
+    const packs = loadPacks(), cl = loadClients(), groups = [];
+    for (const c of cl) {
+      const rows = [];
+      for (const p of Object.values(packs[c.slug] || {})) for (const r of (p.rows || [])) if (r.date === d) rows.push(Object.assign({}, r, { released: !!p.released }));
+      if (rows.length) groups.push({ client: c.name, rows });
+    }
+    groups.sort((a, b) => (a.client < b.client ? -1 : 1));
+    const buf = await buildDailySheetPDF(d, groups);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="posting-sheet-' + d + '.pdf"' }); res.send(buf);
+  } catch (e) { res.status(500).json({ error: String(e.message).slice(0, 160) }); }
+});
 app.get('/api/hq/shotlists/:slug/:id/pdf', async (req, res) => {
   if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
   const slug = String(req.params.slug).replace(/[^a-z0-9-]/g, ''), c = loadClients().find(x => x.slug === slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
