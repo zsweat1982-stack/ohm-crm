@@ -5800,6 +5800,8 @@ app.put('/api/hq/client/:slug', (req, res) => {
   if (Array.isArray(b.services)) c.services = b.services.filter(x => SERV.includes(x));
   for (const k of ['website_owner', 'ads_owner', 'account_owner']) if (typeof b[k] === 'string') c[k] = b[k].slice(0, 80);
   if (typeof b.note === 'string') c.note = b.note.slice(0, 300);
+  if (typeof b.drive === 'string') { const m = /^(?:https:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/)?([A-Za-z0-9_-]{15,80})(?:[?\/].*)?$/.exec(b.drive.trim()); if (m) c.drive = m[1]; else if (!b.drive.trim()) delete c.drive; }
+  if (typeof b.code === 'string' && /^[A-Za-z0-9]{2,12}$/.test(b.code.trim())) c.code = b.code.trim().toUpperCase();
   if (b.cadence && typeof b.cadence === 'object') c.cadence = { days: (Array.isArray(b.cadence.days) ? b.cadence.days : []).filter(d => ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].includes(d)), note: String(b.cadence.note || '').slice(0, 500), edited: true };
   if (Array.isArray(b.domains)) c.domains = Array.from(new Set(b.domains.map(x => String(x).toLowerCase().trim()).filter(x => /^[a-z0-9.@_+-]{3,80}$/.test(x)))).slice(0, 12);
   c.edited = true; c.saved = true; saveClients(all); workCache.delete(c.slug);
