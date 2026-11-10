@@ -368,10 +368,10 @@
     var admin = HQ.me && HQ.me.role === 'admin', opts = r.clients.map(function (c) { return '<option value="' + e(c.slug) + '">' + e(c.name) + '</option>'; }).join('');
     var busy = r.busy && r.busy.running ? '<div class="note2" style="margin-bottom:12px">Writing one post for every client: ' + r.busy.done + ' of ' + r.busy.total + ' done. Refresh in a minute.</div>' : '';
     var cards = r.blogs.map(function (b) {
-      var full = b.title + '\n\n' + b.body + (b.cta ? '\n\n' + b.cta : '');
+      var clean = String(b.body || '').replace(/^#+\s*/gm, ''), full = b.title + '\n\n' + clean + (b.cta ? '\n\n' + b.cta : '');
       return '<div class="panel" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><div class="em">' + e(b.client) + ' · keyword: ' + e(b.keyword) + '</div><div class="nm" style="font-size:17px;margin:4px 0">' + e(b.title) + '</div></div><span class="chip st-' + (b.status === 'published' ? 'active' : 'internal') + '">' + (b.status === 'published' ? 'Published' : 'Ready') + '</span></div>' +
         '<div class="em" style="margin:4px 0">Meta: ' + e(b.meta) + '</div>' + (b.verify && b.verify.length ? '<div class="note2" style="margin:8px 0"><b>Check before publishing:</b> ' + e(b.verify.join(' · ')) + '</div>' : '') +
-        '<details class="sm"><summary>Read the post</summary><div style="white-space:pre-wrap;font-size:14px;line-height:1.6;margin-top:8px">' + e(b.body) + '</div></details>' +
+        '<details class="sm"><summary>Read the post</summary><div style="white-space:pre-wrap;font-size:14px;line-height:1.6;margin-top:8px">' + String(b.body || '').split('\n').map(function (ln) { return /^#+\s/.test(ln) ? '<b style="display:block;margin-top:12px">' + e(ln.replace(/^#+\s*/, '')) + '</b>' : e(ln); }).join('\n') + '</div></details>' +
         '<div style="margin-top:10px"><button class="btn2 red mini cpy" data-copy="' + e(full) + '">Copy title + post</button> <button class="btn2 line mini cpy" data-copy="' + e(b.title) + '">Copy title</button> <button class="btn2 line mini cpy" data-copy="' + e(b.meta) + '">Copy meta</button> <button class="btn2 line mini" onclick="hqBlogSt(\'' + e(b.id) + '\',\'' + (b.status === 'published' ? 'ready' : 'published') + '\')">' + (b.status === 'published' ? 'Mark ready' : 'Mark published') + '</button></div></div>';
     }).join('');
     return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Blogs</h3><p>Two a month per client. Written from each client\'s brain and research, ready to copy into their site. Frank publishes.</p></div></div>' + busy +
@@ -897,7 +897,10 @@
     el.innerHTML = items.map(function (it) { return '<button class="' + ((navKey === it[0] || (it[0] === 'hq:outreach' && String(navKey).indexOf('hq:') !== 0)) ? 'on' : '') + '" onclick="navTo(\'' + it[0] + '\')">' + ico(it[1]) + '<span>' + it[2] + '</span></button>'; }).join('');
   }
 
+  var lastShown = '';
   async function show(key) {
+    // Re-rendering the page you are already on (a refresh, a save, a background sync) must not throw you back to the top.
+    var sameKey = lastShown === key, keepY = sameKey ? (window.pageYOffset || document.documentElement.scrollTop || 0) : 0; lastShown = key;
     document.body.classList.add('hqmode');
     var titles = { 'hq:home': 'Home', 'hq:clients': 'Clients', 'hq:onboarding': 'Onboarding', 'hq:outreach': 'Outreach', 'hq:team': 'Team', 'hq:work': 'Work', 'hq:mail': 'Mail', 'hq:content': 'Content', 'hq:how': 'How We Work', 'hq:manual': 'Users Manual', 'hq:conversions': 'Conversions', 'hq:queue': 'Posting Queue', 'hq:ads': 'Winners for Ads', 'hq:blogs': 'Blogs' };
     document.body.classList.remove('outdetail'); document.body.classList.toggle('hqout', key === 'hq:outreach');
@@ -920,7 +923,7 @@
     else if (key === 'hq:outreach') el.innerHTML = (HQ.me && HQ.me.pipeline) ? outreach() : '<div class="sec"><div><h3 style="font-size:28px">Outreach</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.</div></div>';
     else if (key === 'hq:team') el.innerHTML = await team();
     else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } await loadClientData(key.slice(10)); el.innerHTML = clientPage(key.slice(10)); }
-    window.scrollTo(0, 0); mnav();
+    window.scrollTo(0, sameKey ? keepY : 0); mnav();
   }
   window.hqNav = function (key) {
     if (String(key).indexOf('hq:') !== 0) { document.body.classList.remove('hqmode', 'hqout'); document.body.classList.add('outdetail'); navKey = key; mnav(); if (typeof renderNav === 'function') renderNav(); return false; }
