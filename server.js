@@ -4401,7 +4401,7 @@ Rules:
 - Use the five awareness levels (1 potential, 2 pain, 3 promise, 4 proof, 5 offer) and tag each hook with one.
 - Anything the archive is missing (see ARCHIVE) should get priority in b-roll and photos.
 - "mustgets" are shots a specific calendar post or open item needs, with the post or item it is for. If none are known, use the brain's open items to verify.
-- CLIP BUDGET (strict). Over-filming is the team's biggest time sink, so every item states exactly how much to shoot. A talking-head script is 1 take (2 at most). A b-roll shot is 2 to 4 clips of 4 to 8 seconds each, never more than 4. A photo shot is 1 to 3 photos. A must-get is 1 to 3 clips. The whole shoot totals at most 40 clips, 25 photos and 6 takes. Write the exact number in "clips", "count" or "takes". Say in "notes" to stop shooting when the list is done and not to film extras. Prefer fewer, better clips.
+- CLIP BUDGET (strict). Over-filming is the team's biggest time sink, so every item states exactly how much to shoot. A talking-head script is 1 take (2 at most). A b-roll shot is 2 to 4 clips of 4 to 8 seconds each, never more than 4. A photo shot is 1 to 3 photos. A must-get is 1 to 3 clips. The whole shoot totals at most 40 clips, 25 photos and 6 takes. Write the exact number in "clips", "count" or "takes". The shots are creative direction, not a script: write each one as the intent plus a concrete example (what it should show and feel like), so the videographer can swap in something better when they see it in the moment. The COUNT is the one hard limit and is never exceeded, even when swapping. Say in "notes" to stop shooting when the count is reached and not to film extras. Prefer fewer, better clips.
 - Copy rules: no em dashes, American spelling, no hedges, no AI words (delve, elevate, unlock, seamless, robust, leverage, transform, game-changer), numbers beat adjectives, front-load the point.
 Return ONLY JSON, no prose, in this shape:
 {"hooks":[{"hook":"","body":["",""],"cta":"","onscreen":"","mimic":"","level":1,"takes":1,"why":"","verify":[""]}],"broll":[{"shot":"","why":"","clips":3}],"photos":[{"shot":"","label":"TEAM|HEADSHOT|JOBSITE|PRODUCT|EVENT|LOCATION","count":2}],"mustgets":[{"shot":"","for":"","clips":2}],"notes":""}
@@ -4437,6 +4437,11 @@ async function makeShotlist(slug, dateStr, who) {
     hooks: arr(out.hooks, h => ({ hook: clean(h.hook), body: (Array.isArray(h.body) ? h.body : []).map(clean).filter(Boolean).slice(0, 5), cta: clean(h.cta), onscreen: clean(h.onscreen), mimic: clean(h.mimic), level: Number(h.level) || 0, takes: Math.min(2, Math.max(1, Number(h.takes) || 1)), why: clean(h.why), verify: (Array.isArray(h.verify) ? h.verify : []).map(clean).filter(Boolean) })),
     broll: arr(out.broll, b => ({ shot: clean(b.shot), why: clean(b.why), clips: Math.min(4, Math.max(1, Number(b.clips) || 3)) })), photos: arr(out.photos, p => ({ shot: clean(p.shot), label: clean(p.label), count: Math.min(3, Math.max(1, Number(p.count) || 1)) })),
     mustgets: arr(out.mustgets, m => ({ shot: clean(m.shot), for: clean(m.for), clips: Math.min(3, Math.max(1, Number(m.clips) || 2)) })), notes: clean(out.notes), basis: { working: !!readWorking(slug), archive: archiveSummary(slug).startsWith('Recent') } };
+  // Hard caps, enforced here whatever the model wrote: 6 takes, 40 clips, 25 photos in total.
+  let tk = 0; for (const h of item.hooks) { h.takes = Math.max(1, Math.min(h.takes, 6 - tk)); tk += h.takes; if (tk >= 6) break; }
+  item.hooks = item.hooks.slice(0, 6);
+  let cl = 0; for (const x of [...item.broll, ...item.mustgets]) { x.clips = Math.max(1, Math.min(x.clips, 40 - cl)); cl += x.clips; }
+  let ph = 0; for (const p of item.photos) { p.count = Math.max(1, Math.min(p.count, 25 - ph)); ph += p.count; }
   // Totals are counted here, not trusted from the model.
   item.totals = { clips: item.broll.reduce((a, b) => a + b.clips, 0) + item.mustgets.reduce((a, m) => a + m.clips, 0), photos: item.photos.reduce((a, p) => a + p.count, 0), takes: item.hooks.reduce((a, h) => a + h.takes, 0) };
   const all = loadShotlists(); all[slug] = [item].concat((all[slug] || []).filter(x => x.date !== dateStr)).slice(0, 8);
