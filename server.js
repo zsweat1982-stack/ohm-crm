@@ -2579,7 +2579,7 @@ app.get('/api/hq/blogs', (req, res) => {
 let blogJob = null;
 app.post('/api/hq/blogs/:slug/write', async (req, res) => {
   const me = authedUser(req); if (!me || me.legacy) return res.status(400).json({ error: 'Sign in with your own login.' });
-  try { const b = await writeBlog(String(req.params.slug).replace(/[^a-z0-9-]/g, ''), String((req.body && req.body.topic) || '').slice(0, 200)); res.json({ blog: b }); } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  try { const b = await writeBlog(String(req.params.slug).replace(/[^a-z0-9-]/g, ''), String((req.body && req.body.topic) || '').slice(0, 200)); res.json({ blog: b }); } catch (e) { res.status(/Unknown client/.test(String(e && e.message)) ? 404 : 500).json({ error: String(e.message || e) }); }
 });
 // Admin: one post for every active client, one after another in the background.
 app.post('/api/hq/blogs/write-all', (req, res) => {
@@ -2609,7 +2609,7 @@ app.get('/api/announcements', (req, res) => {
 });
 app.post('/api/announcements', (req, res) => {
   const me = requireAdmin(req, res); if (!me) return;
-  const b = req.body || {}, text = String(b.text || '').replace(/—|–/g, ',').trim().slice(0, 500); if (!text) return res.status(400).json({ error: 'Write the message.' });
+  const b = req.body || {}, text = (typeof b.text === 'string' ? b.text : '').replace(/—|–/g, ',').trim().slice(0, 500); if (!text) return res.status(400).json({ error: 'Write the message.' });
   const to = b.to === 'all' || !Array.isArray(b.to) ? 'all' : b.to.map(String).slice(0, 50);
   const a = { id: 'a_' + crypto.randomBytes(4).toString('hex'), text, to, level: b.level === 'alert' ? 'alert' : 'reminder', expires: /^\d{4}-\d{2}-\d{2}$/.test(b.expires || '') ? b.expires : '', at: new Date().toISOString(), by: me.name, dismissed: {} };
   const all = loadAnn(); all.unshift(a); saveAnn(all.slice(0, 200)); res.json({ ok: true, id: a.id });
@@ -7060,4 +7060,12 @@ if (process.env.PRESCAN_AUTORESUME !== '0') {
   }, 120 * 1000);   // let the boot settle, and let the canary go first
 }
 
+// Last-resort error handler: JSON, never an HTML page or a stack trace.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err && (err.status || err.statusCode) >= 400 && (err.status || err.statusCode) < 600 ? (err.status || err.statusCode) : 500;
+  if (status >= 500) console.error('[error]', req.method, req.path, err && err.stack || err);
+  const msg = err && err.type === 'entity.parse.failed' ? 'That request was not valid JSON.' : err && err.type === 'entity.too.large' ? 'That upload is too large.' : status >= 500 ? 'Something went wrong on our side. Try again.' : String(err && err.message || 'Bad request');
+  res.status(status).json({ error: msg });
+});
 app.listen(PORT, () => console.log(`OHM Outreach dashboard on http://localhost:${PORT}`));

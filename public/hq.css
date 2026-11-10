@@ -461,3 +461,12 @@ body.hqout .top .sp{display:block}
 /* copy buttons: black text on white, always readable */
 .btn2.cpy,.btn2.cpy:hover{background:#fff;color:#0b1220;border-color:var(--hair2);box-shadow:none}
 .btn2.line,.btn2.line:hover{color:#0b1220}
+
+/* phones: never let a wide panel, table or top bar push the whole page sideways */
+@media(max-width:760px){
+  .main{overflow-x:hidden}
+  .panel{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .panel table{display:block;max-width:100%;overflow-x:auto}
+  .top{flex-wrap:wrap;height:auto !important;min-height:62px;padding-top:8px;padding-bottom:8px;gap:6px}
+  .kv{flex-wrap:wrap}
+}
