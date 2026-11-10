@@ -4629,7 +4629,10 @@ async function makePack(slug, monday, who, uid, opts) {
   const cad = c.cadence || {}, PL = loadPlans(), sundayD = addDaysStr(monday, 6);
   const planRows = (PL.clients[slug] || []).filter(r => r.date >= monday && r.date <= sundayD).sort((a, b) => (a.date < b.date ? -1 : 1));
   if (!planRows.length && !(cad.days || []).length) throw new Error('Set this client\'s posting days first (Edit details on the Overview tab).');
-  let dates = planRows.length ? planRows.map(r => r.date) : weekDates(monday, cad.days); const ctx = clientContext(slug, c);
+  let dates = planRows.length ? planRows.map(r => r.date) : weekDates(monday, cad.days);
+  // The team's calendar can end mid-week (e.g. the November plan stops on the 30th). Days after its last row still get posts, from the client's normal cadence.
+  if (planRows.length && (cad.days || []).length) { const lastPlan = (PL.clients[slug] || []).reduce((m, r) => (r.date > m ? r.date : m), ''); dates = Array.from(new Set(dates.concat(weekDates(monday, cad.days).filter(d => d > lastPlan)))).sort(); }
+  const ctx = clientContext(slug, c);
   if (opts.fromToday) { const t0 = ymdLocal(etNow()); dates = dates.filter(d => d >= t0); if (!dates.length) return null; }
   const planBy = new Map(planRows.map(r => [r.date, r])), gr = PL.guardrails[slug];
   const keyd = PL.keydates.filter(k => k.date && k.date >= monday && k.date <= sundayD).map(k => `${k.date} ${k.name}: ${k.what}`).join('\n');
