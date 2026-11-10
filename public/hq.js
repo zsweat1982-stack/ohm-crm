@@ -312,7 +312,7 @@
     var users = (HQ.users || []).filter(function (u) { return u.active; });
     var sel = function (id, cur) { return '<select id="' + id + '"><option value="">Not assigned</option>' + users.map(function (u) { return '<option' + (u.name === cur ? ' selected' : '') + '>' + e(u.name) + '</option>'; }).join('') + '</select>'; };
     var opt = function (arr, cur) { return arr.map(function (a) { return '<option value="' + a[0] + '"' + (a[0] === cur ? ' selected' : '') + '>' + a[1] + '</option>'; }).join(''); };
-    return '<details class="sm" style="background:#fff"><summary>Edit details</summary><div class="ed">' +
+    return '<div style="margin-bottom:10px"><button class="btn2 line" onclick="hqBookLink(\'' + e(c.slug) + '\')">Copy booking link for ' + e(c.name) + '</button> <span class="hint">Send it after a call so they pick next month\'s time. It books straight onto the team calendar.</span></div>' + '<details class="sm" style="background:#fff"><summary>Edit details</summary><div class="ed">' +
       '<label>Type</label><select id="ed_kind">' + opt([['retainer', 'Retainer'], ['website', 'Website client'], ['returning', 'Returning'], ['proposal', 'Proposal pending']], c.kind || 'retainer') + '</select>' +
       '<label>Status</label><select id="ed_status">' + opt([['active', 'Active'], ['ending', 'Ending'], ['seasonal', 'Seasonal'], ['ads_off', 'Ads off'], ['onboarding', 'Onboarding'], ['returning', 'Returning'], ['proposal', 'Proposal']], c.status) + '</select>' +
       '<label>What we do for them</label><div class="chk">' + SERV.map(function (sv, i) { return '<label class="cb"><input type="checkbox" id="ed_s' + i + '"' + ((c.services || []).indexOf(sv) > -1 ? ' checked' : '') + '> ' + e(sv) + '</label>'; }).join('') + '</div>' +
@@ -695,6 +695,7 @@
     try { var r = await api('/api/hq/shotlists/' + slug, 'POST', { date: d }); await pollJob(r.job, function (i) { if (b) b.textContent = 'Writing... ' + (i * 3 + 3) + 's'; }); HQ.shots[slug] = (await api('/api/hq/shotlists/' + slug)).lists; HQ.shotSel[slug] = (HQ.shots[slug][0] || {}).id; await refreshTasks(); toast('Shot list ready and sent to the field team'); } catch (er) { HQ.genErr = er.message; toast(er.message); }
     show(navKey);
   };
+  window.hqBookLink = async function (slug) { try { var r = await api('/api/hq/booking-link/' + slug); await navigator.clipboard.writeText(r.url); toast(r.host ? 'Booking link copied' : 'Link copied, but no calendar is connected yet'); } catch (x) { toast('Could not copy the link'); } };
   window.hqShotTask = async function (slug, id) { try { var r = await api('/api/hq/shotlists/' + slug + '/' + id + '/task', 'POST', {}); await refreshTasks(); toast('Sent to ' + r.owner); } catch (er) { toast(er.message); } };
 
   // ---- Weekly pack ----

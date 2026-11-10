@@ -2264,7 +2264,7 @@ function loginLimited(key, max) {
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm']
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm', '/book', '/api/book']
 // '/api/audit' was public so the landing page could run a scan in front of a visitor. Nothing
 // public triggers an audit any more: leads come in through /api/qualify and the team runs the
 // audit themselves, so the endpoint now sits behind the team login like everything else.;
@@ -3859,7 +3859,7 @@ app.get('/api/me/gmail/connect', (req, res) => {
   if (!GOOGLE_CLIENT_ID) return res.status(400).send('Google is not set up on this service yet (GOOGLE_CLIENT_ID).');
   const u = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   u.searchParams.set('client_id', GOOGLE_CLIENT_ID); u.searchParams.set('redirect_uri', GMAIL_REDIRECT);
-  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.readonly');
+  u.searchParams.set('response_type', 'code'); u.searchParams.set('scope', 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.readonly');
   u.searchParams.set('access_type', 'offline'); u.searchParams.set('prompt', 'consent');
   u.searchParams.set('state', signGmailState(me.id)); if (me.email) u.searchParams.set('login_hint', me.email);
   res.redirect(u.toString());
@@ -7118,6 +7118,80 @@ if (process.env.PRESCAN_AUTORESUME !== '0') {
   }, 120 * 1000);   // let the boot settle, and let the canary go first
 }
 
+// ---------- Client booking link: the client picks next month's call, it lands on the team calendar ----------
+// Link per client: /book/<slug>/<sig>. Availability comes from the host's connected Google calendar
+// (free/busy), slots are 30 minutes, Mon-Fri 10:00-16:00 Eastern, starting 3 days out. Booking creates a
+// Google Calendar event on the host calendar and invites the client plus the team, with a Meet link.
+const BOOK_SIG = (slug) => crypto.createHmac('sha256', AUTH_SECRET).update('book:' + slug).digest('hex').slice(0, 20);
+const bookOk = (slug, sig) => { try { return crypto.timingSafeEqual(Buffer.from(String(sig)), Buffer.from(BOOK_SIG(slug))); } catch { return false; } };
+function etToUtc(dateStr, h, m) {
+  const want = Date.UTC(+dateStr.slice(0, 4), +dateStr.slice(5, 7) - 1, +dateStr.slice(8, 10), h, m);
+  let t = want; for (let i = 0; i < 3; i++) { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(t)).reduce((o, x) => (o[x.type] = x.value, o), {}); const got = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute); t += want - got; }
+  return new Date(t);
+}
+function bookingHost() {
+  const want = String(process.env.BOOKING_HOST_EMAIL || 'zac@openheartmediaco.com').toLowerCase(), g = gUsers();
+  const u = loadUsers().find(x => x.email === want && g[x.id]) || loadUsers().find(x => x.active !== false && g[x.id]);
+  return u || null;
+}
+async function bookingBusy(host, fromIso, toIso) {
+  const tok = await userGmailToken(host.id); if (!tok) throw new Error('The host calendar is not connected.');
+  const r = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: JSON.stringify({ timeMin: fromIso, timeMax: toIso, items: [{ id: 'primary' }] }) });
+  if (!r.ok) throw new Error('Could not read the calendar (' + r.status + ').');
+  const j = await r.json(); return ((j.calendars && j.calendars.primary && j.calendars.primary.busy) || []).map(b => [Date.parse(b.start), Date.parse(b.end)]);
+}
+async function bookingSlots(host) {
+  const now = Date.now(), days = [], d0 = new Date(); const out = [];
+  for (let i = 3; i <= 35 && out.length < 28; i++) { const d = new Date(d0.getTime() + i * 864e5); const ds = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(d); const wd = new Date(ds + 'T12:00:00Z').getUTCDay(); if (wd === 0 || wd === 6) continue; days.push(ds); out.push(ds); }
+  if (!days.length) return [];
+  const busy = await bookingBusy(host, etToUtc(days[0], 0, 0).toISOString(), new Date(etToUtc(days[days.length - 1], 23, 59).getTime()).toISOString());
+  const res = [];
+  for (const ds of days) { const slots = []; for (let h = 10; h < 16; h++) for (const m of [0, 30]) { const st = etToUtc(ds, h, m), en = new Date(st.getTime() + 30 * 60e3); if (st.getTime() < now + 72 * 3600e3) continue; if (busy.some(([a, b]) => st.getTime() < b && en.getTime() > a)) continue; slots.push(st.toISOString()); } if (slots.length) res.push({ date: ds, slots }); }
+  return res;
+}
+app.get('/api/book/:slug/:sig/slots', async (req, res) => {
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c || !bookOk(c.slug, req.params.sig)) return res.status(404).json({ error: 'This link is not valid.' });
+  const host = bookingHost(); if (!host) return res.status(503).json({ error: 'Booking is not available right now. Please reply to our email and we will find a time.' });
+  try { res.json({ client: c.name, days: await bookingSlots(host) }); } catch (e) { console.error('[book] slots', e.message); res.status(503).json({ error: 'Booking is not available right now. Please reply to our email and we will find a time.' }); }
+});
+app.post('/api/book/:slug/:sig', async (req, res) => {
+  if (loginLimited('book:' + req.ip, 20)) return res.status(429).json({ error: 'Too many tries. Please wait a few minutes.' });
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c || !bookOk(c.slug, req.params.sig)) return res.status(404).json({ error: 'This link is not valid.' });
+  const b = req.body || {}, start = new Date(String(b.start || '')); const name = String(b.name || '').trim().slice(0, 80), email = String(b.email || '').trim().toLowerCase().slice(0, 254);
+  if (isNaN(start) || !name || !looksLikeEmail(email)) return res.status(400).json({ error: 'Add your name, a valid email and pick a time.' });
+  const host = bookingHost(); if (!host) return res.status(503).json({ error: 'Booking is not available right now.' });
+  try {
+    const open = await bookingSlots(host); if (!open.some(d => d.slots.includes(start.toISOString()))) return res.status(409).json({ error: 'That time was just taken. Please pick another.' });
+    const tok = await userGmailToken(host.id), end = new Date(start.getTime() + 30 * 60e3);
+    const team = loadUsers().filter(u => u.active !== false && /@openheartmediaco\.com$/i.test(u.email) && (u.id === host.id || [ownerFor(c, 'ads'), ownerFor(c)].some(o => o && o.id === u.id))).map(u => ({ email: u.email }));
+    const ev = { summary: `${c.name} x Open Heart Media: monthly call`, description: `Monthly call booked by ${name} from the booking link.`, start: { dateTime: start.toISOString() }, end: { dateTime: end.toISOString() }, attendees: [{ email, displayName: name }, ...team], conferenceData: { createRequest: { requestId: crypto.randomBytes(8).toString('hex'), conferenceSolutionKey: { type: 'hangoutsMeet' } } } };
+    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&conferenceDataVersion=1', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: JSON.stringify(ev) });
+    if (!r.ok) { console.error('[book] create', r.status, (await r.text()).slice(0, 200)); return res.status(502).json({ error: 'We could not save that booking. Please reply to our email and we will lock in a time.' }); }
+    const j = await r.json(); res.json({ ok: true, when: start.toISOString(), meet: j.hangoutLink || '' });
+  } catch (e) { console.error('[book] ', e.message); res.status(503).json({ error: 'Booking is not available right now.' }); }
+});
+app.get('/book/:slug/:sig', (req, res) => {
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c || !bookOk(c.slug, req.params.sig)) return res.status(404).send('This link is not valid.');
+  res.set('Cache-Control', 'no-store').type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Book your monthly call</title><style>
+body{margin:0;font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6fb;color:#12203a}main{max-width:560px;margin:0 auto;padding:28px 16px}h1{font-size:24px;margin:0 0 4px}p{color:#57607a;margin:0 0 18px}
+.card{background:#fff;border:1px solid #e3e6ee;border-radius:14px;padding:18px;margin-bottom:14px}.day{font-weight:700;margin:12px 0 6px}.s{display:inline-block;margin:0 6px 8px 0;padding:10px 14px;border:1px solid #cfd6e4;border-radius:10px;background:#fff;color:#12203a;font-size:15px;cursor:pointer}.s.on{background:#0f1a30;color:#fff;border-color:#0f1a30}
+input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #cfd6e4;border-radius:10px;font-size:16px;margin:6px 0 12px}button.go{width:100%;padding:14px;border:0;border-radius:10px;background:#df3131;color:#fff;font-size:16px;font-weight:700;cursor:pointer}#msg{margin-top:12px;font-weight:600}</style></head><body><main>
+<h1>Book your monthly call</h1><p>${String(c.name).replace(/[<>&"]/g, '')} and Open Heart Media. Times are Eastern. Pick one and you will get a calendar invite.</p>
+<div class="card" id="slots">Loading times...</div><div class="card" id="form" hidden><b id="pick"></b><input id="n" placeholder="Your name" autocomplete="name"><input id="e" type="email" placeholder="Your email" autocomplete="email"><button class="go" id="go">Confirm this time</button><div id="msg"></div></div></main><script>
+var base=location.pathname.replace('/book/','/api/book/'),chosen=null;
+function fmt(i){return new Date(i).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'})}
+function dl(d){return new Date(d+'T12:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',weekday:'long',month:'long',day:'numeric'})}
+fetch(base+'/slots').then(function(r){return r.json().then(function(j){return[r.ok,j]})}).then(function(a){var el=document.getElementById('slots');if(!a[0]){el.textContent=a[1].error||'Not available.';return}
+if(!a[1].days.length){el.textContent='No open times right now. Reply to our email and we will find one.';return}
+el.innerHTML='';a[1].days.slice(0,10).forEach(function(d){var h=document.createElement('div');h.className='day';h.textContent=dl(d.date);el.appendChild(h);d.slots.forEach(function(s){var b=document.createElement('button');b.className='s';b.textContent=fmt(s);b.onclick=function(){chosen=s;[].forEach.call(document.querySelectorAll('.s'),function(x){x.classList.remove('on')});b.classList.add('on');document.getElementById('form').hidden=false;document.getElementById('pick').textContent=dl(d.date)+' at '+fmt(s)+' Eastern'};el.appendChild(b)})})}).catch(function(){document.getElementById('slots').textContent='Could not load times. Please try again.'});
+document.getElementById('go').onclick=function(){var m=document.getElementById('msg'),g=this;g.disabled=true;m.textContent='';fetch(base,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({start:chosen,name:document.getElementById('n').value,email:document.getElementById('e').value})}).then(function(r){return r.json().then(function(j){return[r.ok,j]})}).then(function(a){if(a[0]){document.getElementById('form').innerHTML='<b>You are booked.</b><p>Check your email for the calendar invite'+(a[1].meet?' and video link':'')+'.</p>'}else{m.textContent=a[1].error||'Something went wrong.';g.disabled=false}}).catch(function(){m.textContent='Something went wrong. Please try again.';g.disabled=false})};
+</script></body></html>`);
+});
+app.get('/api/hq/booking-link/:slug', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const c = loadClients().find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
+  res.json({ url: CRM_URL + '/book/' + c.slug + '/' + BOOK_SIG(c.slug), host: (bookingHost() || {}).email || null });
+});
 // Last-resort error handler: JSON, never an HTML page or a stack trace.
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
