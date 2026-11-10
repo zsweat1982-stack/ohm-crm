@@ -2804,6 +2804,17 @@ app.post('/api/prospects/import', (req, res) => {
   res.json({ added, dupeEmail, dupeDomain, bad, total: prospects.length });
 });
 
+// Admin: remove one lead (e.g. a test lead). Writes a backup of the whole list first.
+app.delete('/api/prospects/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const i = prospects.findIndex(p => String(p.id) === String(req.params.id));
+  if (i < 0) return res.status(404).json({ error: 'No such lead.' });
+  const gone = prospects[i];
+  try { fs.writeFileSync(DATA.replace(/\.json$/, '') + '.backup-' + Date.now() + '.json', JSON.stringify(prospects, null, 2)); }
+  catch (e) { return res.status(500).json({ error: 'Refusing to delete, backup failed.' }); }
+  prospects.splice(i, 1); save(prospects);
+  res.json({ removed: gone.business || gone.id });
+});
 app.post('/api/prospects/purge', (req, res) => {
   const { reason = 'unreachable', confirm = false } = req.body || {};
   const match = p => {
