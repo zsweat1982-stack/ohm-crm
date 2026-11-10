@@ -4803,6 +4803,8 @@ async function checkGmailReplies() {
     const det = await detRes.json();
     const hdr = Object.fromEntries((det.payload?.headers || []).map(h => [h.name.toLowerCase(), h.value]));
     const from = (hdr.from || '').match(/<([^>]+)>/)?.[1] || (hdr.from || '');
+    // Our own team's mail is never a prospect reply (a test lead on a team address used to fire false alerts).
+    if (/@openheartmediaco\.com$/i.test(from.trim())) continue;
     const p = prospectForSender(from);
     if (!p) continue;
     const now = new Date().toISOString();
