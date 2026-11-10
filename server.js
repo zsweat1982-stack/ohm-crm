@@ -7187,6 +7187,12 @@ el.innerHTML='';a[1].days.slice(0,10).forEach(function(d){var h=document.createE
 document.getElementById('go').onclick=function(){var m=document.getElementById('msg'),g=this;g.disabled=true;m.textContent='';fetch(base,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({start:chosen,name:document.getElementById('n').value,email:document.getElementById('e').value})}).then(function(r){return r.json().then(function(j){return[r.ok,j]})}).then(function(a){if(a[0]){document.getElementById('form').innerHTML='<b>You are booked.</b><p>Check your email for the calendar invite'+(a[1].meet?' and video link':'')+'.</p>'}else{m.textContent=a[1].error||'Something went wrong.';g.disabled=false}}).catch(function(){m.textContent='Something went wrong. Please try again.';g.disabled=false})};
 </script></body></html>`);
 });
+app.get('/api/hq/booking-check', async (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const host = bookingHost(); if (!host) return res.json({ host: null });
+  try { const tok = await userGmailToken(host.id); const r = await fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(tok)); const j = await r.json(); res.json({ host: host.email, canWrite: String(j.scope || '').includes('calendar.events') || String(j.scope || '').includes('auth/calendar '), scope: j.scope || j.error_description || j.error }); }
+  catch (e) { res.json({ host: host.email, error: e.message }); }
+});
 app.get('/api/hq/booking-link/:slug', (req, res) => {
   if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
   const c = loadClients().find(x => x.slug === req.params.slug); if (!c) return res.status(404).json({ error: 'Unknown client.' });
