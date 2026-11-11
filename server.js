@@ -4433,9 +4433,21 @@ async function aiJson(system, user, maxTokens) {
   if (process.env.FAKE_AI === '1') return JSON.parse(process.env.FAKE_AI_JSON || '{}');
   const askAI = (mt, extra) => anthropic.messages.create({ model: 'claude-sonnet-5', max_tokens: mt, system, messages: [{ role: 'user', content: user + (extra || '') }] });
   let r; try { r = await askAI(maxTokens || 4000); if (r.stop_reason === 'max_tokens' || !(((r.content || []).find(b => b && b.type === 'text')?.text) || '').includes('}')) { console.error('[ai] hit the token limit, retrying bigger', maxTokens); r = await askAI(Math.min(16000, (maxTokens || 4000) * 2), '\n\nReturn only the JSON object. Keep every field tight.'); } } catch (e) { const m = String((e && e.message) || e); throw new Error(/credit balance|billing/i.test(m) ? 'The Anthropic account is out of credits. Add credits and try again.' : /api[_ ]?key|authentication|401/i.test(m) ? 'The Anthropic key on the server is missing or wrong.' : 'The AI request failed: ' + m.slice(0, 140)); }
-  let t = ((r.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < 0) throw new Error('The AI did not return a usable answer (' + (r.stop_reason || 'no reason') + '). Try again in a minute.');
-  return JSON.parse(t.slice(a, b + 1));
+  const grab = (resp) => {
+    const t = ((resp.content || []).find(b => b && b.type === 'text')?.text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < 0) throw new Error('The AI did not return a usable answer (' + (resp.stop_reason || 'no reason') + '). Try again in a minute.');
+    const raw = t.slice(a, b + 1);
+    try { return JSON.parse(raw); } catch (e1) {
+      // The model sometimes drops a comma or leaves a trailing one. Fix the common slips before giving up.
+      const fixed = raw.replace(/,\s*([}\]])/g, '$1').replace(/([}\]"\d])(\s*\n\s*)(["{\[])/g, '$1,$2$3');
+      try { return JSON.parse(fixed); } catch (e2) { console.error('[ai] bad JSON:', e1.message); const err = new Error('bad-json'); err.badJson = true; throw err; }
+    }
+  };
+  try { return grab(r); } catch (e) {
+    if (!e.badJson) throw e;
+    let r2; try { r2 = await askAI(Math.min(16000, (maxTokens || 4000) * 2), '\n\nYour last answer was not valid JSON. Return ONLY one valid JSON object. Escape every double quote inside a string as \\" and never use raw line breaks inside strings. Keep every field tight.'); } catch (e3) { throw new Error('The AI request failed: ' + String((e3 && e3.message) || e3).slice(0, 140)); }
+    try { return grab(r2); } catch (e4) { throw new Error(e4.badJson ? 'The AI sent back broken data twice. Hit the button again.' : e4.message); }
+  }
 }
 async function makeShotlist(slug, dateStr, who) {
   const c = loadClients().find(x => x.slug === slug); if (!c) throw new Error('Unknown client.');
