@@ -92,3 +92,16 @@ Zac approves everything. Captions: Valeria. Nothing is sent to Briley, posted or
 
 ## Viral formats, November 2026 (monthly refresh)
 NOT RUN YET. Run the client-research agent source 7 (TikTok and YouTube Shorts scan, top 15 to 25 posts, 5 to 8 repeatable formats, top 5 turned into test ideas). Refresh on the 1st of every month; keep prior months under "Previous months".
+
+## 13. Nov 11 update (Briley's reply, ad changes)
+- **Briley approved everything** (Nov 11): the Black Friday Late-Install Special, all proposals. Offer: $150 off installs of $800 or more, book Nov 15 to Nov 29, installs through Dec 5. Briley is the owner (he/him); the proposal is addressed to Briley, not "the owner."
+- **Budget ceiling raised:** up to $200 a day, or $250 a day if ROAS holds at 4x. The $1,500 November cap no longer applies. Ramp in steps and check the 7 day ROAS before each step. Margin: Briley's quotes stay at normal price (Zac decided to keep the $150 off copy as written).
+- **First two weeks of November** were aimed at the giveaway (data and audience). Sales were never the goal early; from here the plan is numbers focused, booked jobs.
+- **Briley is sending photos** and can get drone footage (dusk shots of lit homes wanted). Little video.
+- **Live changes Nov 11:** Meta retargeting $9.60/day, Springs 45-59 $13.20/day, Springs 60+ ladder-safety ad set turned on ($11/day). Google Christmas Lights $20/day, 23 new keywords added, 7 negatives added. The existing negative "permanent" blocks the two permanent keywords added. A paused Google RSA for the late-install offer is ready to enable Nov 15.
+- **Paused Meta campaign built** ("ABLS | Late-Install Special | Springs | Nov 15 to Dec 5 2026", $60/day, starts Nov 15 6 AM ET, stops Nov 30) with 3 ad sets: LI1 Springs 55-65+, LI2 Springs 45-54, LI3 warm site visitors. No ads yet: needs images uploaded and the landing page banner changed.
+- **Creatives:** four dark-block statics in `~/Downloads/ABLS-Nov-Creatives/LateInstall/` (deadline, timing, ladder, offer). All use real installed-home photos marked VERIFY. Standard: different designs and angles per stage (see static-ads.md); one template with four headlines is not a real test.
+- **Evidence:** only 2 booked sales this month ($3,610): one Google search, one Meta ("Which Thanksgiving"). Nothing is PROVEN. Do not build the plan on one ad.
+- **Demographic read (Google, Nov 4 to 10, impressions only):** 52% under 45, 55% male. Older lead campaigns (other markets) converted best at 55 to 64. Suggested -50% bid on 18 to 34 (not applied).
+- **Daily review must report the status reason** (for example "Limited by search volume") for every campaign.
+- **Still open:** upload creatives to Meta; change the americasbestlights.com banner on Nov 15; remove "from $699" from the Google sitelink "Pricing & Packages" and from the live Google and Meta ads; Nov 16 pause "Book by Nov 15" ads; Briley to report booked jobs by ad.
