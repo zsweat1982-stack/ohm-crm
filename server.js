@@ -125,6 +125,35 @@ function ensureCallLeads() {
 }
 ensureCallLeads();
 
+// ---------- Flooring leads (own column) ----------
+// Local flooring companies from Google Maps plus a website contact scrape. They live in the same list so
+// owners, notes and the board work, but they carry source 'flooring', status 'flooring' and do_not_email,
+// so no sender, drafter or autosend touches them until Zac moves them. Merging only ever adds new leads.
+function ensureFlooringLeads() {
+  let src;
+  try { src = JSON.parse(fs.readFileSync(path.join(SEED_DIR, 'flooring_leads.json'), 'utf8')); }
+  catch (e) { console.warn('[flooring] no flooring_leads.json:', e.message); return; }
+  const have = new Set(prospects.filter(x => x.source === 'flooring').map(x => x.id));
+  const phones = new Set(prospects.map(x => String(x.phone || '').replace(/\D/g, '')).filter(Boolean));
+  const nowIso = new Date().toISOString();
+  let added = 0;
+  for (const l of src.leads || []) {
+    if (have.has(l.id)) continue;
+    if (l.already_in_crm || phones.has(String(l.phone || '').replace(/\D/g, ''))) continue;
+    prospects.push({
+      id: l.id, business: l.business, category: 'Flooring', city: l.city || '', phone: l.phone || '',
+      website: l.website || '', rating: '', reviews: '', email: l.email || '', subject: '', body: '', notes: [],
+      handled_by: '', deal_value: '', contact_first: '', contact_name: '', contact_name_source: '',
+      status: 'flooring', source: 'flooring', do_not_email: true, role_emails: l.role_emails || [], sub_category: l.sub_category || '',
+      created_at: nowIso, updated_at: nowIso,
+    });
+    added++;
+  }
+  if (added) save(prospects);
+  console.log('[flooring] added', added, 'total in seed', (src.leads || []).length);
+}
+ensureFlooringLeads();
+
 // One-time, idempotent. bounced_at and complained_at did not exist until the September metrics
 // fix, so every send before it has no delivery outcome stamped on it and would read as clean.
 // Recover the real outcomes from the error strings and notes the webhook already wrote.
@@ -2889,7 +2918,7 @@ app.post('/api/prospects/:id/generate', async (req, res) => {
 
 app.post('/api/generate-all', async (req, res) => {
   const limit = Number(req.body?.limit) || 25;
-  const todo = prospects.filter(p => p.source !== 'callleads' && p.source !== 'manual' && (p.status === 'new' || (!p.body && p.status !== 'sent'))).slice(0, limit);
+  const todo = prospects.filter(p => p.source !== 'callleads' && p.source !== 'manual' && p.source !== 'flooring' && (p.status === 'new' || (!p.body && p.status !== 'sent'))).slice(0, limit);
   let done = 0;
   for (const p of todo) {
     try {

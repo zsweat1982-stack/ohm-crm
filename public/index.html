@@ -310,6 +310,7 @@ const NAV = [
     ['giveaway',    '\u{1F381}', 'Giveaway',       p => p.source==='giveaway'],
     ['manual',      '\u271A', 'Manual',        p => p.source==='manual' && p.status==='manual'],
     ['nosite',      '\u260E', 'No Website',     p => p.source==='callleads'],
+    ['flooring',    '\u25A4', 'Flooring',       p => p.source==='flooring'],
     ['inbound',     '\u2605', 'Inbound',        p => isInbound(p)],
     ['sent',        '\u2709', 'Awaiting reply', p => p.status==='sent'],
     ['replied',     '\u21A9', 'Replied',        p => p.status==='replied'],
@@ -343,12 +344,12 @@ function renderNav(){
 function navTo(k){
   if (window.hqNav && window.hqNav(k)) return;
   navKey = k;
-  const titles = {board:'Pipeline', manual:'Manual', giveaway:'Giveaway', nosite:'No Website', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
+  const titles = {board:'Pipeline', manual:'Manual', giveaway:'Giveaway', nosite:'No Website', flooring:'Flooring', inbound:'Inbound', sent:'Awaiting reply', replied:'Replied',
                   booked:'Booked', won:'Won', all:'All leads', new:'Queue', drafted:'Drafted',
                   unreachable:'Unreachable', rejected:'Rejected'};
   document.getElementById('viewTitle').textContent = titles[k] || 'Pipeline';
   if (k==='board'){ document.getElementById('filter').value='all'; setView('board'); }
-  else if (k==='inbound' || k==='giveaway' || k==='nosite' || k==='manual'){ document.getElementById('filter').value='all'; setView('board'); }
+  else if (k==='inbound' || k==='giveaway' || k==='nosite' || k==='flooring' || k==='manual'){ document.getElementById('filter').value='all'; setView('board'); }
   else { document.getElementById('filter').value = (k==='all'?'all':k); setView('table'); }
   renderNav();
 }
@@ -472,6 +473,7 @@ function isInbound(p){
   if (p.internal || p.status==='test') return false;
   if (p.source==='giveaway') return false;     // giveaway entries have their own column
   if (p.source==='callleads') return false;    // so does the no-website call list
+  if (p.source==='flooring') return false;     // and the flooring list
   if (p.sent_at) return false;
   return ['guide','website-form','self_serve'].includes(p.source)
       || ['subscriber','lead','audit_requested','audited'].includes(p.status);
@@ -479,6 +481,7 @@ function isInbound(p){
 const COLS = [
   {k:'manual',  label:'Manual',    hint:'Prospects you add by hand. Never emailed automatically.'},
   {k:'nosite',  label:'No Website', hint:'Call list: no site found. Claim one, get a contact name.'},
+  {k:'flooring',label:'Flooring',  hint:'Local flooring companies. Phone first. Never emailed automatically.'},
   {k:'giveaway',label:'Giveaway',  hint:'Entered the Content Day giveaway'},
   {k:'inbound', label:'Inbound',   hint:'They came to you'},
   {k:'queue',   label:'Queue',     hint:'Drafted and approved'},
@@ -492,6 +495,7 @@ function stageOf(p){
   if (p.internal || p.status==='test') return null;
   if (p.source==='manual' && p.status==='manual') return 'manual';
   if (p.source==='callleads' && p.status==='calllist') return 'nosite';
+  if (p.source==='flooring' && p.status==='flooring') return 'flooring';
   if (p.source==='giveaway' && !['booked','won'].includes(p.status)) return 'giveaway';
   if (isInbound(p)) return 'inbound';
   const st = p.status;
@@ -526,7 +530,7 @@ function callTags(p){
 function cardHtml(p){
   const inb = isInbound(p);
   const flag = needsResponse(p) ? '\u{1F525} ' : '';
-  const sub = (p.source==='callleads' ? [p.category, p.phone] : [p.category, p.city]).filter(Boolean).join(' \u00b7 ');
+  const sub = ((p.source==='callleads'||p.source==='flooring') ? [p.category, p.phone, p.city] : [p.category, p.city]).filter(Boolean).join(' \u00b7 ');
   const d = p.updated_at ? Math.floor((Date.now()-new Date(p.updated_at))/86400000) : null;
   const stale = d!==null && d>=14;
   const own = (p.handled_by||'').trim();
@@ -546,6 +550,7 @@ function renderBoard(list){
   if (navKey==='inbound') list = list.filter(isInbound);
   if (navKey==='giveaway') list = list.filter(p=>p.source==='giveaway');
   if (navKey==='nosite') list = list.filter(p=>p.source==='callleads');
+  if (navKey==='flooring') list = list.filter(p=>p.source==='flooring');
   if (navKey==='manual') list = list.filter(p=>p.source==='manual');
   const by = {}; COLS.forEach(c=>by[c.k]=[]);
   const dead = {'new':0,'unreachable':0,'rejected':0,'lost':0,'internal':0};
@@ -559,7 +564,7 @@ function renderBoard(list){
   document.getElementById('board').innerHTML = COLS.map(c=>{
     let items = by[c.k].filter(p=>show.has(p.id));
     items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
-    return `<div class="col${c.k==='manual'?' manual':''}${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}">
+    return `<div class="col${c.k==='manual'?' manual':''}${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}${c.k==='flooring'?' nosite':''}">
       <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
       ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
       ${c.k==='manual'?'<button class="primary" style="margin:0 0 6px;width:100%" onclick="openAddProspect()">+ Add prospect</button><button style="margin:0 0 10px;width:100%" onclick="document.getElementById(\'csvIn\').click()">Import CSV</button><input type="file" id="csvIn" accept=".csv,text/csv" style="display:none" onchange="importCsv(this)">':''}
