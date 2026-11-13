@@ -100,6 +100,8 @@
   .s-manual{background:#efe8fb;color:#6b3fc4}
   .col.nosite{background:#e9f6ee;box-shadow:inset 0 3px 0 #1e9e5a}
   .col.nosite .cn{border-color:#b4dfc6;color:#1e9e5a}
+  .col.flooring{background:#fff1e3;box-shadow:inset 0 3px 0 #e8741a}
+  .col.flooring .cn{border-color:#f6c9a0;color:#e8741a}
   .tag{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:#eef1f6;color:#57607a;white-space:nowrap}
   .tag.warn{background:#fff1d6;color:#a86400} .tag.need{background:#fdecea;color:#c4261d} .tag.ok{background:#e1f4e8;color:#1e7a47}
   .s-calllist{background:#e1f4e8;color:#1e7a47}
@@ -564,7 +566,7 @@ function renderBoard(list){
   document.getElementById('board').innerHTML = COLS.map(c=>{
     let items = by[c.k].filter(p=>show.has(p.id));
     items.sort((a,b)=> (needsResponse(b)-needsResponse(a)) || (new Date(b.updated_at||0)-new Date(a.updated_at||0)));
-    return `<div class="col${c.k==='manual'?' manual':''}${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}${c.k==='flooring'?' nosite':''}">
+    return `<div class="col${c.k==='manual'?' manual':''}${c.k==='inbound'?' inbound':''}${c.k==='giveaway'?' giveaway':''}${c.k==='nosite'?' nosite':''}${c.k==='flooring'?' flooring':''}">
       <div class="colhead"><span class="ct">${c.label}</span><span class="cn">${items.length}</span></div>
       ${c.hint?`<div class="colhint">${c.hint}</div>`:''}
       ${c.k==='manual'?'<button class="primary" style="margin:0 0 6px;width:100%" onclick="openAddProspect()">+ Add prospect</button><button style="margin:0 0 10px;width:100%" onclick="document.getElementById(\'csvIn\').click()">Import CSV</button><input type="file" id="csvIn" accept=".csv,text/csv" style="display:none" onchange="importCsv(this)">':''}
