@@ -53,8 +53,8 @@
       r.extra = extra; return r;
     }
     var sent = {};
-    function send(root, why) {
-      var data = map(collect(root)), digits = (data.phone || '').replace(/\D/g, '');
+    function send(root, why, pre) {
+      var data = pre || map(collect(root)), digits = (data.phone || '').replace(/\D/g, '');
       var valid = digits.length >= 10 || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email);
       if (!valid) return;
       var id = digits || data.email; if (sent[id] && now2() - sent[id] < 15000) return; sent[id] = now2();
@@ -67,7 +67,17 @@
     }
     function now2() { return Date.now(); }
     function rootOf(el) { return el.closest('form') || el.closest('[role="form"]') || el.closest('section') || el.closest('[data-testid*="form" i]') || el.parentElement; }
-    document.addEventListener('submit', function (e) { try { send(e.target, 'form-submit'); } catch (x) {} }, true);
+    var stash = {};
+    // WPForms submits by ajax. A native submit event fires even when validation or reCAPTCHA fails, so skip it for WPForms
+    // and send once, after WPForms reports success, using the values captured when Submit was clicked.
+    document.addEventListener('submit', function (e) { try { if (e.target && e.target.classList && e.target.classList.contains('wpforms-form')) { stash[e.target.id || 'wpf'] = map(collect(e.target)); return; } send(e.target, 'form-submit'); } catch (x) {} }, true);
+    (function hookWpforms(tries) {
+      var jq = window.jQuery;
+      if (!jq) { if (tries < 40) setTimeout(function () { hookWpforms(tries + 1); }, 250); return; }
+      jq(document).on('wpformsAjaxSubmitSuccess', function (e) {
+        try { var f = e.target && e.target.closest ? e.target.closest('form') : null; var id = (f && f.id) || 'wpf'; send(f || document.body, 'wpforms-success', stash[id] || (f ? map(collect(f)) : null)); } catch (x) {}
+      });
+    })(0);
     document.addEventListener('click', function (e) {
       try {
         var b = e.target.closest && e.target.closest('button,[role="button"],input[type="submit"],a[role="button"]'); if (!b) return;
@@ -75,6 +85,7 @@
         if (!/submit|send|request|get started|book|contact|schedule|sign up|subscribe/.test(txt)) return;
         var root = rootOf(b); if (!root) return;
         if (!root.querySelector('input:not([type=hidden]),textarea')) return;
+        if (root.classList && root.classList.contains('wpforms-form')) { stash[root.id || 'wpf'] = map(collect(root)); return; }   // sent on success below
         setTimeout(function () { try { send(root, 'button-click'); } catch (x) {} }, 50);
       } catch (x) {}
     }, true);
