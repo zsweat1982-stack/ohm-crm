@@ -2677,7 +2677,25 @@ app.post('/f/:key', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const client = CLIENT_KEYS[req.params.key];
   if (!client) return res.status(404).json({ error: 'Unknown form.' });
-  const b = req.body || {};
+  let b = req.body || {};
+  // Wix automations send { data: {...} } or { contact: { name: { first, last }, email, phones: [...] }, submissions: {...} }.
+  // Flatten those into the plain field names the rest of this handler reads.
+  try {
+    if (b && typeof b.data === 'object' && b.data) b = Object.assign({}, b.data, b);
+    const c = b.contact && typeof b.contact === 'object' ? b.contact : null;
+    if (c) {
+      const nm = c.name && typeof c.name === 'object' ? c.name : {};
+      const ph = Array.isArray(c.phones) && c.phones[0] ? (c.phones[0].phone || c.phones[0].e164Phone || c.phones[0].formattedPhone || '') : (c.phone || '');
+      const em = Array.isArray(c.emails) && c.emails[0] ? (c.emails[0].email || '') : (c.email || '');
+      const ad = Array.isArray(c.addresses) && c.addresses[0] ? (c.addresses[0].address && (c.addresses[0].address.formatted || c.addresses[0].address.addressLine) || '') : '';
+      b = Object.assign({}, b, { first_name: b.first_name || nm.first || '', last_name: b.last_name || nm.last || '', phone: b.phone || ph, email: b.email || em, address: b.address || ad });
+    }
+    const sub = b.submissions && typeof b.submissions === 'object' ? b.submissions : null;
+    if (sub && !Array.isArray(sub)) {
+      const pick = re => { for (const k of Object.keys(sub)) if (re.test(k) && sub[k]) return String(sub[k]); return ''; };
+      b = Object.assign({}, b, { first_name: b.first_name || pick(/first/i), last_name: b.last_name || pick(/last/i), phone: b.phone || pick(/phone/i), email: b.email || pick(/e-?mail/i), address: b.address || pick(/address/i) });
+    }
+  } catch (_) {}
   if (String(b['bot-field'] || b.company_hp || '').trim()) return res.json({ ok: true });   // honeypot
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
   const now = Date.now(), hits = (clHits.get(ip) || []).filter(t => now - t < 10 * 60e3);
