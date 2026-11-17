@@ -2672,6 +2672,11 @@ const CLIENT_KEYS = {
 function loadClientLeads() { try { return JSON.parse(fs.readFileSync(CLIENT_LEADS_FILE, 'utf8')); } catch { return []; } }
 function saveClientLeads(a) { const tmp = CLIENT_LEADS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(a)); fs.renameSync(tmp, CLIENT_LEADS_FILE); }
 const clHits = new Map();
+// sendBeacon posts text/plain to avoid a CORS preflight; read it as JSON.
+app.use('/f', express.text({ type: 'text/plain', limit: '200kb' }), (req, res, next) => {
+  if (typeof req.body === 'string') { try { req.body = JSON.parse(req.body); } catch (e) { req.body = {}; } }
+  next();
+});
 app.options('/f/:key', (req, res) => { res.set({ 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' }).sendStatus(204); });
 app.post('/f/:key', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
