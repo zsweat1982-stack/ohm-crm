@@ -1,12 +1,13 @@
 /* OHM lead capture. One tag per client site:
-   <script src="https://app.openheartmediaco.com/capture.js" data-key="CLIENT_FORM_KEY" async></script>
+   <script src="https://app.openheartmediaco.com/capture.js?key=CLIENT_FORM_KEY" async></script>   (data-key="..." also works)
    - Saves Google and Meta click IDs and UTM tags for 90 days (first and last touch).
    - When a visitor submits a form, sends name, phone, email, address and message plus those tags to the lead bank.
    - Never reads password, card or ID fields. Never blocks or changes the form. */
 (function () {
   try {
     var s = document.currentScript || document.querySelector('script[src*="capture.js"]');
-    var key = s && s.getAttribute('data-key'); if (!key) return;
+    // Tag managers can drop data-* attributes when they inject a script, so the key may also ride on the URL (?key=...).
+    var key = s && (s.getAttribute('data-key') || new URL(s.src).searchParams.get('key')); if (!key) return;
     var endpoint = (s.getAttribute('data-endpoint') || new URL(s.src).origin + '/f/') + (s.getAttribute('data-endpoint') ? '' : key);
     var KEYS = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
     var ST = 'ohm_attr', DAYS = 90;
