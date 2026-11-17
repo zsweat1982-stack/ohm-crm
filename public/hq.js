@@ -469,14 +469,25 @@
     try { await api('/api/queue', 'POST', { client: g('qc'), platforms: g('qp'), date: g('qd'), time: g('qt'), caption: g('qk'), cta: g('qa'), media: g('qm') }); toast('Added'); } catch (er) { toast(er.message); return; }
     show('hq:queue');
   };
-  function conversions(cv) {
-    var live = cv && cv.live, rows = [['Visiting Nurse (VNPHC)', 'Forms first'], ['Matchett Homes', 'Forms first'], ['Sun & Shield', 'Forms first'], ['iFab', 'Forms first'], ['ABLS (America\'s Best Lighting)', 'Forms first'], ['NABS', 'Forms first'], ['Open Heart Media (our own ads)', 'Forms first']];
-    var steps = ['Put the capture script on the client site so every form saves the ad click ID.', 'Set the client site as an allowed origin and test one form.', 'Confirm the client\'s Google Ads has an offline "Booked Job" conversion action (import type).', 'Add the Meta pixel ID and access token for the client.', 'Ask the client each month for booked jobs and job values.', 'Mark booked jobs in the dashboard. Upload the Google file and let Meta events send.'];
-    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Conversions</h3><p>Real leads from ads, sent back to Google and Meta so they optimize for booked jobs. Primary conversions are forms and calls of 60 seconds or more.</p></div>' + (live ? '<a class="btn2 red" href="' + e(cv.url) + '" target="_blank" rel="noopener">Open the dashboard</a>' : '') + '</div>' +
-      '<div class="panel" style="margin-bottom:16px"><h3>' + ico(live ? 'check' : 'alert') + (live ? ' Live' : ' Built and tested, not live yet') + '</h3><p class="hint">' + (live ? 'The dashboard has a tab per client with leads, outcomes and the Google file.' : 'The dashboard and capture script are built and pass their tests. It goes live after the hosting accounts are connected. Until then this page is the setup checklist.') + '</p></div>' +
-      '<div class="panel" style="margin-bottom:16px"><h3>Ads clients on the list</h3><p class="hint">Forms are tracked first. Call tracking comes next and applies to every client below: calls of 60 seconds or more from an ad count as a real conversion.</p>' + rows.map(function (r) { return '<div class="kv"><span>' + e(r[0]) + '</span><b>' + e(r[1]) + ' · Calls: to set up</b></div>'; }).join('') + '</div>' +
-      '<div class="panel"><h3>Setup for each client</h3><ol style="line-height:1.8;margin:10px 0 0 18px">' + steps.map(function (s) { return '<li>' + e(s) + '</li>'; }).join('') + '</ol></div>';
+  function conversions(cv, d) {
+    d = d || { clients: [], leads: [] };
+    var total = d.clients.reduce(function (n, c) { return n + c.count; }, 0);
+    var names = {}; d.clients.forEach(function (c) { names[c.slug] = c.name; });
+    var when = function (t) { return t ? new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'none yet'; };
+    var src = { google_ads: 'Google Ads', meta_ads: 'Meta Ads', google_organic: 'Google', direct: 'Direct' };
+    var board = d.clients.map(function (c) { return '<div class="kv"><span>' + e(c.name) + '</span><b>' + c.count + ' lead' + (c.count === 1 ? '' : 's') + ' · last: ' + e(when(c.last)) + '</b></div>'; }).join('');
+    var rows = d.leads.slice(0, 100).map(function (l) {
+      var stages = ['new', 'contacted', 'quoted', 'booked', 'lost'];
+      return '<tr><td><div class="nm">' + e(l.name || '(no name)') + (l.repeat ? ' <span class="chip need">Repeat</span>' : '') + '</div><div class="em">' + e(l.phone) + (l.email ? ' · ' + e(l.email) : '') + (l.zip ? ' · ' + e(l.zip) : '') + '</div></td>' +
+        '<td>' + e(names[l.client] || l.client) + '</td><td>' + e(src[l.source] || l.source) + (l.utm_campaign ? '<div class="em">' + e(l.utm_campaign) + '</div>' : '') + '</td><td class="em">' + e(when(l.at)) + '</td>' +
+        '<td><select onchange="hqLeadStage(\'' + e(l.id) + '\',this.value)" style="padding:6px 8px;border:1px solid var(--hair2);border-radius:9px;font:inherit">' + stages.map(function (x) { return '<option value="' + x + '"' + (x === l.stage ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></td></tr>';
+    }).join('');
+    return '<div class="sec rise"><div><h3 style="font-size:28px;letter-spacing:-.03em">Conversions</h3><p>Every client website form lands here with its ad source. Primary conversions are forms and calls of 60 seconds or more.</p></div></div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>' + ico('check') + ' Lead bank is live</h3><p class="hint">' + total + ' lead' + (total === 1 ? '' : 's') + ' so far. Client forms post to this app, so there is one place for every lead. Call tracking is still to set up.</p></div>' +
+      '<div class="panel" style="margin-bottom:16px"><h3>Clients</h3>' + board + '</div>' +
+      '<div class="panel"><h3>Recent leads</h3><table class="ttab"><thead><tr><th>Lead</th><th>Client</th><th>Source</th><th>When</th><th>Stage</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="em">No leads yet. The first form submission will show up here.</td></tr>') + '</tbody></table></div>';
   }
+  window.hqLeadStage = async function (id, stage) { try { await api('/api/client-leads/' + id + '/outcome', 'POST', { stage: stage }); toast('Saved'); } catch (er) { toast(er.message); } };
   function outreach() {
     var g = function (title, sub, keys) { return '<div class="sec"><div><h3>' + title + '</h3><p>' + sub + '</p></div></div><div class="og">' + keys.map(ocard).join('') + '</div>'; };
     var f = function (k, l) { return '<button onclick="navTo(\'' + k + '\')"><b>' + outCount(k).toLocaleString() + '</b><span>' + l + '</span></button>'; };
@@ -969,7 +980,7 @@
     else if (key === 'hq:chat') { el.innerHTML = await chatPage(); }
     else if (key === 'hq:queue') { el.innerHTML = await queuePage(); }
     else if (key === 'hq:manual') { if (!HQ.manual) { try { HQ.manual = await (await fetch('/manual.html', { cache: 'no-cache' })).text(); } catch (x) { HQ.manual = '<p>Could not load this page.</p>'; } } el.innerHTML = '<div class="hw">' + HQ.manual + '</div>'; }
-    else if (key === 'hq:conversions') { var cv = {}; try { cv = await api('/api/conversions/status'); } catch (x) {} el.innerHTML = conversions(cv); }
+    else if (key === 'hq:conversions') { var cd = {}; try { cd = await api('/api/client-leads'); } catch (x) {} el.innerHTML = conversions({}, cd); }
     else if (key === 'hq:outreach') el.innerHTML = (HQ.me && HQ.me.pipeline) ? outreach() : '<div class="sec"><div><h3 style="font-size:28px">Outreach</h3></div></div><div class="panel"><div class="empty">' + ico('alert') + 'The sales pipeline is limited to Lisa, Michelle, Brad, Griffin and Zac.</div></div>';
     else if (key === 'hq:team') el.innerHTML = await team();
     else if (key.indexOf('hq:client:') === 0) { if (HQ.me && HQ.me.role === 'admin' && !HQ.users) { try { HQ.users = (await api('/api/admin/users')).users; } catch (x) {} } await loadClientData(key.slice(10)); el.innerHTML = clientPage(key.slice(10)); }

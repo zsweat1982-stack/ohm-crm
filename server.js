@@ -2293,7 +2293,7 @@ function loginLimited(key, max) {
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm', '/book', '/api/book']
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm', '/book', '/api/book', '/f']
 // '/api/audit' was public so the landing page could run a scan in front of a visitor. Nothing
 // public triggers an audit any more: leads come in through /api/qualify and the team runs the
 // audit themselves, so the endpoint now sits behind the team login like everything else.;
@@ -2654,6 +2654,81 @@ app.post('/api/admin/users/:id/pipeline', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const users = loadUsers(), u = users.find(x => x.id === req.params.id); if (!u) return res.status(404).json({ error: 'Not found.' });
   u.pipeline = !!(req.body && req.body.pipeline); saveUsers(users); res.json({ ok: true, pipeline: u.pipeline });
+});
+
+// ---------- Client lead bank ----------
+// Website forms for client sites post here (POST /f/:key). One store, one key per client.
+// Separate from the cold-outreach prospects list on purpose: these are the clients' own leads.
+const CLIENT_LEADS_FILE = path.join(DATA_DIR, 'client_leads.json');
+const CLIENT_KEYS = {
+  '3a41df33b14ce740a8c09819': { slug: 'vnphc', name: 'Visiting Nurse Private Home Care' },
+  'ed5524304f917640f2edf85f': { slug: 'sun-and-shield', name: 'Sun and Shield' },
+  '0f731c16d0db2de5d971910b': { slug: 'ifab', name: 'iFab' },
+  '662ea6711b89fc3c597d0fc6': { slug: 'matchett', name: 'Matchett Homes' },
+  'd06993d92974f4de052eae18': { slug: 'abls', name: "America's Best Lighting" },
+  '07b4fd1491f226dc9df8f421': { slug: 'ohm', name: 'Open Heart Media' },
+  '9c2e5a7b1d4f8036ab12c7e5': { slug: 'nabs', name: 'NABS' },
+};
+function loadClientLeads() { try { return JSON.parse(fs.readFileSync(CLIENT_LEADS_FILE, 'utf8')); } catch { return []; } }
+function saveClientLeads(a) { const tmp = CLIENT_LEADS_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(a)); fs.renameSync(tmp, CLIENT_LEADS_FILE); }
+const clHits = new Map();
+app.options('/f/:key', (req, res) => { res.set({ 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' }).sendStatus(204); });
+app.post('/f/:key', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const client = CLIENT_KEYS[req.params.key];
+  if (!client) return res.status(404).json({ error: 'Unknown form.' });
+  const b = req.body || {};
+  if (String(b['bot-field'] || b.company_hp || '').trim()) return res.json({ ok: true });   // honeypot
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now(), hits = (clHits.get(ip) || []).filter(t => now - t < 10 * 60e3);
+  if (hits.length >= 20) return res.status(429).json({ error: 'Too many submissions.' });
+  hits.push(now); clHits.set(ip, hits); if (clHits.size > 5000) clHits.clear();
+  const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  // Never store card, password or ID-number style fields, whatever the form sends.
+  const SENSITIVE = /pass|card|cvv|ssn|social|routing|account.?num|secret|token/i;
+  const first = clip(b.first_name, 80), last = clip(b.last_name, 80);
+  const name = clip(b.name, 160) || (first + ' ' + last).trim();
+  const phone = clip(b.phone || b.phone_number || b['phone-number'], 40), email = clip(b.email, 254).toLowerCase();
+  if (!name && !phone && !email) return res.json({ ok: true, skipped: true });
+  const utm = k => clip(b[k], 200);
+  const gclid = clip(b.gclid || b.gbraid || b.wbraid, 300), fbclid = clip(b.fbclid, 300);
+  const src = utm('utm_source').toLowerCase();
+  const source = gclid ? 'google_ads' : (fbclid || /^(fb|facebook|meta|ig|instagram)$/.test(src)) ? 'meta_ads' : src ? src : (/google\./i.test(clip(b.referrer, 200)) ? 'google_organic' : 'direct');
+  const known = new Set(['name','first_name','last_name','phone','phone_number','phone-number','email','address','zip','message','notes','service','project_type','package','page_url','page','form_name','gclid','gbraid','wbraid','fbclid','utm_source','utm_medium','utm_campaign','utm_content','utm_term','consent','consent_service','consent_marketing','referrer','source','zone','time','date','click_ids','subject','_subject','form-name','bot-field']);
+  const extra = {}; for (const k of Object.keys(b)) { if (known.has(k) || SENSITIVE.test(k)) continue; if (Object.keys(extra).length < 12) extra[k.slice(0, 40)] = clip(b[k], 300); }
+  const all = loadClientLeads();
+  const dupe = all.find(l => l.client === client.slug && Date.now() - Date.parse(l.at) < 24 * 3600e3 && ((phone && l.phone === phone) || (email && l.email === email)));
+  const lead = {
+    id: 'CL' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase(),
+    client: client.slug, at: new Date().toISOString(), name, phone, email,
+    address: clip(b.address, 240), zip: clip(b.zip, 12), service: clip(b.service || b.project_type || b.package, 120),
+    message: clip(b.message || b.notes, 1000), form: clip(b.form_name || b.subject, 120), page: clip(b.page_url || b.page, 300),
+    source, gclid, fbclid, utm_source: utm('utm_source'), utm_medium: utm('utm_medium'), utm_campaign: utm('utm_campaign'), utm_content: utm('utm_content'), utm_term: utm('utm_term'),
+    consent: clip(b.consent || b.consent_service, 10), extra, stage: 'new', value: '', repeat: !!dupe,
+  };
+  all.push(lead);
+  try { saveClientLeads(all); } catch (e) { console.error('[client-lead] save failed -', e.message); return res.status(500).json({ error: 'save failed' }); }
+  console.log('[client-lead]', client.slug, lead.source, lead.repeat ? '(repeat)' : '');
+  res.json({ ok: true });
+  if (!lead.repeat && client.slug !== 'ohm') softStage(alertTeam('New ' + client.name + ' lead: ' + (name || phone || email),
+    '<b>' + esc(name) + '</b><br>' + esc(phone) + (email ? ' / ' + esc(email) : '') + '<br>' + esc(lead.address) + '<br>Source: ' + esc(source) + (lead.utm_campaign ? ' (' + esc(lead.utm_campaign) + ')' : '') + (lead.service ? '<br>Service: ' + esc(lead.service) : '') + (lead.message ? '<br>' + esc(lead.message) : '')), 15000, 'client lead alert').catch(() => {});
+});
+app.get('/api/client-leads', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const all = loadClientLeads(), by = {};
+  for (const k of Object.values(CLIENT_KEYS)) by[k.slug] = { slug: k.slug, name: k.name, count: 0, last: '' };
+  for (const l of all) { const c = by[l.client]; if (!c) continue; c.count++; if (l.at > c.last) c.last = l.at; }
+  const want = String(req.query.client || '');
+  const leads = all.filter(l => !want || l.client === want).sort((a, b) => b.at < a.at ? -1 : 1).slice(0, 300);
+  res.json({ clients: Object.values(by), leads });
+});
+app.post('/api/client-leads/:id/outcome', (req, res) => {
+  if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
+  const all = loadClientLeads(), l = all.find(x => x.id === req.params.id); if (!l) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  if (['new', 'contacted', 'quoted', 'booked', 'lost'].includes(b.stage)) l.stage = b.stage;
+  if (b.value != null) l.value = String(b.value).replace(/[^0-9.]/g, '').slice(0, 12);
+  l.updated_at = new Date().toISOString(); saveClientLeads(all); res.json({ ok: true });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
