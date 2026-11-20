@@ -2735,7 +2735,7 @@ app.post('/f/:key', (req, res) => {
   res.json({ ok: true });
   if (!lead.repeat && client.slug !== 'ohm') softStage(alertTeam('New ' + client.name + ' lead: ' + (name || phone || email),
     '<b>' + esc(name) + '</b><br>Phone: ' + esc(phone || 'not given') + '<br>Email: ' + esc(email || 'not given') + (lead.address ? '<br>' + esc(lead.address) : '') + (lead.zip ? ' ' + esc(lead.zip) : '')
-      + (extra.vehicle ? '<br>Vehicle: ' + esc(extra.vehicle) : '') + (lead.service ? '<br>Service: ' + esc(lead.service) : '') + (extra.offer ? '<br>Offer: ' + esc(extra.offer) : '')
+      + (extra.vehicle ? '<br>Vehicle: ' + esc(extra.vehicle) : '') + (extra.vehicle_type ? '<br>Car type: ' + esc(extra.vehicle_type) : '') + (extra.vehicle_age ? '<br>Car age: ' + esc(extra.vehicle_age) : '') + (extra.timing ? '<br>Timing: ' + esc(extra.timing) : '') + (lead.service ? '<br>Service: ' + esc(lead.service) : '') + (extra.offer ? '<br>Offer: ' + esc(extra.offer) : '')
       + '<br>Source: ' + esc(source) + (lead.utm_campaign ? ' (' + esc(lead.utm_campaign) + (lead.utm_content ? ' / ' + esc(lead.utm_content) : '') + ')' : '')
       + (lead.page ? '<br>Page: ' + esc(lead.page) : '') + (lead.message ? '<br>Message: ' + esc(lead.message) : '')), 15000, 'client lead alert').catch(() => {});
 });
