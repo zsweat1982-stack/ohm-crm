@@ -82,6 +82,37 @@ function seedFromCsv() {
 }
 let prospects = load() || seedFromCsv();
 
+// ---------- Do-not-contact list and one-time removals ----------
+// Somebody who has to be out of the CRM entirely, not just paused. The record is backed up to
+// removed_prospects.json before it goes, and the address is added to suppressed_emails.json, which
+// sendMail checks, so nothing can mail them again even if a scrape or an import brings them back.
+const SUPPRESS_FILE = path.join(path.dirname(DATA), 'suppressed_emails.json');
+const REMOVED_FILE = path.join(path.dirname(DATA), 'removed_prospects.json');
+function loadSuppressed() {
+  try { return new Set(JSON.parse(fs.readFileSync(SUPPRESS_FILE, 'utf8')).map(x => String(x).toLowerCase())); }
+  catch { return new Set(); }
+}
+const REMOVE_ONCE = [
+  { id: 'X2639', email: 'stormy@dewplumbing.com', business: /^D\.?\s?E\.?\s?W\.?\s+Plumbing\b/i },
+];
+(function removeOnce() {
+  const hit = prospects.filter(p => REMOVE_ONCE.some(r =>
+    p.id === r.id || (r.email && String(p.email || '').toLowerCase() === r.email) || r.business.test(String(p.business || ''))));
+  if (!hit.length) return;
+  try {
+    let prev = []; try { prev = JSON.parse(fs.readFileSync(REMOVED_FILE, 'utf8')); } catch {}
+    fs.writeFileSync(REMOVED_FILE, JSON.stringify(prev.concat(hit.map(p => ({ removed_at: new Date().toISOString(), record: p }))), null, 2));
+    const sup = loadSuppressed();
+    for (const p of hit) if (p.email) sup.add(String(p.email).toLowerCase());
+    for (const r of REMOVE_ONCE) if (r.email) sup.add(r.email);
+    fs.writeFileSync(SUPPRESS_FILE, JSON.stringify([...sup], null, 2));
+    const keep = prospects.filter(p => !hit.includes(p));
+    prospects.length = 0; prospects.push(...keep);
+    save(prospects);
+    console.log('[removed]', hit.map(p => `${p.business} (${p.id})`).join(', '), '- backed up, address suppressed');
+  } catch (e) { console.error('[removed] failed, nothing changed:', e.message); }
+})();
+
 // ---------- No-website call list ----------
 // Calling leads, never emailed. They live in the same list as everything else so the board,
 // owners and notes all work, but every sender, drafter, scanner and purger skips them: they carry
@@ -2179,6 +2210,7 @@ setInterval(() => { refreshSuppressions().catch(e => console.error('[suppression
 async function sendMail(p, subject, body, { kind = 'outreach', attachments = null, transactional = false } = {}) {
   if (p.do_not_email || p.source === 'callleads') throw Object.assign(new Error('call lead: never emailed'), { permanent: true, callLead: true });
   if (p.unsubscribed_at) throw Object.assign(new Error('lead has unsubscribed'), { suppressed: true });
+  if (p.email && loadSuppressed().has(String(p.email).toLowerCase())) throw Object.assign(new Error('address is on the do-not-contact list'), { suppressed: true, permanent: true });
   // The role-address filter exists to stop us COLD-mailing info@ and sales@. When someone fills in
   // our own form and asks us to contact them, refusing to answer because they typed a shared
   // mailbox is the wrong call. Opt-out, suppression and bounce checks still apply to everything.
@@ -2293,7 +2325,7 @@ function loginLimited(key, max) {
 // the go. host, while the team cookie was set on app. A cookie is not sent across hosts, so the
 // callback would bounce to /login and drop the one time code. The code is worthless without the
 // client secret, and Google will only redirect to a URI registered on the OAuth client.
-const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm', '/book', '/api/book', '/f', '/capture.js']
+const PUBLIC_PATHS = ['/go', '/r', '/report', '/unsubscribe', '/healthz', '/robots.txt', '/api/track', '/api/calendly-webhook', '/api/sendgrid-events', '/api/gmail/callback', '/login', '/api/login', '/api/logout', '/api/subscribe', '/api/survey', '/api/giveaway', '/api/qualify', '/guide', '/onboarding', '/api/onboarding', '/qm', '/book', '/api/book', '/f', '/capture.js']
 // '/api/audit' was public so the landing page could run a scan in front of a visitor. Nothing
 // public triggers an audit any more: leads come in through /api/qualify and the team runs the
 // audit themselves, so the endpoint now sits behind the team login like everything else.;
@@ -4998,6 +5030,9 @@ app.post('/api/me/gmail/disconnect', (req, res) => {
 });
 
 const STOP_RE = /^\s*(stop|unsubscribe|remove me|take me off|opt out|no thanks,? ?stop)\b/i;
+// A plain "no" is an answer too. Kept deliberately narrow: "No problem, send me the details" must NOT match,
+// so a bare no/nope/nah (optionally with thanks / not interested) or an explicit "not interested" / "do not contact".
+const NO_RE = /^\s*(?:no|nope|nah)(?:[\s,.!-]+(?:thanks?|thank you|thx|not interested|not now|not today|not at this time|we(?:'re| are) (?:good|all set)|i(?:'m| am) (?:good|all set|not interested)))*\s*[.!]*\s*$|^\s*(?:not interested|no interest|we(?:'re| are) not interested|i(?:'m| am) not interested|please (?:do not|don't) (?:contact|email)|do not (?:contact|email)|don't (?:contact|email))\b/i;
 
 // A prospect who replies from a different mailbox at the same company is still that prospect, so
 // the domain is a fallback. Free mail hosts are excluded from that rule for obvious reasons.
@@ -5042,7 +5077,8 @@ async function checkGmailReplies() {
     if (!p) continue;
     const now = new Date().toISOString();
     const snippet = det.snippet || '';
-    const isStop = STOP_RE.test(snippet) || STOP_RE.test(hdr.subject || '');
+    const isNo = !STOP_RE.test(snippet) && !STOP_RE.test(hdr.subject || '') && NO_RE.test(String(snippet).trim());
+    const isStop = STOP_RE.test(snippet) || STOP_RE.test(hdr.subject || '') || isNo;
     if (!Array.isArray(p.notes)) p.notes = [];
     if (isStop) {
       const firstStop = !p.unsubscribed_at;
@@ -5051,7 +5087,7 @@ async function checkGmailReplies() {
       // Somebody who asks to stop gets one short confirmation back, and only the first time. Sent
       // straight through sgMail, not sendMail: sendMail refuses unsubscribed leads, and an opt-out
       // confirmation must not carry an unsubscribe footer.
-      if (firstStop && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(from) && !/no-?reply|mailer-daemon|postmaster/i.test(from)) {
+      if (firstStop && !isNo && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(from) && !/no-?reply|mailer-daemon|postmaster/i.test(from)) {
         try {
           const text = `You're unsubscribed. Thank you for letting us know, and sorry for the interruption.\n\nWe will not contact you again.${transactionalFooter()}`;
           await sgMail.send({
@@ -5063,7 +5099,7 @@ async function checkGmailReplies() {
           p.notes.push({ ts: now, by: null, text: 'Sent the unsubscribe confirmation.' });
         } catch (e) { console.error('[gmail] unsubscribe confirmation failed', e.message); }
       }
-      p.notes.push({ ts: now, by: null, text: `Replied asking to stop. Suppressed. "${snippet.slice(0, 120)}"` });
+      p.notes.push({ ts: now, by: null, text: isNo ? `Replied no. Suppressed, will not be contacted again. "${snippet.slice(0, 120)}"` : `Replied asking to stop. Suppressed. "${snippet.slice(0, 120)}"` });
     } else if (p.status !== 'booked' && p.status !== 'won') {
       p.status = 'replied';
       p.replied_at = p.replied_at || now;
@@ -5076,8 +5112,8 @@ async function checkGmailReplies() {
         await sgMail.sendMultiple({
           to: SALES,
           from: { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME },
-          subject: isStop ? `Opt out: ${p.business || from}` : `Reply from ${p.business || from}`,
-          text: `${isStop ? 'They asked to be removed and have been suppressed.' : 'They replied. The follow up sequence is stopped.'}\n\n`
+          subject: isNo ? `Said no: ${p.business || from}` : isStop ? `Opt out: ${p.business || from}` : `Reply from ${p.business || from}`,
+          text: `${isNo ? 'They said no, so they have been suppressed and will not be contacted again.' : isStop ? 'They asked to be removed and have been suppressed.' : 'They replied. The follow up sequence is stopped.'}\n\n`
             + `Business: ${p.business || 'unknown'}\nFrom: ${from}\nSubject: ${hdr.subject || ''}\n\n${snippet}\n\n`
             + `The full message is in the mailbox as normal.`,
         });
@@ -5442,6 +5478,46 @@ openheartmediaco.com`;
     }
     try { save(prospects); } catch {}
   }
+});
+
+// The short survey on the playbook thank-you page. It runs after the person already has their guide, so it
+// only ever annotates the subscriber who asked for it. It never creates a lead and never mails anyone.
+const surveyHits = new Map();
+function surveyRateLimited(ip) {
+  const now = Date.now();
+  const hits = (surveyHits.get(ip) || []).filter(t => now - t < 3600000);
+  if (hits.length >= 20) { surveyHits.set(ip, hits); return true; }
+  hits.push(now); surveyHits.set(ip, hits);
+  if (surveyHits.size > 5000) for (const [k, v] of surveyHits) if (!v.some(t => now - t < 3600000)) surveyHits.delete(k);
+  return false;
+}
+app.options('/api/survey', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+  }).status(204).end();
+});
+app.post('/api/survey', (req, res) => {
+  res.set('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const b = req.body || {};
+  if (String(b.company || '').trim()) return res.json({ ok: true });            // honeypot
+  const email = String(b.email || '').trim().toLowerCase().slice(0, 254);
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({ error: 'That email does not look right.' });
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  if (surveyRateLimited(ip)) return res.status(429).json({ error: 'Too many answers from this connection. Try again later.' });
+  const row = prospects.find(x => (x.email || '').toLowerCase() === email);
+  if (!row) return res.json({ ok: true });                                      // nobody to annotate: do not invent a lead
+  const clip = v => String(v || '').trim().slice(0, 120);
+  const now = new Date().toISOString();
+  row.survey = { business_type: clip(b.business_type), challenge: clip(b.challenge), website_status: clip(b.website_status), budget: clip(b.budget), video: clip(b.video), at: now };
+  if (!Array.isArray(row.notes)) row.notes = [];
+  const bits = Object.entries(row.survey).filter(([k, v]) => k !== 'at' && v).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`);
+  if (bits.length) row.notes.push({ ts: now, by: null, text: 'Playbook survey. ' + bits.join('. ') });
+  row.updated_at = now;
+  try { save(prospects); } catch (e) { console.error('[survey] save failed', e.message); return res.status(500).json({ error: 'Could not save that right now.' }); }
+  res.json({ ok: true });
 });
 
 app.options('/api/subscribe', (req, res) => {
