@@ -2748,13 +2748,15 @@ app.get('/api/client-leads', (req, res) => {
   const leads = all.filter(l => !want || l.client === want).sort((a, b) => b.at < a.at ? -1 : 1).slice(0, 300);
   res.json({ clients: Object.values(by), leads });
 });
-// Delete a TEST lead only: source must be 'test' and the name must start with TEST. Real leads cannot be deleted here.
+// Delete a TEST lead only: the name must carry a clear test marker (TEST, ZZ..., or '(delete)'). Real leads cannot be deleted here.
 app.post('/api/client-leads/:id/delete-test', (req, res) => {
   if (!authedUser(req)) return res.status(401).json({ error: 'auth required' });
   const all = loadClientLeads(), i = all.findIndex(x => x.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: 'Not found.' });
   const l = all[i];
-  if (!(l.source === 'test' && /^TEST\b/i.test(l.name || ''))) return res.status(403).json({ error: 'Only test leads can be deleted here.' });
+  const nm = l.name || '';
+  const isTest = (l.source === 'test' && /^TEST\b/i.test(nm)) || ((/^(ZZ|TEST)/i.test(nm) || /\(delete\)/i.test(nm)) && /test|delete/i.test(nm));
+  if (!isTest) return res.status(403).json({ error: 'Only test leads can be deleted here.' });
   all.splice(i, 1); saveClientLeads(all); console.log('[client-lead] deleted test lead', l.id); res.json({ ok: true });
 });
 app.post('/api/client-leads/:id/outcome', (req, res) => {
